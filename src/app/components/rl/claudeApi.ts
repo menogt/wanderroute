@@ -1,12 +1,11 @@
 import type { TripInputs, GeneratedItinerary } from "./types";
 import { CURRENCY_SYMBOLS } from "./data";
 
-// ─── Prompt Builder ───────────────────────────────────────────────────────────
 function buildPrompt(inputs: TripInputs): string {
   const { budget, currency, days, people, startCity, interests, travelStyle } = inputs;
   const sym = CURRENCY_SYMBOLS[currency];
 
-  return `You are RouteLanka, an expert Sri Lanka travel planner. Generate a detailed, realistic trip itinerary.
+  return `You are WanderRoute, an expert Sri Lanka travel planner. Generate a detailed, realistic trip itinerary.
 
 TRIP DETAILS:
 - Budget: ${sym}${budget} ${currency} total (for ALL ${people} people, ALL ${days} days)
@@ -24,35 +23,34 @@ IMPORTANT RULES:
 5. Route must start from ${startCity} and flow logically across Sri Lanka
 6. Interests (${interests.join(", ")}) must shape which destinations and activities are included
 
-Respond ONLY with a valid JSON object. No markdown, no explanation, just the JSON.
+Respond ONLY with a valid JSON object. No markdown, no explanation, just raw JSON.
 
-JSON structure:
 {
-  "routeName": "string (creative route name)",
-  "routeSlogan": "string (one inspiring line about this route)",
-  "cities": ["array", "of", "city", "names", "in", "order"],
-  "estimatedCostPerPerson": number (in ${currency}),
-  "estimatedTotalCost": number (in ${currency}, = per person x ${people}),
+  "routeName": "string",
+  "routeSlogan": "string",
+  "cities": ["city1", "city2"],
+  "estimatedCostPerPerson": number,
+  "estimatedTotalCost": number,
   "budgetStatus": "great" | "ok" | "tight" | "over",
   "days": [
     {
       "day": 1,
-      "city": "City Name",
-      "flag": "emoji for this city vibe",
+      "city": "string",
+      "flag": "emoji",
       "heroGradient": "linear-gradient(135deg, #hex1, #hex2)",
-      "accommodation": "Specific hotel/hostel name or type",
+      "accommodation": "string",
       "accommodationCostPerNight": number,
       "dailyCostPerPerson": number,
-      "localTip": "One genuine local insider tip for this city",
+      "localTip": "string",
       "items": [
         {
           "time": "9:00 AM",
           "icon": "emoji",
-          "label": "Short activity name",
-          "detail": "1-2 sentence description with practical info",
-          "cost": number (per person in ${currency}),
+          "label": "string",
+          "detail": "string",
+          "cost": number,
           "category": "transport" | "activity" | "meal" | "accommodation",
-          "tip": "Optional money-saving tip",
+          "tip": "string",
           "isHidden": false
         }
       ]
@@ -66,65 +64,67 @@ JSON structure:
     "entryFees": number,
     "misc": number
   },
-  "globalTips": ["5 practical Sri Lanka travel tips for this trip"],
-  "warnings": ["2-3 genuine warnings about this budget/route"],
-  "highlights": ["3 must-not-miss highlights of this route"]
+  "globalTips": ["tip1", "tip2", "tip3", "tip4", "tip5"],
+  "warnings": ["warning1", "warning2"],
+  "highlights": ["highlight1", "highlight2", "highlight3"]
 }`;
 }
 
-// ─── Gemini API Call ──────────────────────────────────────────────────────────
 export async function generateItineraryWithAI(
   inputs: TripInputs
 ): Promise<GeneratedItinerary> {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY?.trim();
 
-  const response = await fetch(url, {
+  if (!apiKey) throw new Error("VITE_GROQ_API_KEY is missing from your .env file");
+
+  console.log("🔑 Groq key starts with:", apiKey.slice(0, 10));
+  console.log("🤖 Calling Groq llama-3.3-70b...");
+
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      contents: [
+      model: "llama-3.3-70b-versatile",
+      messages: [
         {
-          parts: [{ text: buildPrompt(inputs) }],
+          role: "system",
+          content: "You are WanderRoute, an expert Sri Lanka travel planner. Always respond with valid JSON only. No markdown, no explanation, no code blocks.",
+        },
+        {
+          role: "user",
+          content: buildPrompt(inputs),
         },
       ],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 4000,
-        responseMimeType: "application/json", // Forces Gemini to return pure JSON
-      },
+      temperature: 0.7,
+      max_tokens: 4000,
     }),
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Gemini API error ${response.status}: ${err}`);
+    throw new Error(`Groq error ${response.status}: ${err}`);
   }
 
   const data = await response.json();
+  let rawText = data?.choices?.[0]?.message?.content ?? "";
 
-  // Extract text from Gemini response structure
-  const rawText: string =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  if (!rawText) throw new Error("Empty response from Groq");
 
-  if (!rawText) throw new Error("Empty response from Gemini");
+  console.log("✅ Groq responded!");
 
-  // Strip any accidental markdown fences just in case
-  const cleaned = rawText.replace(/```json|```/g, "").trim();
-  const parsed = JSON.parse(cleaned);
+  // Strip markdown fences if present
+  rawText = rawText.replace(/```json|```/g, "").trim();
 
-  // Compute budget fields locally
+  const parsed = JSON.parse(rawText);
   const remaining = inputs.budget - parsed.estimatedTotalCost;
   const budgetStatus: GeneratedItinerary["budgetStatus"] =
-    remaining > inputs.budget * 0.2
-      ? "great"
-      : remaining > 0
-      ? "ok"
-      : remaining > -inputs.budget * 0.1
-      ? "tight"
-      : "over";
+    remaining > inputs.budget * 0.2 ? "great"
+    : remaining > 0 ? "ok"
+    : remaining > -inputs.budget * 0.1 ? "tight"
+    : "over";
 
   return {
     id: `rl-${Date.now()}`,

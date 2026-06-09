@@ -1,10 +1,11 @@
 import { useState } from "react";
 import {
   ChevronDown, ChevronUp, ArrowRight, Share2, BarChart2,
-  AlertTriangle, Lightbulb, MapPin, Calendar, Users, Wallet
+  AlertTriangle, Lightbulb, MapPin, Calendar, Users, Wallet, Download
 } from "lucide-react";
 import type { GeneratedItinerary, DayPlan, Screen } from "./types";
 import { CURRENCY_SYMBOLS } from "./data";
+import { downloadItineraryPDF } from "./generatePDF";
 
 const NAVY = "#0B1340";
 const GOLD = "#C9A227";
@@ -266,6 +267,17 @@ export function ItineraryScreen({
   navigate: (s: Screen) => void;
 }) {
   const sym = CURRENCY_SYMBOLS[itinerary.currency];
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handleDownloadPDF = async () => {
+    setPdfLoading(true);
+    try {
+      await downloadItineraryPDF(itinerary);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   const statusConfig = {
     great: { color: GREEN, label: "Great value!", bg: `${GREEN}12` },
     ok: { color: TEAL, label: "On budget", bg: `${TEAL}12` },
@@ -330,6 +342,22 @@ export function ItineraryScreen({
           >
             <BarChart2 size={14} />
             Cost Breakdown
+          </button>
+          <button
+            onClick={handleDownloadPDF}
+            disabled={pdfLoading}
+            style={{
+              padding: "12px 16px", borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.15)",
+              background: pdfLoading ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.08)",
+              cursor: pdfLoading ? "not-allowed" : "pointer",
+              color: "#fff", fontWeight: 700, fontSize: "0.82rem",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              transition: "all 0.2s",
+            }}
+          >
+            <Download size={14} />
+            {pdfLoading ? "..." : "PDF"}
           </button>
           <button
             onClick={() => navigate("share")}
