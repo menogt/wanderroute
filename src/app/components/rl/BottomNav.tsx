@@ -1,4 +1,4 @@
-import { Home, Map, Hotel, Share2, Zap } from "lucide-react";
+import { Home, Map, MapPin, Hotel, Zap } from "lucide-react";
 import type { Screen } from "./types";
 
 const NAVY = "#0B1340";
@@ -16,7 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: "routes", label: "Routes", icon: <Map size={20} /> },
   { key: "planner", label: "Plan", icon: <Zap size={20} />, isCTA: true },
   { key: "hotels", label: "Hotels", icon: <Hotel size={20} /> },
-  { key: "share", label: "Share", icon: <Share2 size={20} /> },
+  { key: "map", label: "Map", icon: <MapPin size={20} /> },
 ];
 
 export function BottomNav({
@@ -43,7 +43,7 @@ export function BottomNav({
       {NAV_ITEMS.map(({ key, label, icon, isCTA }) => {
         const active =
           key === screen ||
-          (key === "share" && screen === "share") ||
+          (key === "map" && screen === "map") ||
           (key === "home" && (screen === "home" || screen === "itinerary" || screen === "costs"));
 
         if (isCTA) {
@@ -80,7 +80,7 @@ export function BottomNav({
         }
 
         const isActive = screen === key ||
-          (key === "home" && !["routes", "hotels", "share", "planner"].includes(screen));
+          (key === "home" && !["routes", "hotels", "map", "planner"].includes(screen));
 
         return (
           <button

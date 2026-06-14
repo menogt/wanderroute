@@ -1,38 +1,98 @@
-import { ArrowRight, Clock, Users, Star } from "lucide-react";
+import { ArrowRight, Clock, Star } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Polyline } from "react-leaflet";
 import { POPULAR_ROUTES } from "./data";
+import { getCityCoords, MARKER_COLORS } from "./mapConfig";
+import { createColorMarker } from "./leafletSetup";
+import { useBreakpoint } from "../../hooks/useBreakpoint";
 import type { Screen } from "./types";
 
 const NAVY = "#0B1340";
 const GOLD = "#C9A227";
 const TEAL = "#0D9488";
 
+function MiniRouteMap({ cities }: { cities: string[] }) {
+  const positions = cities.map(getCityCoords).filter(Boolean) as [number, number][];
+  if (positions.length < 2) return null;
+
+  // Calculate center as midpoint of all positions
+  const centerLat = positions.reduce((s, p) => s + p[0], 0) / positions.length;
+  const centerLng = positions.reduce((s, p) => s + p[1], 0) / positions.length;
+
+  return (
+    <div style={{
+      height: 130, borderRadius: 12, overflow: "hidden",
+      margin: "14px 20px 0",
+      border: "1px solid rgba(11,19,64,0.08)",
+    }}>
+      <MapContainer
+        center={[centerLat, centerLng]}
+        zoom={6}
+        style={{ height: "100%", width: "100%" }}
+        zoomControl={false}
+        scrollWheelZoom={false}
+        dragging={false}
+        doubleClickZoom={false}
+        touchZoom={false}
+        attributionControl={false}
+      >
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <Polyline
+          positions={positions}
+          pathOptions={{ color: "#C9A227", weight: 2, dashArray: "5 4", opacity: 0.9 }}
+        />
+        {cities.map((city, i) => {
+          const coords = getCityCoords(city);
+          if (!coords) return null;
+          const color = i === 0 ? MARKER_COLORS.ancient : i === cities.length - 1 ? MARKER_COLORS.beach : MARKER_COLORS.city;
+          return <Marker key={city} position={coords} icon={createColorMarker(color, 10)} />;
+        })}
+      </MapContainer>
+    </div>
+  );
+}
+
 const typeColors: Record<string, string> = {
   "Culture + Beach": TEAL,
   "History + Beach": "#6366F1",
   "Mountains + Tea": "#10B981",
   "Colonial + Beach": "#8B5CF6",
+  "Wildlife + History": "#D97706",
+  "City + Beach": "#0EA5E9",
+  "Ancient History": "#9333EA",
+  "Surf + Beach": "#14B8A6",
 };
 
 export function RoutesScreen({ navigate }: { navigate: (s: Screen) => void }) {
+  const bp = useBreakpoint();
+  const isDesktop = bp === "desktop";
+  const isTabletPlus = bp === "tablet" || bp === "desktop";
+
+  const cols = isDesktop ? 3 : isTabletPlus ? 2 : 1;
+
   return (
     <div style={{ background: "#EEF2FA", minHeight: "100vh" }}>
       {/* Header */}
-      <div style={{ background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 100%)`, padding: "52px 24px 32px" }}>
+      <div style={{ background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 100%)`, padding: isTabletPlus ? "40px 32px 32px" : "52px 24px 32px" }}>
         <p style={{ color: GOLD, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", marginBottom: 8 }}>DISCOVER</p>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "2rem", fontWeight: 900, color: "#fff", lineHeight: 1.15, marginBottom: 10 }}>
+        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isDesktop ? "2.8rem" : "2rem", fontWeight: 900, color: "#fff", lineHeight: 1.15, marginBottom: 10 }}>
           Sri Lanka<br />Travel Routes
         </h1>
-        <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.85rem", lineHeight: 1.6 }}>
-          4 iconic circuits covering the best of the island. Each route is optimised for budget efficiency.
+        <p style={{ color: "rgba(255,255,255,0.55)", fontSize: isDesktop ? "1rem" : "0.85rem", lineHeight: 1.6 }}>
+          8 iconic circuits covering the best of the island. Each route is optimised for budget efficiency.
         </p>
       </div>
 
-      <div style={{ padding: "24px" }}>
+      <div style={{
+        padding: isTabletPlus ? "32px" : "24px",
+        display: "grid",
+        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gap: 20,
+      }}>
         {POPULAR_ROUTES.map((route) => (
           <div
             key={route.key}
             style={{
-              background: "#fff", borderRadius: 20, marginBottom: 20,
+              background: "#fff", borderRadius: 20,
               boxShadow: "0 4px 24px rgba(11,19,64,0.08)",
               overflow: "hidden",
               border: "1px solid rgba(11,19,64,0.05)",
@@ -127,6 +187,9 @@ export function RoutesScreen({ navigate }: { navigate: (s: Screen) => void }) {
                 </span>
               ))}
             </div>
+
+            {/* Mini route map */}
+            <MiniRouteMap cities={route.cities} />
 
             {/* Price + CTA */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px 20px" }}>

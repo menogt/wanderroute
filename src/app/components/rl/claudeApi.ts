@@ -1,3 +1,4 @@
+// Note: despite the filename, this calls Groq API (llama-3.3-70b), not Anthropic Claude
 import type { TripInputs, GeneratedItinerary } from "./types";
 import { CURRENCY_SYMBOLS } from "./data";
 

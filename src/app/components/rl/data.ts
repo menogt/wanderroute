@@ -93,44 +93,125 @@ export const POPULAR_ROUTES = [
     startCities: ["Colombo"],
     image: "🌊",
   },
+  {
+    key: "wildlife_ruins",
+    name: "Wildlife & Ruins",
+    cities: ["Colombo", "Dambulla", "Sigiriya", "Minneriya", "Trincomalee"],
+    duration: "6–8 days",
+    fromPrice: 210,
+    type: "Wildlife + History",
+    gradient: "linear-gradient(135deg, #3D1a0B 0%, #6B3a1a 50%, #1a5A0B 100%)",
+    tags: ["Elephant Gathering", "Rock Fortress", "Ruins"],
+    description:
+      "Ancient ruins, giant rock fortresses, and Asia's largest elephant gathering.",
+    highlights: ["Minneriya elephant gathering (Aug-Oct)", "Sigiriya Lion Rock", "Trincomalee Koneswaram Temple"],
+    startCities: ["Colombo"],
+    image: "🐘",
+  },
+  {
+    key: "colombo_weekend",
+    name: "Colombo Weekend Escape",
+    cities: ["Colombo", "Negombo", "Kalpitiya"],
+    duration: "2–3 days",
+    fromPrice: 90,
+    type: "City + Beach",
+    gradient: "linear-gradient(135deg, #0B2d5A 0%, #0D5A6B 50%, #1a3A5A 100%)",
+    tags: ["Lagoon", "Kitesurfing", "Seafood"],
+    description:
+      "A short escape from Colombo — lagoon beaches and world-class kitesurfing.",
+    highlights: ["Kalpitiya lagoon kitesurfing", "Dutch Bay dolphin watching", "Colombo food scene"],
+    startCities: ["Colombo"],
+    image: "🪁",
+  },
+  {
+    key: "northern_explorer",
+    name: "Northern Explorer",
+    cities: ["Colombo", "Anuradhapura", "Jaffna"],
+    duration: "5–7 days",
+    fromPrice: 175,
+    type: "Ancient History",
+    gradient: "linear-gradient(135deg, #2d0B3a 0%, #5A1a6B 50%, #3a0B5A 100%)",
+    tags: ["Ancient Capital", "Tamil Culture", "Sacred Sites"],
+    description:
+      "Explore Sri Lanka's ancient Buddhist capitals and the vibrant Tamil culture of the north.",
+    highlights: ["Anuradhapura sacred city (UNESCO)", "Jaffna Fort", "Nainativu Island temple"],
+    startCities: ["Colombo"],
+    image: "🏛️",
+  },
+  {
+    key: "surf_surf",
+    name: "Surf & Surf",
+    cities: ["Colombo", "Hikkaduwa", "Arugam Bay"],
+    duration: "7–10 days",
+    fromPrice: 240,
+    type: "Surf + Beach",
+    gradient: "linear-gradient(135deg, #0B3A5A 0%, #0D6B5A 50%, #1a5A3A 100%)",
+    tags: ["World-Class Surf", "Coral Reef", "East Coast"],
+    description:
+      "Chase waves from the south-west to the east coast — two of Asia's best surf destinations.",
+    highlights: ["Arugam Bay (top 10 surf spots globally)", "Hikkaduwa coral reef snorkeling", "Pottuvil Lagoon"],
+    startCities: ["Colombo"],
+    image: "🏄",
+  },
 ];
 
 // ─── Hotels Database ─────────────────────────────────────────────────────────
 export const HOTELS_BY_CITY: Record<string, Array<{
   name: string; stars: number; priceUSD: number; type: TravelStyle;
-  amenities: string[]; area: string; tip?: string;
+  amenities: string[]; area: string; tip?: string; bookingUrl?: string; agodaUrl?: string;
+  location?: [number, number];
 }>> = {
   Colombo: [
-    { name: "Havelock Place Bungalow", stars: 4, priceUSD: 55, type: "comfort", amenities: ["Pool", "WiFi", "Breakfast"], area: "Colombo 5", tip: "Ask for garden-view room" },
-    { name: "Nomad's Colombo Hostel", stars: 2, priceUSD: 12, type: "budget", amenities: ["WiFi", "Lockers", "AC"], area: "Pettah", tip: "Great social atmosphere" },
-    { name: "Cinnamon Grand Colombo", stars: 5, priceUSD: 160, type: "luxury", amenities: ["Pool", "Spa", "3 Restaurants", "Gym"], area: "Colombo 3", tip: "Book 60+ days ahead for best rates" },
-    { name: "Clock Inn Colombo", stars: 2, priceUSD: 18, type: "budget", amenities: ["WiFi", "AC", "Breakfast"], area: "Colombo 2" },
+    { name: "Havelock Place Bungalow", stars: 4, priceUSD: 55, type: "comfort", amenities: ["Pool", "WiFi", "Breakfast"], area: "Colombo 5", tip: "Ask for garden-view room", bookingUrl: "https://www.booking.com/hotel/lk/havelock-place-bungalow.html", location: [6.8883, 79.8599] },
+    { name: "Nomad's Colombo Hostel", stars: 2, priceUSD: 12, type: "budget", amenities: ["WiFi", "Lockers", "AC"], area: "Pettah", tip: "Great social atmosphere", bookingUrl: "https://www.booking.com/hotel/lk/nomads-colombo.html", location: [6.9344, 79.8508] },
+    { name: "Cinnamon Grand Colombo", stars: 5, priceUSD: 160, type: "luxury", amenities: ["Pool", "Spa", "3 Restaurants", "Gym"], area: "Colombo 3", tip: "Book 60+ days ahead for best rates", bookingUrl: "https://www.booking.com/hotel/lk/cinnamon-grand-colombo.html", location: [6.9220, 79.8473] },
+    { name: "Clock Inn Colombo", stars: 2, priceUSD: 18, type: "budget", amenities: ["WiFi", "AC", "Breakfast"], area: "Colombo 2", bookingUrl: "https://www.booking.com/hotel/lk/clock-inn-colombo.html", location: [6.9175, 79.8508] },
   ],
   Kandy: [
-    { name: "Hotel Topaz Kandy", stars: 3, priceUSD: 30, type: "comfort", amenities: ["Pool", "WiFi", "Restaurant"], area: "Kandy Hill", tip: "Amazing lake views from rooftop" },
-    { name: "McLeod Inn", stars: 2, priceUSD: 14, type: "budget", amenities: ["WiFi", "Breakfast"], area: "Near Temple", tip: "Walking distance to Temple of Tooth" },
-    { name: "Amaya Hills Kandy", stars: 4, priceUSD: 120, type: "luxury", amenities: ["Infinity Pool", "Spa", "Views", "Yoga"], area: "Kandy Hills" },
-    { name: "Freedom Lodge Kandy", stars: 2, priceUSD: 11, type: "budget", amenities: ["WiFi", "Garden"], area: "Peradeniya" },
+    { name: "Hotel Topaz Kandy", stars: 3, priceUSD: 30, type: "comfort", amenities: ["Pool", "WiFi", "Restaurant"], area: "Kandy Hill", tip: "Amazing lake views from rooftop", bookingUrl: "https://www.booking.com/hotel/lk/topaz-kandy.html", location: [7.3033, 80.6350] },
+    { name: "McLeod Inn", stars: 2, priceUSD: 14, type: "budget", amenities: ["WiFi", "Breakfast"], area: "Near Temple", tip: "Walking distance to Temple of Tooth", bookingUrl: "https://www.booking.com/hotel/lk/mcleod-inn.html", location: [7.2940, 80.6413] },
+    { name: "Amaya Hills Kandy", stars: 4, priceUSD: 120, type: "luxury", amenities: ["Infinity Pool", "Spa", "Views", "Yoga"], area: "Kandy Hills", bookingUrl: "https://www.booking.com/hotel/lk/amaya-hills.html", location: [7.3100, 80.6200] },
+    { name: "Freedom Lodge Kandy", stars: 2, priceUSD: 11, type: "budget", amenities: ["WiFi", "Garden"], area: "Peradeniya", bookingUrl: "https://www.booking.com/hotel/lk/freedom-lodge-kandy.html", location: [7.2669, 80.5966] },
   ],
   Ella: [
-    { name: "98 Acres Resort & Spa", stars: 4, priceUSD: 130, type: "luxury", amenities: ["Infinity Pool", "Spa", "Mountain Views", "Restaurant"], area: "Ella", tip: "Book 3 months ahead — sells out fast" },
-    { name: "Ella Guesthouse", stars: 2, priceUSD: 15, type: "budget", amenities: ["WiFi", "Breakfast", "Terrace"], area: "Ella Town" },
-    { name: "Zion View Ella", stars: 3, priceUSD: 40, type: "comfort", amenities: ["Valley Views", "Restaurant", "WiFi"], area: "Ella Gap" },
+    { name: "98 Acres Resort & Spa", stars: 4, priceUSD: 130, type: "luxury", amenities: ["Infinity Pool", "Spa", "Mountain Views", "Restaurant"], area: "Ella", tip: "Book 3 months ahead — sells out fast", bookingUrl: "https://www.booking.com/hotel/lk/98-acres-resort-and-spa-ella.html", location: [6.8700, 81.0550] },
+    { name: "Ella Guesthouse", stars: 2, priceUSD: 15, type: "budget", amenities: ["WiFi", "Breakfast", "Terrace"], area: "Ella Town", bookingUrl: "https://www.booking.com/hotel/lk/ella-guesthouse.html", location: [6.8667, 81.0466] },
+    { name: "Zion View Ella", stars: 3, priceUSD: 40, type: "comfort", amenities: ["Valley Views", "Restaurant", "WiFi"], area: "Ella Gap", bookingUrl: "https://www.booking.com/hotel/lk/zion-view-ella.html", location: [6.8620, 81.0500] },
   ],
   Mirissa: [
-    { name: "Paradise Beach Club", stars: 3, priceUSD: 45, type: "comfort", amenities: ["Beach Access", "Pool", "Bar"], area: "Mirissa Beach", tip: "Get ocean-facing room for sunrise" },
-    { name: "Mirissa Hostel", stars: 1, priceUSD: 10, type: "budget", amenities: ["WiFi", "Common Kitchen"], area: "Mirissa" },
-    { name: "Anantara Peace Haven Tangalle", stars: 5, priceUSD: 280, type: "luxury", amenities: ["Private Villas", "Spa", "2 Pools", "Beach"], area: "Tangalle (15 min)" },
+    { name: "Paradise Beach Club", stars: 3, priceUSD: 45, type: "comfort", amenities: ["Beach Access", "Pool", "Bar"], area: "Mirissa Beach", tip: "Get ocean-facing room for sunrise", bookingUrl: "https://www.booking.com/hotel/lk/paradise-beach-club-mirissa.html", location: [5.9475, 80.4716] },
+    { name: "Mirissa Hostel", stars: 1, priceUSD: 10, type: "budget", amenities: ["WiFi", "Common Kitchen"], area: "Mirissa", bookingUrl: "https://www.booking.com/hotel/lk/mirissa-hostel.html", location: [5.9483, 80.4700] },
+    { name: "Anantara Peace Haven Tangalle", stars: 5, priceUSD: 280, type: "luxury", amenities: ["Private Villas", "Spa", "2 Pools", "Beach"], area: "Tangalle (15 min)", bookingUrl: "https://www.booking.com/hotel/lk/anantara-peace-haven-tangalle-resort.html", location: [6.0230, 80.7980] },
   ],
   Sigiriya: [
-    { name: "Sigiriya Village Hotel", stars: 4, priceUSD: 90, type: "luxury", amenities: ["Pool", "Garden", "WiFi", "Restaurant"], area: "Sigiriya Village" },
-    { name: "Elephant Corridor", stars: 5, priceUSD: 350, type: "luxury", amenities: ["Plunge pools", "Jeep safaris", "Chef dinners"], area: "Sigiriya" },
-    { name: "Back of Beyond Sigiriya", stars: 2, priceUSD: 18, type: "budget", amenities: ["Eco-lodge", "Garden", "WiFi"], area: "Village" },
+    { name: "Sigiriya Village Hotel", stars: 4, priceUSD: 90, type: "luxury", amenities: ["Pool", "Garden", "WiFi", "Restaurant"], area: "Sigiriya Village", bookingUrl: "https://www.booking.com/hotel/lk/sigiriya-village.html", location: [7.9520, 80.7550] },
+    { name: "Elephant Corridor", stars: 5, priceUSD: 350, type: "luxury", amenities: ["Plunge pools", "Jeep safaris", "Chef dinners"], area: "Sigiriya", bookingUrl: "https://www.booking.com/hotel/lk/elephant-corridor-sigiriya.html", location: [7.9600, 80.7620] },
+    { name: "Back of Beyond Sigiriya", stars: 2, priceUSD: 18, type: "budget", amenities: ["Eco-lodge", "Garden", "WiFi"], area: "Village", bookingUrl: "https://www.booking.com/hotel/lk/back-of-beyond-sigiriya.html", location: [7.9480, 80.7580] },
   ],
   Galle: [
-    { name: "Fortaleza at Fort Printers", stars: 4, priceUSD: 145, type: "luxury", amenities: ["Boutique", "Colonial Architecture", "Pool"], area: "Galle Fort" },
-    { name: "New Old Dutch House", stars: 3, priceUSD: 35, type: "comfort", amenities: ["Fort Location", "WiFi", "Garden"], area: "Galle Fort", tip: "Inside the UNESCO fort walls" },
-    { name: "Galle Fort Hostel", stars: 1, priceUSD: 12, type: "budget", amenities: ["WiFi", "Fort Views"], area: "Galle Fort" },
+    { name: "Fortaleza at Fort Printers", stars: 4, priceUSD: 145, type: "luxury", amenities: ["Boutique", "Colonial Architecture", "Pool"], area: "Galle Fort", bookingUrl: "https://www.booking.com/hotel/lk/fort-printers-boutique-hotel.html", location: [6.0258, 80.2170] },
+    { name: "New Old Dutch House", stars: 3, priceUSD: 35, type: "comfort", amenities: ["Fort Location", "WiFi", "Garden"], area: "Galle Fort", tip: "Inside the UNESCO fort walls", bookingUrl: "https://www.booking.com/hotel/lk/new-old-dutch-house-galle-fort.html", location: [6.0265, 80.2175] },
+    { name: "Galle Fort Hostel", stars: 1, priceUSD: 12, type: "budget", amenities: ["WiFi", "Fort Views"], area: "Galle Fort", bookingUrl: "https://www.booking.com/hotel/lk/galle-fort-hostel.html", location: [6.0271, 80.2168] },
+  ],
+  "Nuwara Eliya": [
+    { name: "Ferncliff Bungalow", stars: 2, priceUSD: 14, type: "budget", amenities: ["WiFi", "Breakfast", "Garden"], area: "Nuwara Eliya Town", bookingUrl: "https://www.booking.com/hotel/lk/ferncliff-bungalow-nuwara-eliya.html", location: [6.9500, 80.7820] },
+    { name: "Heritance Tea Factory", stars: 5, priceUSD: 95, type: "comfort", amenities: ["Pool", "Restaurant", "WiFi", "Spa"], area: "Kandapola", tip: "Book the tea estate room for views over the plantation", bookingUrl: "https://www.booking.com/hotel/lk/heritance-tea-factory.html", location: [6.9850, 80.8200] },
+    { name: "Araliya Green Hills", stars: 4, priceUSD: 180, type: "luxury", amenities: ["Pool", "Spa", "Gym", "Restaurant"], area: "Gregory Lake", bookingUrl: "https://www.booking.com/hotel/lk/araliya-green-hills.html", location: [6.9560, 80.7720] },
+  ],
+  Trincomalee: [
+    { name: "Welcombe Hotel", stars: 2, priceUSD: 12, type: "budget", amenities: ["WiFi", "AC"], area: "Inner Harbour Rd", bookingUrl: "https://www.booking.com/hotel/lk/welcombe-hotel-trincomalee.html", location: [8.5650, 81.2300] },
+    { name: "Chaaya Blu Trincomalee", stars: 4, priceUSD: 85, type: "comfort", amenities: ["Pool", "Beach Access", "Restaurant", "WiFi"], area: "Nilaveli Beach", tip: "Steps from Nilaveli beach, book sea-facing rooms", bookingUrl: "https://www.booking.com/hotel/lk/chaaya-blu-trincomalee.html", location: [8.6900, 81.1900] },
+    { name: "Jungle Beach by Uga Escapes", stars: 5, priceUSD: 220, type: "luxury", amenities: ["Pool", "Spa", "Beach Access", "Restaurant"], area: "Kuchchaveli", bookingUrl: "https://www.booking.com/hotel/lk/jungle-beach-by-uga-escapes.html", location: [8.7400, 81.1600] },
+  ],
+  Negombo: [
+    { name: "Iceberg Guesthouse", stars: 2, priceUSD: 13, type: "budget", amenities: ["WiFi", "AC", "Garden"], area: "Lewis Place", bookingUrl: "https://www.booking.com/hotel/lk/iceberg-guesthouse-negombo.html", location: [7.2120, 79.8380] },
+    { name: "Beach Cabanas Resort", stars: 3, priceUSD: 50, type: "comfort", amenities: ["Pool", "Beach Access", "Restaurant", "WiFi"], area: "Ethukala", bookingUrl: "https://www.booking.com/hotel/lk/beach-cabanas-resort-negombo.html", location: [7.2250, 79.8380] },
+    { name: "Jetwing Blue", stars: 5, priceUSD: 140, type: "luxury", amenities: ["Pool", "Spa", "Beach Access", "Restaurant", "Gym"], area: "Negombo Beach", bookingUrl: "https://www.booking.com/hotel/lk/jetwing-blue.html", location: [7.2300, 79.8360] },
+  ],
+  Dambulla: [
+    { name: "Dambulla Rest House", stars: 2, priceUSD: 11, type: "budget", amenities: ["WiFi", "Breakfast"], area: "Dambulla Town", bookingUrl: "https://www.booking.com/hotel/lk/dambulla-rest-house.html", location: [7.8675, 80.6517] },
+    { name: "Kandalama Hotel", stars: 4, priceUSD: 70, type: "comfort", amenities: ["Pool", "Restaurant", "WiFi"], area: "Kandalama", tip: "Designed by Geoffrey Bawa — the infinity pool overlooks the Kandalama tank", bookingUrl: "https://www.booking.com/hotel/lk/kandalama.html", location: [7.8740, 80.6900] },
+    { name: "Heritance Kandalama", stars: 5, priceUSD: 160, type: "luxury", amenities: ["Pool", "Spa", "Restaurant", "Gym", "WiFi"], area: "Kandalama", bookingUrl: "https://www.booking.com/hotel/lk/heritance-kandalama.html", location: [7.8950, 80.6850] },
   ],
 };
 
@@ -343,9 +424,12 @@ function selectRoute(startCity: string, days: number) {
 }
 
 // ─── Main Generator ──────────────────────────────────────────────────────────
-export function generateItinerary(inputs: TripInputs): GeneratedItinerary {
+export function generateItinerary(
+  inputs: TripInputs,
+  rates: Record<Currency, number> = CURRENCY_RATES
+): GeneratedItinerary {
   const { budget, currency, days, people, startCity, travelStyle } = inputs;
-  const rate = CURRENCY_RATES[currency];
+  const rate = rates[currency] ?? CURRENCY_RATES[currency];
   const routeKey = selectRoute(startCity, days);
   const route = POPULAR_ROUTES.find((r) => r.key === routeKey) || POPULAR_ROUTES[0];
 

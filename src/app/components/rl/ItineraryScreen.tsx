@@ -1,11 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
-  ChevronDown, ChevronUp, ArrowRight, Share2, BarChart2,
-  AlertTriangle, Lightbulb, MapPin, Calendar, Users, Wallet, Download
+  ChevronDown, ChevronUp, Share2, BarChart2,
+  AlertTriangle, Lightbulb, Calendar, Users, Wallet, Download
 } from "lucide-react";
-import type { GeneratedItinerary, DayPlan, Screen } from "./types";
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
+import type { GeneratedItinerary, DayPlan, DayItem, Screen } from "./types";
 import { CURRENCY_SYMBOLS } from "./data";
 import { downloadItineraryPDF } from "./generatePDF";
+import { useBreakpoint } from "../../hooks/useBreakpoint";
+import { getCityCoords, MARKER_COLORS } from "./mapConfig";
+import { createColorMarker, createNumberMarker } from "./leafletSetup";
+import { useFoursquareGeocoding } from "../../hooks/useFoursquareGeocoding";
+import { extractPlaceName } from "./placeExtractor";
+import { getGeoCacheStats } from "./geocoder";
 
 const NAVY = "#0B1340";
 const GOLD = "#C9A227";
@@ -77,41 +84,290 @@ function BudgetMeter({
   );
 }
 
-function RouteFlow({ cities }: { cities: string[] }) {
+function FitBounds({ positions }: { positions: [number, number][] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (positions.length >= 2) {
+      map.fitBounds(positions, { padding: [30, 30] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
+function RouteMap({ cities, days, onDaySelect }: {
+  cities: string[];
+  days: DayPlan[];
+  onDaySelect: (dayNum: number) => void;
+}) {
+  const positions = cities
+    .map(getCityCoords)
+    .filter(Boolean) as [number, number][];
+
+  if (positions.length < 2) return null;
+
+  // Find which day(s) are spent in each city
+  const cityDays: Record<string, number[]> = {};
+  days.forEach(d => {
+    const cityName = d.city.split("→").pop()?.trim() || d.city;
+    if (!cityDays[cityName]) cityDays[cityName] = [];
+    cityDays[cityName].push(d.day);
+  });
+
+  return (
+    <div style={{ borderRadius: 16, overflow: "hidden", marginBottom: 16, boxShadow: "0 4px 20px rgba(11,19,64,0.1)" }}>
+      <MapContainer
+        center={positions[0]}
+        zoom={7}
+        style={{ height: 220, width: "100%" }}
+        zoomControl={false}
+        scrollWheelZoom={false}
+        attributionControl={false}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution="© OpenStreetMap"
+        />
+        <FitBounds positions={positions} />
+
+        {/* Dashed route polyline */}
+        <Polyline
+          positions={positions}
+          pathOptions={{ color: "#C9A227", weight: 2.5, dashArray: "6 5", opacity: 0.8 }}
+        />
+
+        {/* City markers */}
+        {cities.map((city, i) => {
+          const coords = getCityCoords(city);
+          if (!coords) return null;
+          const color = i === 0
+            ? MARKER_COLORS.ancient  // gold for start
+            : i === cities.length - 1
+            ? MARKER_COLORS.beach    // teal for end
+            : MARKER_COLORS.city;    // navy for middle
+          const daysHere = cityDays[city] || [];
+
+          return (
+            <Marker key={city} position={coords} icon={createColorMarker(color, 14)}>
+              <Popup>
+                <div style={{ fontFamily: "sans-serif", minWidth: 120 }}>
+                  <strong style={{ color: "#0B1340" }}>{city}</strong>
+                  {daysHere.length > 0 && (
+                    <p style={{ margin: "4px 0 6px", color: "#6B7280", fontSize: 12 }}>
+                      Day{daysHere.length > 1 ? "s" : ""} {daysHere.join(", ")}
+                    </p>
+                  )}
+                  {daysHere.length > 0 && (
+                    <button
+                      onClick={() => onDaySelect(daysHere[0])}
+                      style={{
+                        background: "#C9A227", color: "#0B1340",
+                        border: "none", borderRadius: 6, padding: "5px 10px",
+                        fontSize: 11, fontWeight: 700, cursor: "pointer", width: "100%",
+                      }}
+                    >
+                      View Day {daysHere[0]} →
+                    </button>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+      </MapContainer>
+    </div>
+  );
+}
+
+// Helper — color by activity category
+function getCategoryColor(category: string): string {
+  switch (category) {
+    case "activity":  return "#0D9488"; // teal
+    case "meal":      return "#F59E0B"; // amber
+    case "accommodation": return "#C9A227"; // gold
+    default:          return "#0B1340"; // navy
+  }
+}
+
+function DayActivityMap({ day, city }: { day: DayPlan; city: string }) {
+  // The destination city — last leg of "Colombo → Kandy" — biases Foursquare search.
+  const destCity = city.split("→").pop()?.trim() || city;
+
+  // Locatable activities/meals (transport, check-ins, free time are filtered out).
+  const itemQueries = day.items
+    .map((item, index) => ({ item, index, place: extractPlaceName(item.label) }))
+    .filter((x): x is { item: DayItem; index: number; place: string } => x.place !== null);
+
+  // Build Foursquare queries — activities + the hotel, each with a stable key.
+  const queries = [
+    ...itemQueries.map(x => ({ key: `item-${x.index}`, placeName: x.place, city: destCity })),
+    ...(day.accommodation ? [{ key: "hotel", placeName: day.accommodation, city: destCity }] : []),
+  ];
+
+  const { coords, loading, resolved, total } = useFoursquareGeocoding(queries);
+
+  // Map geocoded coords back to the original items (matched by stable key).
+  const locatedItems = itemQueries
+    .map(x => ({ item: x.item, coords: coords[`item-${x.index}`] || null, index: x.index }))
+    .filter((x): x is { item: DayItem; coords: [number, number]; index: number } => x.coords !== null);
+
+  // Hotel coords
+  const hotelCoords = day.accommodation ? coords["hotel"] || null : null;
+
+  const allCoords = [
+    ...locatedItems.map(x => x.coords),
+    ...(hotelCoords ? [hotelCoords] : []),
+  ];
+
+  // Need at least 1 located point to show the map (or still loading).
+  if (allCoords.length === 0 && !loading) return null;
+
+  const centerLat = allCoords.length > 0 ? allCoords.reduce((s, c) => s + c[0], 0) / allCoords.length : 7.8731;
+  const centerLng = allCoords.length > 0 ? allCoords.reduce((s, c) => s + c[1], 0) / allCoords.length : 80.7718;
+
+  return (
+    <div style={{ margin: "12px 16px" }}>
+      {/* Loading progress bar */}
+      {loading && (
+        <div style={{
+          background: "rgba(11,19,64,0.04)",
+          borderRadius: 8, padding: "8px 12px",
+          marginBottom: 8,
+          display: "flex", alignItems: "center", gap: 10,
+        }}>
+          <div style={{ flex: 1, background: "rgba(11,19,64,0.08)", borderRadius: 100, height: 4, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", borderRadius: 100,
+              background: "#C9A227",
+              width: `${total > 0 ? (resolved / total) * 100 : 0}%`,
+              transition: "width 0.3s ease",
+            }} />
+          </div>
+          <span style={{ color: "#6B7280", fontSize: "0.72rem", whiteSpace: "nowrap" }}>
+            Pinpointing {resolved}/{total} places...
+          </span>
+        </div>
+      )}
+
+      {/* Map — show as soon as we have at least 1 pin */}
+      {allCoords.length > 0 && (
+        <div style={{
+          borderRadius: 12, overflow: "hidden",
+          border: "1px solid rgba(11,19,64,0.08)",
+          boxShadow: "0 2px 12px rgba(11,19,64,0.08)",
+        }}>
+          <MapContainer
+            center={[centerLat, centerLng]}
+            zoom={13}
+            style={{ height: 200, width: "100%" }}
+            zoomControl={true}
+            scrollWheelZoom={false}
+            attributionControl={false}
+          >
+            <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+
+            {/* Route line connecting activity pins in order */}
+            {locatedItems.length >= 2 && (
+              <Polyline
+                positions={locatedItems.map(x => x.coords)}
+                pathOptions={{ color: "#C9A227", weight: 2, dashArray: "4 4", opacity: 0.7 }}
+              />
+            )}
+
+            {/* Activity markers — numbered in order */}
+            {locatedItems.map((located, i) => (
+              <Marker
+                key={i}
+                position={located.coords}
+                icon={createNumberMarker(i + 1, getCategoryColor(located.item.category))}
+              >
+                <Popup>
+                  <div style={{ fontFamily: "sans-serif", minWidth: 160 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <span style={{ fontSize: 16 }}>{located.item.icon}</span>
+                      <strong style={{ color: "#0B1340", fontSize: 13, lineHeight: 1.3 }}>
+                        {located.item.label}
+                      </strong>
+                    </div>
+                    <p style={{ color: "#6B7280", fontSize: 11, margin: "0 0 4px" }}>
+                      {located.item.time} · {located.item.detail}
+                    </p>
+                    {located.item.cost > 0 && (
+                      <p style={{ color: "#0D9488", fontSize: 11, fontWeight: 700, margin: 0 }}>
+                        Cost: ${located.item.cost}
+                      </p>
+                    )}
+                    {located.item.tip && (
+                      <p style={{ color: "#92400E", fontSize: 11, margin: "4px 0 0", lineHeight: 1.4 }}>
+                        💡 {located.item.tip}
+                      </p>
+                    )}
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+
+            {/* Hotel marker — special gold pin */}
+            {hotelCoords && (
+              <Marker position={hotelCoords} icon={createColorMarker("#C9A227", 16)}>
+                <Popup>
+                  <div style={{ fontFamily: "sans-serif" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 16 }}>🏨</span>
+                      <strong style={{ color: "#0B1340", fontSize: 13 }}>
+                        {day.accommodation}
+                      </strong>
+                    </div>
+                    <p style={{ color: "#6B7280", fontSize: 11, margin: "4px 0 0" }}>
+                      Tonight's stay · ${day.accommodationCostPerNight}/night
+                    </p>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+          </MapContainer>
+        </div>
+      )}
+
+      {/* Legend */}
+      {allCoords.length > 0 && (
+        <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#0D9488", border: "1.5px solid white" }} />
+            <span style={{ fontSize: "0.68rem", color: "#6B7280" }}>Activities</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#F59E0B", border: "1.5px solid white" }} />
+            <span style={{ fontSize: "0.68rem", color: "#6B7280" }}>Meals</span>
+          </div>
+          {hotelCoords && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#C9A227", border: "1.5px solid white" }} />
+              <span style={{ fontSize: "0.68rem", color: "#6B7280" }}>Hotel</span>
+            </div>
+          )}
+          <span style={{ fontSize: "0.68rem", color: "#9CA3AF", marginLeft: "auto" }}>
+            {allCoords.length} place{allCoords.length !== 1 ? "s" : ""} pinpointed
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GeocodingStatus() {
+  const stats = getGeoCacheStats();
+  if (stats.total === 0) return null;
   return (
     <div style={{
-      background: "#fff", borderRadius: 20, padding: "18px 20px",
-      boxShadow: "0 4px 20px rgba(11,19,64,0.06)",
+      display: "flex", alignItems: "center", gap: 6,
+      padding: "6px 12px", margin: "0 0 12px",
+      background: "rgba(13,148,136,0.06)", borderRadius: 8,
     }}>
-      <p style={{ color: "#9CA3AF", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 14 }}>YOUR ROUTE</p>
-      <div style={{ display: "flex", alignItems: "center", gap: 0, flexWrap: "nowrap", overflowX: "auto" }}>
-        {cities.map((city, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center" }}>
-            <div style={{ textAlign: "center", minWidth: 52 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: "50%", margin: "0 auto 6px",
-                background: i === 0
-                  ? `linear-gradient(135deg, ${GOLD}, #E8C547)`
-                  : i === cities.length - 1
-                  ? `linear-gradient(135deg, ${TEAL}, #14B8A6)`
-                  : `linear-gradient(135deg, ${NAVY}, #1D3560)`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <MapPin size={14} color="#fff" />
-              </div>
-              <span style={{ color: NAVY, fontSize: "0.68rem", fontWeight: 700, whiteSpace: "nowrap" }}>{city}</span>
-              {i === 0 && <div style={{ color: GOLD, fontSize: "0.6rem" }}>Start</div>}
-              {i === cities.length - 1 && <div style={{ color: TEAL, fontSize: "0.6rem" }}>End</div>}
-            </div>
-            {i < cities.length - 1 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 3, padding: "0 4px", marginBottom: 20 }}>
-                <div style={{ width: 16, height: 1.5, background: `${GOLD}60`, borderRadius: 1 }} />
-                <ArrowRight size={10} color={GOLD} />
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      <span style={{ fontSize: "0.75rem" }}>📍</span>
+      <span style={{ color: "#0D9488", fontSize: "0.72rem", fontWeight: 600 }}>
+        {stats.fresh} places auto-pinpointed on map
+      </span>
     </div>
   );
 }
@@ -119,7 +375,7 @@ function RouteFlow({ cities }: { cities: string[] }) {
 function DayCard({ day, sym }: { day: DayPlan; sym: string }) {
   const [expanded, setExpanded] = useState(day.day <= 2);
   return (
-    <div style={{
+    <div id={`day-${day.day}`} style={{
       background: "#fff", borderRadius: 20,
       boxShadow: "0 4px 20px rgba(11,19,64,0.06)",
       overflow: "hidden", border: "1px solid rgba(11,19,64,0.04)",
@@ -164,6 +420,9 @@ function DayCard({ day, sym }: { day: DayPlan; sym: string }) {
       {/* Day items */}
       {expanded && (
         <div style={{ padding: "4px 0 8px" }}>
+          {/* Day activity mini-map (auto-geocoded) */}
+          <DayActivityMap day={day} city={day.city} />
+
           {day.items.map((item, i) => (
             <div
               key={i}
@@ -268,6 +527,9 @@ export function ItineraryScreen({
 }) {
   const sym = CURRENCY_SYMBOLS[itinerary.currency];
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const bp = useBreakpoint();
+  const isDesktop = bp === "desktop";
 
   const handleDownloadPDF = async () => {
     setPdfLoading(true);
@@ -405,7 +667,14 @@ export function ItineraryScreen({
 
         {/* Route visualization */}
         <div style={{ marginTop: 16 }}>
-          <RouteFlow cities={itinerary.cities} />
+          <RouteMap
+            cities={itinerary.cities}
+            days={itinerary.days}
+            onDaySelect={(dayNum) => {
+              setSelectedDay(dayNum);
+              document.getElementById(`day-${dayNum}`)?.scrollIntoView({ behavior: "smooth" });
+            }}
+          />
         </div>
 
         {/* Highlights */}
@@ -447,12 +716,53 @@ export function ItineraryScreen({
           <span style={{ color: "#9CA3AF", fontSize: "0.75rem" }}>{itinerary.totalDays} days</span>
         </div>
 
-        {/* Day cards */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {itinerary.days.map((day) => (
-            <DayCard key={day.day} day={day} sym={sym} />
-          ))}
-        </div>
+        {/* Geocoding status */}
+        <GeocodingStatus />
+
+        {/* Day cards — desktop shows selector sidebar + single day content */}
+        {isDesktop ? (
+          <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+            {/* Day selector sidebar */}
+            <div style={{ width: 160, flexShrink: 0, position: "sticky", top: 92 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {itinerary.days.map((day) => {
+                  const active = (selectedDay ?? 1) === day.day;
+                  return (
+                    <button
+                      key={day.day}
+                      onClick={() => setSelectedDay(day.day)}
+                      style={{
+                        padding: "10px 14px", borderRadius: 12, border: "none", cursor: "pointer",
+                        background: active ? NAVY : "#fff",
+                        color: active ? "#fff" : "#4B5563",
+                        fontWeight: active ? 700 : 500, fontSize: "0.8rem", textAlign: "left",
+                        boxShadow: "0 2px 8px rgba(11,19,64,0.06)",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <div style={{ color: active ? GOLD : "#9CA3AF", fontSize: "0.65rem", fontWeight: 700, marginBottom: 2 }}>DAY {day.day}</div>
+                      <div style={{ fontSize: "0.78rem", lineHeight: 1.3 }}>{day.city}</div>
+                      <div style={{ color: active ? "rgba(255,255,255,0.6)" : "#9CA3AF", fontSize: "0.68rem", marginTop: 2 }}>{sym}{day.dailyCostPerPerson}/p</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Selected day content */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {(() => {
+                const day = itinerary.days.find(d => d.day === (selectedDay ?? 1)) ?? itinerary.days[0];
+                return <DayCard key={day.day} day={day} sym={sym} />;
+              })()}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {itinerary.days.map((day) => (
+              <DayCard key={day.day} day={day} sym={sym} />
+            ))}
+          </div>
+        )}
 
         {/* Global budget tips */}
         <div style={{

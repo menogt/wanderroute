@@ -5,7 +5,9 @@ export type Screen =
   | "costs"
   | "routes"
   | "hotels"
-  | "share";
+  | "share"
+  | "admin"
+  | "map";
 
 export type TravelStyle = "budget" | "comfort" | "luxury";
 export type Currency = "USD" | "EUR" | "GBP" | "AUD" | "LKR";
@@ -59,6 +61,21 @@ export type CostBreakdown = {
   activities: number;
   entryFees: number;
   misc: number;
+};
+
+export type Hotel = {
+  name: string;
+  city?: string;
+  stars: number;
+  priceUSD: number;
+  type: TravelStyle;
+  amenities: string[];
+  area: string;
+  tip?: string;
+  bookingUrl?: string;
+  agodaUrl?: string;
+  location?: [number, number];
+  isUserAdded?: boolean;
 };
 
 export type GeneratedItinerary = {

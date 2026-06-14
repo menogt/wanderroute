@@ -2,6 +2,8 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus, Zap, Check } from "lucide-react";
 import type { TripInputs, Interest, TravelStyle, Currency, Screen } from "./types";
 import { CURRENCY_SYMBOLS } from "./data";
+import { useLiveRates } from "./useLiveRates";
+import { useBreakpoint } from "../../hooks/useBreakpoint";
 
 const NAVY = "#0B1340";
 const GOLD = "#C9A227";
@@ -9,6 +11,8 @@ const TEAL = "#0D9488";
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const CURRENCIES: Currency[] = ["USD", "EUR", "GBP", "AUD", "LKR"];
+// Presets are defined in USD; shown and applied in the selected currency at live rates.
+const USD_BUDGET_PRESETS = [400, 800, 1500, 2500, 4000, 8000];
 const START_CITIES = ["Colombo", "Kandy", "Negombo", "Galle", "Sigiriya", "Ella"];
 const CITY_EMOJIS: Record<string, string> = {
   Colombo: "🏙️", Kandy: "🌿", Negombo: "🎣", Galle: "🏰", Sigiriya: "🏰", Ella: "🏔️",
@@ -42,21 +46,37 @@ const STEPS = [
 export function PlannerScreen({
   onGenerate,
   navigate,
+  initialStartCity,
 }: {
   onGenerate: (inputs: TripInputs) => void;
   navigate: (s: Screen) => void;
+  initialStartCity?: string | null;
 }) {
+  const bp = useBreakpoint();
+  const isDesktop = bp === "desktop";
   const [step, setStep] = useState(0);
   const [budget, setBudget] = useState(800);
   const [currency, setCurrency] = useState<Currency>("USD");
   const [days, setDays] = useState(7);
   const [people, setPeople] = useState(2);
-  const [startCity, setStartCity] = useState("Colombo");
+  const [startCity, setStartCity] = useState(initialStartCity ?? "Colombo");
   const [interests, setInterests] = useState<Interest[]>(["beaches", "culture"]);
   const [travelStyle, setTravelStyle] = useState<TravelStyle>("comfort");
   const [generating, setGenerating] = useState(false);
 
   const sym = CURRENCY_SYMBOLS[currency];
+  const { rates, error: ratesError } = useLiveRates();
+
+  // Switching currency re-prices the entered budget at live rates (via USD pivot).
+  const handleCurrencyChange = (next: Currency) => {
+    if (next === currency) return;
+    const inUSD = budget / (rates[currency] || 1);
+    setBudget(Math.round(inUSD * (rates[next] || 1)));
+    setCurrency(next);
+  };
+
+  // A USD preset expressed in the currently selected currency.
+  const presetAmount = (usd: number) => Math.round(usd * (rates[currency] || 1));
 
   const toggleInterest = (i: Interest) => {
     setInterests((prev) =>
@@ -79,7 +99,15 @@ export function PlannerScreen({
     }, 1600);
   };
 
-  return (
+  const stepSummary = [
+    { label: "Budget", val: budget > 0 ? `${CURRENCY_SYMBOLS[currency]}${budget.toLocaleString()}` : "—" },
+    { label: "Duration", val: `${days} days` },
+    { label: "Travellers", val: `${people} ${people === 1 ? "person" : "people"}` },
+    { label: "Starting", val: startCity },
+    { label: "Style", val: travelStyle.charAt(0).toUpperCase() + travelStyle.slice(1) },
+  ];
+
+  const formContent = (
     <div style={{ background: "#EEF2FA", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(160deg, ${NAVY} 0%, #1D3560 100%)`, padding: "20px 24px 28px" }}>
@@ -124,11 +152,11 @@ export function PlannerScreen({
 
             {/* Currency selector */}
             <p style={{ color: NAVY, fontWeight: 700, fontSize: "0.8rem", marginBottom: 10 }}>Currency</p>
-            <div style={{ display: "flex", gap: 8, marginBottom: 28 }}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
               {CURRENCIES.map((c) => (
                 <button
                   key={c}
-                  onClick={() => setCurrency(c)}
+                  onClick={() => handleCurrencyChange(c)}
                   style={{
                     padding: "8px 12px", borderRadius: 10, border: "none", cursor: "pointer",
                     fontWeight: 700, fontSize: "0.78rem",
@@ -142,6 +170,10 @@ export function PlannerScreen({
                 </button>
               ))}
             </div>
+            <p style={{ display: "flex", alignItems: "center", gap: 6, color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 600, marginBottom: 28 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: ratesError ? "#F59E0B" : "#10B981" }} />
+              {ratesError ? "Using offline rates — amounts still convert" : "Switching currency auto-converts your budget at live rates"}
+            </p>
 
             {/* Budget input */}
             <p style={{ color: NAVY, fontWeight: 700, fontSize: "0.8rem", marginBottom: 10 }}>Total Budget</p>
@@ -163,23 +195,26 @@ export function PlannerScreen({
               />
             </div>
 
-            {/* Budget presets */}
+            {/* Budget presets — converted to the selected currency */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              {[400, 800, 1500, 2500, 4000, 8000].map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setBudget(v)}
-                  style={{
-                    padding: "10px 0", borderRadius: 12, border: "none", cursor: "pointer",
-                    fontWeight: 700, fontSize: "0.8rem",
-                    background: budget === v ? GOLD : "#fff",
-                    color: budget === v ? NAVY : "#6B7280",
-                    boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-                  }}
-                >
-                  {sym}{v.toLocaleString()}
-                </button>
-              ))}
+              {USD_BUDGET_PRESETS.map((usd) => {
+                const v = presetAmount(usd);
+                return (
+                  <button
+                    key={usd}
+                    onClick={() => setBudget(v)}
+                    style={{
+                      padding: "10px 0", borderRadius: 12, border: "none", cursor: "pointer",
+                      fontWeight: 700, fontSize: "0.8rem",
+                      background: budget === v ? GOLD : "#fff",
+                      color: budget === v ? NAVY : "#6B7280",
+                      boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+                    }}
+                  >
+                    {sym}{v.toLocaleString()}
+                  </button>
+                );
+              })}
             </div>
 
             <div style={{ background: "rgba(13,148,136,0.08)", borderRadius: 12, padding: "12px 16px", marginTop: 20 }}>
@@ -510,6 +545,68 @@ export function PlannerScreen({
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+
+  if (!isDesktop) return formContent;
+
+  return (
+    <div style={{ background: "#EEF2FA", minHeight: "100vh", display: "flex", gap: 32, padding: "40px 0", alignItems: "flex-start" }}>
+      {/* Form card */}
+      <div style={{ flex: 1, maxWidth: 680 }}>
+        {/* Horizontal step indicator */}
+        <div style={{ display: "flex", alignItems: "center", background: "#fff", borderRadius: 16, padding: "16px 20px", marginBottom: 24, boxShadow: "0 2px 12px rgba(11,19,64,0.06)" }}>
+          {STEPS.map((label, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", flex: 1 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                  background: i < step ? TEAL : i === step ? GOLD : "rgba(11,19,64,0.08)",
+                  color: i <= step ? NAVY : "#9CA3AF",
+                  fontWeight: 800, fontSize: "0.75rem",
+                }}>
+                  {i < step ? <Check size={13} strokeWidth={3} /> : i + 1}
+                </div>
+                <span style={{ color: i === step ? NAVY : "#9CA3AF", fontSize: "0.65rem", fontWeight: i === step ? 700 : 500, whiteSpace: "nowrap" }}>{label}</span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div style={{ flex: 1, height: 2, background: i < step ? TEAL : "rgba(11,19,64,0.08)", margin: "0 4px", marginBottom: 20 }} />
+              )}
+            </div>
+          ))}
+        </div>
+        {/* Reuse the inner step content and navigation by rendering inside a card */}
+        <div style={{ background: "#fff", borderRadius: 20, boxShadow: "0 4px 24px rgba(11,19,64,0.07)", overflow: "hidden" }}>
+          {formContent}
+        </div>
+      </div>
+
+      {/* Right: live summary panel */}
+      <div style={{ width: 280, flexShrink: 0, position: "sticky", top: 92 }}>
+        <div style={{ background: `linear-gradient(135deg, ${NAVY}, #1D3560)`, borderRadius: 20, padding: "24px" }}>
+          <p style={{ color: GOLD, fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.07em", marginBottom: 16 }}>YOUR SELECTION SO FAR</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {stepSummary.map(({ label, val }) => (
+              <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.75rem" }}>{label}</span>
+                <span style={{ color: "#fff", fontWeight: 700, fontSize: "0.85rem" }}>{val}</span>
+              </div>
+            ))}
+          </div>
+          {interests.length > 0 && (
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.7rem", marginBottom: 8 }}>INTERESTS</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {interests.map((i) => (
+                  <span key={i} style={{ background: "rgba(201,162,39,0.2)", color: GOLD, borderRadius: 100, padding: "3px 10px", fontSize: "0.72rem", fontWeight: 600 }}>
+                    {i}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
