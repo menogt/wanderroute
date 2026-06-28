@@ -1,10 +1,27 @@
-// Note: despite the filename, this calls Groq API (llama-3.3-70b), not Anthropic Claude
-import type { TripInputs, GeneratedItinerary } from "./types";
-import { CURRENCY_SYMBOLS } from "./data";
+// Direct Groq API integration — calls Groq from the browser using
+// VITE_GROQ_API_KEY so AI generation works in local dev and on Netlify
+// without requiring the /api/generate-itinerary Netlify function.
 
-function buildPrompt(inputs: TripInputs): string {
+import type { GeneratedItinerary, TripInputs } from "./types";
+import { fetchPlacesForPrompt } from "../../lib/itineraryPlaces";
+
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const MODEL = "llama-3.3-70b-versatile";
+const TIMEOUT_MS = 30000;
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$", EUR: "€", GBP: "£", AUD: "A$", LKR: "LKR",
+};
+
+function buildPrompt(inputs: TripInputs, placesText = ""): string {
   const { budget, currency, days, people, startCity, interests, travelStyle } = inputs;
-  const sym = CURRENCY_SYMBOLS[currency];
+  const sym = CURRENCY_SYMBOLS[currency] ?? currency;
+
+  // Inject the real Supabase places so the AI builds the trip around hotels /
+  // attractions that actually exist (and whose names match our map pins).
+  const realPlacesBlock = placesText && placesText.trim()
+    ? `\n\nAVAILABLE REAL PLACES (use these EXACT names — they are verified real places in our database):\n${placesText}\n\nCRITICAL: For accommodation, dining and activities, you MUST use places from the list above wherever one fits. Keep their exact names so they match our map pins. Only invent a place if the list has nothing suitable for a given need.`
+    : "";
 
   return `You are WanderRoute, an expert Sri Lanka travel planner. Generate a detailed, realistic trip itinerary.
 
@@ -14,7 +31,7 @@ TRIP DETAILS:
 - Travellers: ${people} person(s)
 - Starting city: ${startCity}
 - Interests: ${interests.join(", ")}
-- Travel style: ${travelStyle} (budget=hostels/buses/street food, comfort=boutique hotels/mix dining, luxury=resorts/private transfers)
+- Travel style: ${travelStyle} (budget=hostels/buses/street food, comfort=boutique hotels/mix dining, luxury=resorts/private transfers)${realPlacesBlock}
 
 IMPORTANT RULES:
 1. Costs must be realistic Sri Lanka 2024/2025 prices in ${currency}
@@ -71,56 +88,72 @@ Respond ONLY with a valid JSON object. No markdown, no explanation, just raw JSO
 }`;
 }
 
+function stripFences(text: string): string {
+  return text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+}
+
 export async function generateItineraryWithAI(
   inputs: TripInputs
 ): Promise<GeneratedItinerary> {
-  const apiKey = import.meta.env.VITE_GROQ_API_KEY?.trim();
+  const apiKey = import.meta.env.VITE_GROQ_API_KEY;
+  if (!apiKey) throw new Error("VITE_GROQ_API_KEY is not set.");
 
-  if (!apiKey) throw new Error("VITE_GROQ_API_KEY is missing from your .env file");
-
-  console.log("🔑 Groq key starts with:", apiKey.slice(0, 10));
-  console.log("🤖 Calling Groq llama-3.3-70b...");
-
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        {
-          role: "system",
-          content: "You are WanderRoute, an expert Sri Lanka travel planner. Always respond with valid JSON only. No markdown, no explanation, no code blocks.",
-        },
-        {
-          role: "user",
-          content: buildPrompt(inputs),
-        },
-      ],
-      temperature: 0.7,
-      max_tokens: 4000,
-    }),
-  });
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Groq error ${response.status}: ${err}`);
+  // Fetch real places from Supabase BEFORE building the prompt. Non-fatal: if it
+  // fails (offline, no creds), we ground on general knowledge instead.
+  let placesText = "";
+  try {
+    const result = await fetchPlacesForPrompt(inputs.startCity, inputs.days, inputs.travelStyle);
+    placesText = result.placesText;
+  } catch (err) {
+    console.warn("Could not fetch real places, AI will use general knowledge:", err);
   }
 
-  const data = await response.json();
-  let rawText = data?.choices?.[0]?.message?.content ?? "";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  if (!rawText) throw new Error("Empty response from Groq");
+  let responseText: string;
+  try {
+    const res = await fetch(GROQ_URL, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are WanderRoute, an expert Sri Lanka travel planner. Always respond with one valid JSON object only. No markdown, no explanation, no code blocks.",
+          },
+          { role: "user", content: buildPrompt(inputs, placesText) },
+        ],
+        temperature: 0.7,
+        max_tokens: 4000,
+      }),
+    });
 
-  console.log("✅ Groq responded!");
+    responseText = await res.text();
+    if (!res.ok) throw new Error(`Groq error ${res.status}: ${responseText.slice(0, 120)}`);
+  } catch (err: any) {
+    if (err?.name === "AbortError") throw new Error("Groq request timed out after 30 s.");
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
-  // Strip markdown fences if present
-  rawText = rawText.replace(/```json|```/g, "").trim();
+  let data: any;
+  try { data = JSON.parse(responseText); } catch { throw new Error("Groq returned invalid JSON."); }
 
-  const parsed = JSON.parse(rawText);
-  const remaining = inputs.budget - parsed.estimatedTotalCost;
+  const content: string = data?.choices?.[0]?.message?.content ?? "";
+  if (!content) throw new Error("Groq returned an empty response.");
+
+  let parsed: any;
+  try { parsed = JSON.parse(stripFences(content)); } catch { throw new Error("AI returned malformed JSON."); }
+
+  const remaining = inputs.budget - (parsed.estimatedTotalCost ?? 0);
   const budgetStatus: GeneratedItinerary["budgetStatus"] =
     remaining > inputs.budget * 0.2 ? "great"
     : remaining > 0 ? "ok"
@@ -140,12 +173,12 @@ export async function generateItineraryWithAI(
     estimatedTotalCost: parsed.estimatedTotalCost,
     inputBudget: inputs.budget,
     remainingBudget: remaining,
-    budgetStatus,
+    budgetStatus: parsed.budgetStatus ?? budgetStatus,
     travelStyle: inputs.travelStyle,
     days: parsed.days,
     costBreakdown: parsed.costBreakdown,
-    globalTips: parsed.globalTips,
-    warnings: parsed.warnings,
-    highlights: parsed.highlights,
+    globalTips: parsed.globalTips ?? [],
+    warnings: parsed.warnings ?? [],
+    highlights: parsed.highlights ?? [],
   };
 }

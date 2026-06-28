@@ -1,19 +1,23 @@
-# Netlify build + Foursquare proxy configuration.
+# Netlify build + API proxy configuration.
 
 [build]
   command = "npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
-# Map the client-facing path to the proxy function. The browser calls
-# /api/foursquare?... and Netlify rewrites it to the function (status 200 = rewrite,
-# not a redirect, so the URL the browser sees is unchanged).
+# Map client-facing API paths to Netlify Functions. Status 200 means rewrite,
+# so the URL visible to the browser does not change.
 [[redirects]]
   from = "/api/foursquare"
   to = "/.netlify/functions/foursquare"
   status = 200
 
-# SPA fallback — let the client router handle all other routes.
+[[redirects]]
+  from = "/api/generate-itinerary"
+  to = "/.netlify/functions/generate-itinerary"
+  status = 200
+
+# SPA fallback - let the client router handle all other routes.
 [[redirects]]
   from = "/*"
   to = "/index.html"

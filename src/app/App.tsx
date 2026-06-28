@@ -11,7 +11,7 @@ import { MapScreen } from "./components/rl/MapScreen";
 import { BottomNav } from "./components/rl/BottomNav";
 import { TopNav } from "./components/rl/TopNav";
 import { TripsDrawer } from "./components/rl/TripsDrawer";
-import { saveCurrentTrip, loadCurrentTrip } from "./components/rl/tripStorage";
+import { saveTrip, loadCurrentTrip } from "./lib/tripsDb";
 import { generateItineraryWithAI } from "./components/rl/claudeApi";
 import { generateItinerary } from "./components/rl/data";
 import { useLiveRates } from "./components/rl/useLiveRates";
@@ -162,6 +162,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [startCityOverride, setStartCityOverride] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -173,6 +174,16 @@ export default function App() {
     const saved = loadCurrentTrip();
     if (saved) setItinerary(saved);
   }, []);
+
+  useEffect(() => {
+    if (!fallbackNotice) return;
+
+    const timeout = window.setTimeout(() => {
+      setFallbackNotice(null);
+    }, 4500);
+
+    return () => window.clearTimeout(timeout);
+  }, [fallbackNotice]);
 
   const navigate = (s: Screen) => {
     if ((s === "itinerary" || s === "costs") && !itinerary) {
@@ -191,6 +202,7 @@ export default function App() {
   const handleGenerate = async (inputs: TripInputs) => {
     setIsLoading(true);
     setError(null);
+    setFallbackNotice(null);
 
     let msgIndex = 0;
     const msgInterval = setInterval(() => {
@@ -201,15 +213,17 @@ export default function App() {
     try {
       const generated = await generateItineraryWithAI(inputs);
       setItinerary(generated);
-      saveCurrentTrip(generated);
+      saveTrip(generated); // saves locally instantly, then syncs to Supabase
+      setFallbackNotice(null);
       setScreen("itinerary");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
-      console.error("AI generation failed, falling back to static:", err);
+      console.warn("AI enhancements unavailable; using standard itinerary:", err);
       try {
         const fallback = generateItinerary(inputs, rates);
         setItinerary(fallback);
-        saveCurrentTrip(fallback);
+        saveTrip(fallback); // saves locally instantly, then syncs to Supabase
+        setFallbackNotice("Standard itinerary generated. AI enhancements are temporarily unavailable.");
         setScreen("itinerary");
         window.scrollTo({ top: 0, behavior: "smooth" });
       } catch {
@@ -281,6 +295,21 @@ export default function App() {
     </div>
   ) : null;
 
+  const fallbackNoticeToast = fallbackNotice ? (
+    <div style={{
+      position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)",
+      zIndex: 1000, background: "#fff", color: NAVY,
+      border: "1px solid rgba(11,19,64,0.12)",
+      borderRadius: 12, padding: "12px 20px",
+      fontSize: "0.85rem", fontWeight: 600,
+      boxShadow: "0 4px 20px rgba(11,19,64,0.12)",
+      maxWidth: 420, textAlign: "center",
+    }}>
+      {fallbackNotice}
+      <button onClick={() => setFallbackNotice(null)} style={{ marginLeft: 12, background: "none", border: "none", color: NAVY, cursor: "pointer", fontWeight: 700 }}>×</button>
+    </div>
+  ) : null;
+
   // ── Saved-trips drawer (shared across all layouts) ──
   const handleSelectTrip = (trip: GeneratedItinerary) => {
     setItinerary(trip);
@@ -345,6 +374,7 @@ export default function App() {
         }}>
           {loadingOverlay}
           {errorToast}
+          {fallbackNoticeToast}
           {tripsButtonFloating}
           <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
             {screenContent}
@@ -362,6 +392,7 @@ export default function App() {
       <div style={{ background: "#EEF2FA", minHeight: "100dvh" }}>
         {loadingOverlay}
         {errorToast}
+        {fallbackNoticeToast}
         <TopNav screen={screen} navigate={navigate} showAdmin={false} onOpenTrips={() => setDrawerOpen(true)} />
         <div style={{ maxWidth: 900, margin: "0 auto", padding: "0 24px 40px" }}>
           {screenContent}
@@ -376,6 +407,7 @@ export default function App() {
     <div style={{ background: "#EEF2FA", minHeight: "100dvh" }}>
       {loadingOverlay}
       {errorToast}
+      {fallbackNoticeToast}
       <TopNav screen={screen} navigate={navigate} showAdmin={true} onOpenTrips={() => setDrawerOpen(true)} />
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 40px 60px", display: "flex", gap: 32, alignItems: "flex-start" }}>
         {showSidebar && (

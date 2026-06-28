@@ -39,12 +39,14 @@ export default defineConfig(({ mode }) => {
 
     // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
     assetsInclude: ['**/*.svg', '**/*.csv'],
-
     // Dev-only proxy: the browser can't call Foursquare directly (CORS preflight
     // is rejected), so /api/foursquare is proxied here with the Bearer key added
     // server-side. In production a Netlify Function (netlify/functions/foursquare.js)
     // serves the same path — see netlify.toml.
     server: {
+      watch: {
+        usePolling: true,
+      },
       proxy: {
         '/api/foursquare': {
           target: 'https://places-api.foursquare.com',

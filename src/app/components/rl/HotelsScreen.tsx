@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Star, MapPin, Wifi, Waves, Utensils, Dumbbell } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import { useHotels } from "./useHotels";
+import { fetchHotels } from "../../lib/placesDb";
+import { HOTELS_BY_CITY } from "./data";
+import { bookingLink, agodaLink, AGODA_ENABLED } from "../../lib/affiliates";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
 import { getCityCoords, MARKER_COLORS, CITY_CATEGORIES } from "./mapConfig";
 import { createColorMarker } from "./leafletSetup";
@@ -20,6 +22,12 @@ const CITIES = [
 const STYLES: TravelStyle[] = ["budget", "comfort", "luxury"];
 const STYLE_LABELS: Record<TravelStyle, string> = { budget: "🎒 Budget", comfort: "✨ Comfort", luxury: "👑 Luxury" };
 const STYLE_COLORS: Record<TravelStyle, string> = { budget: TEAL, comfort: GOLD, luxury: "#8B5CF6" };
+// Hardcoded hotels for a city, shaped like the cards expect — used only as a
+// last-resort fallback if Supabase (and the merge) somehow return nothing.
+// Style/price bucketing for real hotels now happens in fetchHotels (placesDb.ts).
+function fallbackHotels(city: string): any[] {
+  return (HOTELS_BY_CITY as Record<string, any[]>)[city] ?? [];
+}
 
 const AMENITY_ICONS: Record<string, React.ReactNode> = {
   WiFi: <Wifi size={11} />,
@@ -45,12 +53,33 @@ export function HotelsScreen({ navigate }: { navigate: (s: Screen) => void }) {
   const [checkOut, setCheckOut] = useState(tomorrowStr());
   const [selectedHotelIndex, setSelectedHotelIndex] = useState<number | null>(null);
 
-  const { hotels } = useHotels();
+  const [hotels, setHotels] = useState<any[]>([]);
+  const [loadingHotels, setLoadingHotels] = useState(false);
   const bp = useBreakpoint();
   const isDesktop = bp === "desktop";
   const isTabletPlus = bp === "tablet" || bp === "desktop";
 
-  const cityHotels = (hotels[city] || []).filter((h) => h.type === style);
+  // Load every real hotel for the city from Supabase (merged with the curated
+  // hardcoded list inside fetchHotels). We deliberately do NOT pass `style` to
+  // the DB query: imported hotels have no style column, so filtering by it there
+  // would hide all of them. fetchHotels buckets them into budget/comfort/luxury,
+  // and we filter by the selected style below. Falls back to the hardcoded list
+  // for the city if nothing comes back (also keeps it correct offline).
+  useEffect(() => {
+    let active = true;
+    setLoadingHotels(true);
+    fetchHotels(city)
+      .then((results) => {
+        if (!active) return;
+        setHotels(results.length ? results : fallbackHotels(city));
+      })
+      .finally(() => {
+        if (active) setLoadingHotels(false);
+      });
+    return () => { active = false; };
+  }, [city]);
+
+  const cityHotels = hotels.filter((h) => h.type === style);
 
   // Reset map selection whenever the filters change so stale indices don't highlight.
   const selectCity = (c: string) => { setCity(c); setSelectedHotelIndex(null); };
@@ -63,15 +92,11 @@ export function HotelsScreen({ navigate }: { navigate: (s: Screen) => void }) {
     }, 0);
   };
 
-  const buildBookingUrl = (name: string, bookingUrl?: string) => {
-    if (bookingUrl) {
-      const url = new URL(bookingUrl);
-      if (checkIn) url.searchParams.set("checkin", checkIn);
-      if (checkOut) url.searchParams.set("checkout", checkOut);
-      return url.toString();
-    }
-    return `https://www.booking.com/search.html?ss=${encodeURIComponent(name)}+${encodeURIComponent(city)}+Sri+Lanka&checkin=${checkIn}&checkout=${checkOut}`;
-  };
+  const buildBookingUrl = (name: string, bookingUrl?: string) =>
+    bookingLink(name, city, checkIn, checkOut, bookingUrl);
+
+  const buildAgodaUrl = (name: string, agodaUrl?: string) =>
+    agodaLink(name, city, agodaUrl);
 
   // ── Filters (reused in sidebar and inline) ──
   const filterPanel = (
@@ -211,7 +236,12 @@ export function HotelsScreen({ navigate }: { navigate: (s: Screen) => void }) {
             {cityHotels.length > 0 && (
               <HotelMap hotels={cityHotels} city={city} selectedIndex={selectedHotelIndex} onSelect={handleSelectHotel} />
             )}
-            {cityHotels.length === 0 ? (
+            {loadingHotels && cityHotels.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#6B7280", fontSize: "0.85rem" }}>
+                <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🏨</div>
+                Loading hotels from database...
+              </div>
+            ) : cityHotels.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 0", color: "#9CA3AF" }}>
                 <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🔍</div>
                 <p style={{ fontWeight: 600 }}>No {STYLE_LABELS[style]} hotels listed for {city} yet.</p>
@@ -220,11 +250,12 @@ export function HotelsScreen({ navigate }: { navigate: (s: Screen) => void }) {
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 20 }}>
                 {cityHotels.map((hotel, i) => (
-                  <HotelCard key={i} index={i} selected={selectedHotelIndex === i} hotel={hotel} style={style} city={city} bookingUrl={buildBookingUrl(hotel.name, hotel.bookingUrl)} />
+                  <HotelCard key={`${hotel.name}-${i}`} index={i} selected={selectedHotelIndex === i} hotel={hotel} style={style} city={city} bookingUrl={buildBookingUrl(hotel.name, hotel.bookingUrl)} agodaUrl={buildAgodaUrl(hotel.name, hotel.agodaUrl)} />
                 ))}
               </div>
             )}
             <TipCard />
+            <AffiliateDisclosure />
           </div>
         </div>
       ) : (
@@ -274,7 +305,12 @@ export function HotelsScreen({ navigate }: { navigate: (s: Screen) => void }) {
           )}
 
           {/* Hotel cards */}
-          {cityHotels.length === 0 ? (
+          {loadingHotels && cityHotels.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280", fontSize: "0.85rem" }}>
+              <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🏨</div>
+              Loading hotels from database...
+            </div>
+          ) : cityHotels.length === 0 ? (
             <div style={{ textAlign: "center", padding: "40px 0", color: "#9CA3AF" }}>
               <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🔍</div>
               <p style={{ fontWeight: 600 }}>No {STYLE_LABELS[style]} hotels listed for {city} yet.</p>
@@ -287,11 +323,12 @@ export function HotelsScreen({ navigate }: { navigate: (s: Screen) => void }) {
               gap: 16,
             }}>
               {cityHotels.map((hotel, i) => (
-                <HotelCard key={i} index={i} selected={selectedHotelIndex === i} hotel={hotel} style={style} city={city} bookingUrl={buildBookingUrl(hotel.name, hotel.bookingUrl)} />
+                <HotelCard key={`${hotel.name}-${i}`} index={i} selected={selectedHotelIndex === i} hotel={hotel} style={style} city={city} bookingUrl={buildBookingUrl(hotel.name, hotel.bookingUrl)} agodaUrl={buildAgodaUrl(hotel.name, hotel.agodaUrl)} />
               ))}
             </div>
           )}
           <TipCard />
+          <AffiliateDisclosure />
         </div>
       )}
     </div>
@@ -354,7 +391,7 @@ function HotelMap({ hotels, city, selectedIndex, onSelect }: {
           const isSelected = selectedIndex === i;
           return (
             <Marker
-              key={i}
+              key={`${hotel.name}-${i}`}
               position={coords}
               icon={createColorMarker(isSelected ? "#C9A227" : baseColor, isSelected ? 16 : 12)}
               eventHandlers={{ click: () => onSelect(i) }}
@@ -384,6 +421,7 @@ function HotelCard({
   index,
   selected,
   bookingUrl,
+  agodaUrl,
 }: {
   hotel: { name: string; stars: number; priceUSD: number; type: TravelStyle; amenities: string[]; area: string; tip?: string; agodaUrl?: string };
   style: TravelStyle;
@@ -391,6 +429,7 @@ function HotelCard({
   selected: boolean;
   city: string;
   bookingUrl: string;
+  agodaUrl: string;
 }) {
   return (
     <div id={`hotel-${index}`} style={{
@@ -426,8 +465,8 @@ function HotelCard({
         </div>
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: hotel.tip ? 12 : 0 }}>
-          {hotel.amenities.map((a) => (
-            <span key={a} style={{
+          {hotel.amenities.map((a, ai) => (
+            <span key={`${a}-${ai}`} style={{
               display: "flex", alignItems: "center", gap: 4,
               background: "rgba(11,19,64,0.04)", color: "#4B5563",
               borderRadius: 100, padding: "4px 10px",
@@ -465,10 +504,10 @@ function HotelCard({
           Check Availability →
         </a>
 
-        {/* Agoda button (only if agodaUrl is set) */}
-        {hotel.agodaUrl && (
+        {/* Agoda button — always shown */}
+        {AGODA_ENABLED && (
           <a
-            href={hotel.agodaUrl}
+            href={agodaUrl}
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -480,11 +519,27 @@ function HotelCard({
               cursor: "pointer",
             }}
           >
-            Check Agoda
+            Check Agoda →
           </a>
         )}
       </div>
     </div>
+  );
+}
+
+// Affiliate disclosure — shown once at the bottom of the hotel list.
+function AffiliateDisclosure() {
+  return (
+    <p style={{
+      color: "#9CA3AF",
+      fontSize: "0.72rem",
+      textAlign: "center",
+      lineHeight: 1.5,
+      margin: "24px 16px",
+    }}>
+      WanderRoute may earn a commission from bookings made through these links,
+      at no extra cost to you.
+    </p>
   );
 }
 

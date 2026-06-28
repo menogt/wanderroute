@@ -43,3 +43,22 @@ export function createNumberMarker(num: number, color = "#0B1340") {
     iconAnchor: [12, 12],
   });
 }
+
+// Hotel pin — small bed/building icon, colour-coded by travel style tier
+export function createHotelMarker(tier: "budget" | "comfort" | "luxury") {
+  const color = tier === "luxury" ? "#C9A227" : tier === "comfort" ? "#0D9488" : "#6B7280";
+  return L.divIcon({
+    className: "",
+    html: `<div style="
+      width: 22px; height: 22px;
+      background: ${color};
+      border: 2px solid white;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      font-size: 11px;
+    ">🏨</div>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 20],
+  });
+}

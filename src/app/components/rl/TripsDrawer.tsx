@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { X, Trash2, MapPin, Calendar, Users, Wallet, Clock } from "lucide-react";
 import type { GeneratedItinerary } from "./types";
-import { getSavedTrips, deleteTrip, clearAllTrips, formatSavedDate } from "./tripStorage";
+import { clearAllTrips, formatSavedDate } from "./tripStorage";
+import { loadTrips, deleteTrip } from "../../lib/tripsDb";
 import { CURRENCY_SYMBOLS } from "./data";
 
 const NAVY = "#0B1340";
@@ -22,22 +23,25 @@ export function TripsDrawer({
   const [trips, setTrips] = useState<GeneratedItinerary[]>([]);
   const [confirmClear, setConfirmClear] = useState(false);
 
-  // Reload trips whenever drawer opens
+  // Reload trips whenever drawer opens — local first, then merged with Supabase
   useEffect(() => {
     if (isOpen) {
-      setTrips(getSavedTrips());
       setConfirmClear(false);
+      loadTrips().then(setTrips);
     }
   }, [isOpen]);
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteTrip(id);
-    setTrips(getSavedTrips());
+    await deleteTrip(id);
+    const updated = await loadTrips();
+    setTrips(updated);
   };
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
     if (confirmClear) {
+      // Remove the cloud copies for this device too, so they don't reappear on reopen.
+      await Promise.all(trips.map((t) => deleteTrip(t.id)));
       clearAllTrips();
       setTrips([]);
       setConfirmClear(false);

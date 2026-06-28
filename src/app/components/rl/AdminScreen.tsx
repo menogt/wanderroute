@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Star, Trash2, Edit, Download, Plus, ArrowLeft } from "lucide-react";
 import { useHotels } from "./useHotels";
+import { seedPlacesFromFoursquare } from "../../lib/seedPlaces";
 import type { Hotel, TravelStyle, Screen } from "./types";
 
 const NAVY = "#0B1340";
@@ -37,6 +38,11 @@ export function AdminScreen({ navigate }: { navigate: (s: Screen) => void }) {
   const [editing, setEditing] = useState<{ name: string; city: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // ── Foursquare → Supabase seeding ──
+  const [seedLog, setSeedLog] = useState<string[]>([]);
+  const [seeding, setSeeding] = useState(false);
+  const [seedDone, setSeedDone] = useState(false);
 
   // Flatten all hotels to a table
   const allHotels = Object.entries(hotels).flatMap(([city, list]) =>
@@ -113,6 +119,113 @@ export function AdminScreen({ navigate }: { navigate: (s: Screen) => void }) {
       </div>
 
       <div style={{ padding: "24px", maxWidth: 900, margin: "0 auto" }}>
+        {/* ── Seed Real Places from Foursquare ── */}
+        <div style={{
+          background: "#fff", borderRadius: 20, padding: 24,
+          marginBottom: 24,
+          boxShadow: "0 2px 16px rgba(11,19,64,0.07)",
+          border: "1px solid rgba(11,19,64,0.06)",
+        }}>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <span style={{ fontSize: "1.5rem" }}>🌍</span>
+            <h3 style={{
+              color: NAVY, fontWeight: 800,
+              fontSize: "1rem", margin: 0,
+            }}>
+              Seed Real Places from Foursquare
+            </h3>
+          </div>
+
+          <p style={{
+            color: "#6B7280", fontSize: "0.82rem",
+            lineHeight: 1.6, marginBottom: 16,
+          }}>
+            Pulls real hotels, restaurants, attractions, beaches and temples for all 12 Sri Lanka
+            cities from Foursquare and saves them to Supabase. Run once — takes 2–3 minutes.
+            Safe to re-run (duplicates are ignored).
+          </p>
+
+          {!seeding && !seedDone && (
+            <button
+              onClick={async () => {
+                setSeeding(true);
+                setSeedLog([]);
+                setSeedDone(false);
+                await seedPlacesFromFoursquare((msg) => {
+                  setSeedLog(prev => [...prev.slice(-50), msg]);
+                });
+                setSeeding(false);
+                setSeedDone(true);
+              }}
+              style={{
+                background: GOLD, color: NAVY,
+                border: "none", borderRadius: 12,
+                padding: "12px 28px",
+                fontWeight: 800, fontSize: "0.9rem",
+                cursor: "pointer",
+                boxShadow: "0 4px 16px rgba(201,162,39,0.3)",
+              }}
+            >
+              🚀 Start Seeding Places
+            </button>
+          )}
+
+          {seeding && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10,
+              marginBottom: 12,
+            }}>
+              <div style={{
+                width: 16, height: 16, borderRadius: "50%",
+                border: `2px solid ${GOLD}`,
+                borderTopColor: "transparent",
+                animation: "spin 0.8s linear infinite",
+              }} />
+              <span style={{ color: NAVY, fontWeight: 600, fontSize: "0.85rem" }}>
+                Seeding in progress...
+              </span>
+            </div>
+          )}
+
+          {seedDone && (
+            <div style={{
+              background: "rgba(16,185,129,0.08)",
+              border: "1px solid rgba(16,185,129,0.2)",
+              borderRadius: 10, padding: "10px 14px",
+              marginBottom: 12,
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span>✅</span>
+              <span style={{ color: "#10B981", fontWeight: 700, fontSize: "0.85rem" }}>
+                Seeding complete! Check Supabase Table Editor → places
+              </span>
+            </div>
+          )}
+
+          {seedLog.length > 0 && (
+            <div style={{
+              background: NAVY, borderRadius: 12,
+              padding: 16, maxHeight: 220, overflowY: "auto",
+              marginTop: 12,
+            }}>
+              {seedLog.map((line, i) => (
+                <p key={i} style={{
+                  color: line.startsWith("✅") ? "#10B981"
+                       : line.startsWith("⚠️") ? "#F59E0B"
+                       : line.startsWith("🎉") ? GOLD
+                       : "rgba(255,255,255,0.7)",
+                  fontSize: "0.72rem",
+                  fontFamily: "monospace",
+                  margin: "2px 0", lineHeight: 1.5,
+                }}>
+                  {line}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* ── Hotel Form ── */}
         <div style={{ background: "#fff", borderRadius: 20, padding: "24px", boxShadow: "0 4px 20px rgba(11,19,64,0.07)", marginBottom: 32 }}>
           <h2 style={{ color: NAVY, fontWeight: 800, fontSize: "1.1rem", marginBottom: 20 }}>
