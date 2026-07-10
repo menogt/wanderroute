@@ -1,7 +1,8 @@
-import { useState } from "react";
-import { Star, Trash2, Edit, Download, Plus, ArrowLeft } from "lucide-react";
+import { useState, useEffect, type FormEvent } from "react";
+import { Star, Trash2, Edit, Download, Plus, ArrowLeft, LogOut } from "lucide-react";
 import { useHotels } from "./useHotels";
 import { seedPlacesFromFoursquare } from "../../lib/seedPlaces";
+import { signInAdmin, signOutAdmin, getAdminSession, onAdminAuthChange } from "../../lib/adminAuth";
 import type { Hotel, TravelStyle, Screen } from "./types";
 
 const NAVY = "#0B1340";
@@ -38,6 +39,30 @@ export function AdminScreen({ navigate }: { navigate: (s: Screen) => void }) {
   const [editing, setEditing] = useState<{ name: string; city: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  // ── Login gate ──
+  // null = still checking session, false = show login form, true = show admin UI
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+
+  useEffect(() => {
+    getAdminSession().then((session) => setAuthed(!!session));
+    const unsubscribe = onAdminAuthChange(setAuthed);
+    return unsubscribe;
+  }, []);
+
+  const handleLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setLoginLoading(true);
+    const { error } = await signInAdmin(loginEmail, loginPassword);
+    setLoginLoading(false);
+    if (error) setLoginError(error);
+    // On success, onAdminAuthChange fires and flips `authed` to true.
+  };
 
   // ── Foursquare → Supabase seeding ──
   const [seedLog, setSeedLog] = useState<string[]>([]);
@@ -100,17 +125,82 @@ export function AdminScreen({ navigate }: { navigate: (s: Screen) => void }) {
     color: NAVY, fontWeight: 700, fontSize: "0.78rem", marginBottom: 6, display: "block",
   };
 
+  // Still checking for an existing session on mount.
+  if (authed === null) {
+    return (
+      <div style={{ background: "#EEF2FA", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <p style={{ color: NAVY }}>Checking session…</p>
+      </div>
+    );
+  }
+
+  // No session — show the login form instead of the admin UI.
+  if (!authed) {
+    return (
+      <div style={{ background: "#EEF2FA", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <form
+          onSubmit={handleLogin}
+          style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 360, boxShadow: "0 8px 30px rgba(11,19,64,0.12)" }}
+        >
+          <h2 style={{ color: NAVY, fontSize: "1.2rem", marginBottom: 20 }}>Admin Login</h2>
+          <label style={labelStyle}>Email</label>
+          <input
+            type="email"
+            value={loginEmail}
+            onChange={(e) => setLoginEmail(e.target.value)}
+            style={{ ...inputStyle, marginBottom: 14 }}
+            required
+          />
+          <label style={labelStyle}>Password</label>
+          <input
+            type="password"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            style={{ ...inputStyle, marginBottom: 14 }}
+            required
+          />
+          {loginError && (
+            <p style={{ color: "#EF4444", fontSize: "0.8rem", marginBottom: 14 }}>{loginError}</p>
+          )}
+          <button
+            type="submit"
+            disabled={loginLoading}
+            style={{ width: "100%", background: NAVY, color: "#fff", border: "none", borderRadius: 10, padding: "12px", fontWeight: 700, cursor: loginLoading ? "default" : "pointer" }}
+          >
+            {loginLoading ? "Signing in…" : "Sign In"}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("home")}
+            style={{ width: "100%", background: "none", border: "none", color: "#6B7280", marginTop: 12, cursor: "pointer", fontSize: "0.85rem" }}
+          >
+            ← Back to site
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div style={{ background: "#EEF2FA", minHeight: "100vh" }}>
       {/* Header */}
       <div style={{ background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 100%)`, padding: "52px 24px 32px" }}>
-        <button
-          onClick={() => navigate("home")}
-          style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 10, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 20 }}
-        >
-          <ArrowLeft size={16} color="#fff" />
-          <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem" }}>Back</span>
-        </button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <button
+            onClick={() => navigate("home")}
+            style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 10, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <ArrowLeft size={16} color="#fff" />
+            <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem" }}>Back</span>
+          </button>
+          <button
+            onClick={() => signOutAdmin()}
+            style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 10, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <LogOut size={16} color="#fff" />
+            <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem" }}>Sign Out</span>
+          </button>
+        </div>
         <p style={{ color: GOLD, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", marginBottom: 8 }}>🔒 ADMIN PANEL</p>
         <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "2rem", fontWeight: 900, color: "#fff", lineHeight: 1.15 }}>Hotel Manager</h1>
         <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.85rem", marginTop: 8 }}>

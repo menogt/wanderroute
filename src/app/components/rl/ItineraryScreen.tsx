@@ -13,6 +13,7 @@ import { createColorMarker, createNumberMarker } from "./leafletSetup";
 import { useFoursquareGeocoding } from "../../hooks/useFoursquareGeocoding";
 import { extractPlaceName } from "./placeExtractor";
 import { getGeoCacheStats } from "./geocoder";
+import { fetchRoadRoute } from "../../lib/osrmRoute";
 
 const NAVY = "#0B1340";
 const GOLD = "#C9A227";
@@ -104,6 +105,25 @@ function RouteMap({ cities, days, onDaySelect }: {
     .map(getCityCoords)
     .filter(Boolean) as [number, number][];
 
+  // Real driving-route geometry from OSRM, once it loads. Until then (or if
+  // the free public OSRM server fails/times out) we fall back to the
+  // straight dashed line — same "static fallback" philosophy used for the
+  // AI itinerary generator elsewhere in this app.
+  const [roadRoute, setRoadRoute] = useState<[number, number][] | null>(null);
+  const cityKey = cities.join("|");
+
+  useEffect(() => {
+    let cancelled = false;
+    setRoadRoute(null); // reset when the route changes (new trip generated)
+    if (positions.length >= 2) {
+      fetchRoadRoute(positions).then((route) => {
+        if (!cancelled) setRoadRoute(route);
+      });
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityKey]);
+
   if (positions.length < 2) return null;
 
   // Find which day(s) are spent in each city
@@ -130,10 +150,15 @@ function RouteMap({ cities, days, onDaySelect }: {
         />
         <FitBounds positions={positions} />
 
-        {/* Dashed route polyline */}
+        {/* Real driving route once OSRM loads; dashed straight line while
+            loading or if the free OSRM server is unavailable. */}
         <Polyline
-          positions={positions}
-          pathOptions={{ color: "#C9A227", weight: 2.5, dashArray: "6 5", opacity: 0.8 }}
+          positions={roadRoute || positions}
+          pathOptions={
+            roadRoute
+              ? { color: "#C9A227", weight: 3, opacity: 0.85 }
+              : { color: "#C9A227", weight: 2.5, dashArray: "6 5", opacity: 0.8 }
+          }
         />
 
         {/* City markers */}
@@ -219,6 +244,25 @@ function DayActivityMap({ day, city }: { day: DayPlan; city: string }) {
     ...(hotelCoords ? [hotelCoords] : []),
   ];
 
+  // Real walking-route geometry from OSRM (foot profile), once it loads.
+  // Falls back to the straight dashed line while loading or if it fails —
+  // same pattern as the main city-to-city route map.
+  const walkPositions = locatedItems.map(x => x.coords);
+  const walkKey = walkPositions.map(([lat, lng]) => `${lat.toFixed(4)},${lng.toFixed(4)}`).join(";");
+  const [walkRoute, setWalkRoute] = useState<[number, number][] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWalkRoute(null);
+    if (walkPositions.length >= 2) {
+      fetchRoadRoute(walkPositions, "foot").then((route) => {
+        if (!cancelled) setWalkRoute(route);
+      });
+    }
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walkKey]);
+
   // Need at least 1 located point to show the map (or still loading).
   if (allCoords.length === 0 && !loading) return null;
 
@@ -266,11 +310,17 @@ function DayActivityMap({ day, city }: { day: DayPlan; city: string }) {
           >
             <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
 
-            {/* Route line connecting activity pins in order */}
+            {/* Route line connecting activity pins in order — real walking
+                route once OSRM loads, straight dashed line while loading
+                or as a fallback. */}
             {locatedItems.length >= 2 && (
               <Polyline
-                positions={locatedItems.map(x => x.coords)}
-                pathOptions={{ color: "#C9A227", weight: 2, dashArray: "4 4", opacity: 0.7 }}
+                positions={walkRoute || locatedItems.map(x => x.coords)}
+                pathOptions={
+                  walkRoute
+                    ? { color: "#C9A227", weight: 2.5, opacity: 0.75 }
+                    : { color: "#C9A227", weight: 2, dashArray: "4 4", opacity: 0.7 }
+                }
               />
             )}
 

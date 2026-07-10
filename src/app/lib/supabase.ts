@@ -20,6 +20,7 @@ export type DbPlace = {
   price_usd?: number;
   stars?: number;
   rating?: number;
+  importance_score?: number;
   description?: string;
   amenities?: string[];
   area?: string;

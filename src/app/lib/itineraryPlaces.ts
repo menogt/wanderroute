@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { TravelStyle } from "../components/rl/types";
+import { MUST_SEE } from "./curatedPlaces";
 
 // A sensible default city sequence per starting city for Sri Lanka.
 // Used to decide which cities' places to fetch BEFORE the AI runs.
@@ -45,6 +46,7 @@ export async function fetchPlacesForPrompt(
       .eq("city", city)
       .eq("category", "hotel")
       .eq("style", style)
+      .order("importance_score", { ascending: false })
       .order("rating", { ascending: false })
       .limit(5);
 
@@ -64,6 +66,7 @@ export async function fetchPlacesForPrompt(
       .select("name, category")
       .eq("city", city)
       .in("category", ["attraction", "temple", "beach"])
+      .order("importance_score", { ascending: false })
       .order("rating", { ascending: false })
       .limit(8);
 
@@ -73,13 +76,25 @@ export async function fetchPlacesForPrompt(
       .select("name")
       .eq("city", city)
       .eq("category", "restaurant")
+      .order("importance_score", { ascending: false })
       .order("rating", { ascending: false })
       .limit(5);
 
     const hotelNames = (hotels || []).map(h =>
       `${h.name}${h.price_usd ? ` (~$${h.price_usd}/night)` : ""}`
     ).join(", ");
-    const attractionNames = (attractions || []).map(a => a.name).join(", ");
+
+    // Must-see landmarks go first, then DB attractions ranked by importance_score,
+    // deduplicated case-insensitively so nothing shows up twice.
+    const seen = new Set<string>();
+    const combinedAttractions: string[] = [];
+    for (const name of [...(MUST_SEE[city] || []), ...(attractions || []).map(a => a.name)]) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      combinedAttractions.push(name);
+    }
+    const attractionNames = combinedAttractions.slice(0, 10).join(", ");
     const restaurantNames = (restaurants || []).map(r => r.name).join(", ");
 
     blocks.push(

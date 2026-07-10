@@ -25,6 +25,7 @@ export async function fetchPlaces(
     .select("*")
     .eq("city", city)
     .eq("category", category)
+    .order("importance_score", { ascending: false })
     .order("rating", { ascending: false })
     .limit(30);
 

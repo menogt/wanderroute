@@ -129,6 +129,34 @@ function buildQuery(bbox, selectors) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Score how "notable" a place likely is, using only signals free OSM data
+// actually has (there's no crowd rating in OSM). Each signal is a weak proxy
+// on its own, but together they push genuinely well-documented / significant
+// places above obscure ones with the same category tag.
+//   +3  has a Wikipedia or Wikidata link (strong notability signal)
+//   +2  tagged `historic` (landmark/heritage designation)
+//   +1  has a website / contact:website (established, maintained listing)
+//   +1  has a description
+//   +1  has a photo (image / wikimedia_commons tag)
+//   +1  has opening_hours (actively operating, not abandoned/defunct)
+//   +1  tourism=museum/theme_park/zoo/gallery (typically bigger draws)
+//   +stars  for hotels, official star rating adds directly to the score
+function computeImportance(tags, category) {
+  let score = 0;
+  if (tags.wikipedia || tags.wikidata) score += 3;
+  if (tags.historic) score += 2;
+  if (tags.website || tags["contact:website"]) score += 1;
+  if (tags.description || tags["description:en"]) score += 1;
+  if (tags.image || tags.wikimedia_commons) score += 1;
+  if (tags.opening_hours) score += 1;
+  if (["museum", "theme_park", "zoo", "gallery"].includes(tags.tourism)) score += 1;
+  if (category === "hotel") {
+    const stars = parseInt(tags.stars, 10);
+    if (Number.isFinite(stars)) score += stars;
+  }
+  return score;
+}
+
 // ── Map common OSM tags → our amenity chips ──────────────────────────────────
 function deriveAmenities(tags) {
   const out = [];
@@ -169,6 +197,7 @@ function toPlace(el, city, category) {
     stars: Number.isFinite(stars) ? stars : undefined,
     description: tags.description || tags["description:en"] || undefined,
     amenities: category === "hotel" ? deriveAmenities(tags) : undefined,
+    importance_score: computeImportance(tags, category),
     source: "overpass",
   };
 }
