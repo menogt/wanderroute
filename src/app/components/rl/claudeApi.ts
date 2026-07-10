@@ -40,6 +40,7 @@ IMPORTANT RULES:
 4. Include hidden costs tourists often miss (entry fees, tuk-tuk tips, etc.)
 5. Route must start from ${startCity} and flow logically across Sri Lanka
 6. Interests (${interests.join(", ")}) must shape which destinations and activities are included
+7. Keep each item's "detail" and "tip" fields concise (one short sentence each) — this keeps the response compact enough to complete for longer trips
 
 Respond ONLY with a valid JSON object. No markdown, no explanation, just raw JSON.
 
@@ -131,7 +132,10 @@ export async function generateItineraryWithAI(
           { role: "user", content: buildPrompt(inputs, placesText) },
         ],
         temperature: 0.7,
-        max_tokens: 4000,
+        // Raised from 4000 — longer trips (7-10+ days) need more room to finish
+        // the full JSON object. At 4000 the model was getting cut off mid-object
+        // on longer itineraries, producing truncated (and therefore unparsable) JSON.
+        max_tokens: 8000,
       }),
     });
 
@@ -150,8 +154,25 @@ export async function generateItineraryWithAI(
   const content: string = data?.choices?.[0]?.message?.content ?? "";
   if (!content) throw new Error("Groq returned an empty response.");
 
+  const finishReason = data?.choices?.[0]?.finish_reason;
+  if (finishReason === "length") {
+    console.warn(
+      "Groq response was cut off by the token limit (finish_reason: 'length'). " +
+      "The itinerary is likely truncated. Consider raising max_tokens further or " +
+      "reducing trip length/detail."
+    );
+  }
+
   let parsed: any;
-  try { parsed = JSON.parse(stripFences(content)); } catch { throw new Error("AI returned malformed JSON."); }
+  try {
+    parsed = JSON.parse(stripFences(content));
+  } catch (err) {
+    // Log the raw content so a failure is diagnosable immediately instead of
+    // silently falling back to the static itinerary with no visibility into why.
+    console.error("AI content that failed to parse as JSON:", content);
+    console.error("Parse error:", err);
+    throw new Error("AI returned malformed JSON.");
+  }
 
   const remaining = inputs.budget - (parsed.estimatedTotalCost ?? 0);
   const budgetStatus: GeneratedItinerary["budgetStatus"] =
