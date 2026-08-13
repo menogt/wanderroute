@@ -1,45 +1,17 @@
-import { useState } from "react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Compass } from "lucide-react";
+import { useState, type CSSProperties } from "react";
 import type { GeneratedItinerary, Screen } from "./types";
 import { CURRENCY_SYMBOLS } from "./data";
-import { useBreakpoint } from "../../hooks/useBreakpoint";
-
-const NAVY = "#0B1340";
-const GOLD = "#C9A227";
-const TEAL = "#0D9488";
-const GREEN = "#10B981";
+import "../../../styles/secondary-screens.css";
 
 const CATEGORIES = [
-  { key: "hotels" as const, label: "Accommodation", emoji: "🏨", color: NAVY },
-  { key: "food" as const, label: "Food & Dining", emoji: "🍛", color: GOLD },
-  { key: "transport" as const, label: "Transport", emoji: "🚌", color: "#6366F1" },
-  { key: "activities" as const, label: "Activities", emoji: "🎯", color: TEAL },
-  { key: "entryFees" as const, label: "Entry Fees", emoji: "🎟️", color: "#F59E0B" },
-  { key: "misc" as const, label: "Miscellaneous", emoji: "🧾", color: "#8B5CF6" },
+  { key: "hotels" as const, label: "Accommodation", short: "Stay", color: "var(--wr-ocean, #0B2742)" },
+  { key: "food" as const, label: "Food & dining", short: "Food", color: "var(--wr-gold, #D4A64A)" },
+  { key: "transport" as const, label: "Transport", short: "Move", color: "var(--wr-mist-deep, #7795A4)" },
+  { key: "activities" as const, label: "Activities", short: "See", color: "var(--wr-tea, #4F6F52)" },
+  { key: "entryFees" as const, label: "Entry fees", short: "Enter", color: "#A86F32" },
+  { key: "misc" as const, label: "Flexible costs", short: "Flex", color: "#68747D" },
 ];
-
-const SAVINGS_TIPS = [
-  { cat: "🏨 Hotels", tip: "Book guesthouses directly instead of OTAs — save 15–25% on most Ella and Kandy properties." },
-  { cat: "🚌 Transport", tip: "Local buses cost $0.50–3. The Colombo→Galle express bus is identical comfort to a private car at 5% of the cost." },
-  { cat: "🍛 Food", tip: "A full rice & curry plate at a local joint costs $1–2. Tourist restaurants charge $8–15 for the same food." },
-  { cat: "🎟️ Entry Fees", tip: "Sigiriya ($30) and Horton Plains ($20) are unavoidable. Budget accordingly. Temple of Tooth is just $6." },
-  { cat: "📱 Data", tip: "Dialog/Mobitel SIM with 20GB = ~$5 at the airport. Skip expensive Wi-Fi plans at hotels." },
-];
-
-const CustomTooltip = ({ active, payload }: any) => {
-  if (active && payload && payload.length) {
-    return (
-      <div style={{ background: "#fff", borderRadius: 12, padding: "10px 14px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)" }}>
-        <p style={{ color: NAVY, fontWeight: 700, fontSize: "0.85rem", margin: "0 0 2px" }}>{payload[0].name}</p>
-        <p style={{ color: payload[0].payload.color, fontWeight: 800, fontSize: "1rem", margin: 0 }}>
-          {payload[0].value}%
-        </p>
-      </div>
-    );
-  }
-  return null;
-};
 
 export function CostBreakdownScreen({
   itinerary,
@@ -51,219 +23,183 @@ export function CostBreakdownScreen({
   const [perPerson, setPerPerson] = useState(false);
   const sym = CURRENCY_SYMBOLS[itinerary.currency];
   const { costBreakdown, totalPeople } = itinerary;
-  const bp = useBreakpoint();
-  const isDesktop = bp === "desktop";
+  const total = Object.values(costBreakdown).reduce((sum, value) => sum + value, 0);
+  const remaining = itinerary.inputBudget - total;
+  const safePeople = Math.max(1, totalPeople);
+  const safeDays = Math.max(1, itinerary.totalDays);
+  const divisor = perPerson ? safePeople : 1;
 
-  const divisor = perPerson ? totalPeople : 1;
+  const categoryData = CATEGORIES.map((category) => {
+    const amount = costBreakdown[category.key];
+    return {
+      ...category,
+      amount,
+      percentage: total > 0 ? Math.round((amount / total) * 100) : 0,
+    };
+  });
 
-  const total = Object.values(costBreakdown).reduce((s, v) => s + v, 0);
-  const pieData = CATEGORIES.map((cat) => ({
-    name: cat.label,
-    value: Math.round((costBreakdown[cat.key] / total) * 100),
-    amount: Math.round(costBreakdown[cat.key] / divisor),
-    color: cat.color,
-    emoji: cat.emoji,
-  }));
+  const largestCategory = categoryData.reduce(
+    (largest, category) => category.amount > largest.amount ? category : largest,
+    categoryData[0],
+  );
+  const budgetPercentage = itinerary.inputBudget > 0
+    ? Math.round((total / itinerary.inputBudget) * 100)
+    : 0;
+  const meterWidth = Math.min(100, Math.max(0, budgetPercentage));
+
+  const status = {
+    great: { label: "Comfortably within budget", note: "There is room left for changes along the way." },
+    ok: { label: "Within budget", note: "The planned spend remains inside your total budget." },
+    tight: { label: "Close to budget", note: "Keep an eye on flexible costs while you travel." },
+    over: { label: "Over budget", note: "Review the largest categories before confirming the route." },
+  }[itinerary.budgetStatus];
+
+  const money = (value: number) => `${sym}${Math.round(Math.abs(value)).toLocaleString()}`;
+  const viewMoney = (value: number) => money(value / divisor);
 
   return (
-    <div style={{ background: "#EEF2FA", minHeight: "100vh" }}>
-      {/* Header */}
-      <div style={{ background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 100%)`, padding: "36px 24px 32px" }}>
-        <button
-          onClick={() => navigate("itinerary")}
-          style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 10, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 20 }}
-        >
-          <ArrowLeft size={16} color="#fff" />
-          <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem" }}>Back to Itinerary</span>
+    <main className="wr-screen wr-cost-screen">
+      <header className="wr-editorial-header wr-cost-header">
+        <button className="wr-back-button" onClick={() => navigate("itinerary")}>
+          <ArrowLeft aria-hidden="true" size={17} />
+          Back to itinerary
         </button>
-
-        <p style={{ color: GOLD, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", marginBottom: 8 }}>WHERE YOUR MONEY GOES</p>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "2rem", fontWeight: 900, color: "#fff", lineHeight: 1.15, marginBottom: 16 }}>
-          Cost Breakdown
-        </h1>
-
-        {/* Per person / Total toggle */}
-        <div style={{ display: "flex", background: "rgba(255,255,255,0.08)", borderRadius: 12, padding: 4 }}>
-          <button
-            onClick={() => setPerPerson(false)}
-            style={{
-              flex: 1, padding: "9px 0", borderRadius: 9, border: "none", cursor: "pointer",
-              fontWeight: 700, fontSize: "0.82rem", transition: "all 0.2s",
-              background: !perPerson ? "#fff" : "transparent",
-              color: !perPerson ? NAVY : "rgba(255,255,255,0.5)",
-            }}
-          >
-            Total ({sym}{Math.round(total).toLocaleString()})
-          </button>
-          <button
-            onClick={() => setPerPerson(true)}
-            style={{
-              flex: 1, padding: "9px 0", borderRadius: 9, border: "none", cursor: "pointer",
-              fontWeight: 700, fontSize: "0.82rem", transition: "all 0.2s",
-              background: perPerson ? "#fff" : "transparent",
-              color: perPerson ? NAVY : "rgba(255,255,255,0.5)",
-            }}
-          >
-            Per Person ({sym}{Math.round(total / totalPeople).toLocaleString()})
-          </button>
+        <div className="wr-header-grid">
+          <div>
+            <p className="wr-kicker">Travel budget · {itinerary.currency}</p>
+            <h1>See where your budget goes.</h1>
+          </div>
+          <p className="wr-header-intro">
+            A practical view of the estimated spend for {itinerary.totalDays} days and {safePeople}{" "}
+            {safePeople === 1 ? "traveller" : "travellers"}.
+          </p>
         </div>
-      </div>
+      </header>
 
-      <div style={{
-        padding: isDesktop ? "40px" : "24px",
-        display: isDesktop ? "grid" : "block",
-        gridTemplateColumns: isDesktop ? "1fr 1fr" : undefined,
-        gap: isDesktop ? 32 : undefined,
-        alignItems: isDesktop ? "flex-start" : undefined,
-      }}>
-        {/* Pie chart */}
-        <div style={{ background: "#fff", borderRadius: 20, padding: "24px 20px", boxShadow: "0 4px 20px rgba(11,19,64,0.07)", marginBottom: isDesktop ? 0 : 20 }}>
-          <p style={{ color: "#9CA3AF", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 4, textAlign: "center" }}>BUDGET DISTRIBUTION</p>
-          <div style={{ position: "relative" }}>
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={85}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={index} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-              </PieChart>
-            </ResponsiveContainer>
-            {/* Center label */}
-            <div style={{
-              position: "absolute", top: "50%", left: "50%",
-              transform: "translate(-50%, -50%)",
-              textAlign: "center", pointerEvents: "none",
-            }}>
-              <p style={{ color: NAVY, fontFamily: "'Playfair Display', serif", fontSize: "1.3rem", fontWeight: 900, margin: 0 }}>
-                {sym}{Math.round(total / divisor).toLocaleString()}
-              </p>
-              <p style={{ color: "#9CA3AF", fontSize: "0.65rem", margin: 0 }}>{perPerson ? "per person" : "total"}</p>
+      <div className="wr-secondary-shell wr-cost-shell">
+        <section className={`wr-budget-overview wr-budget-status-${itinerary.budgetStatus}`} aria-labelledby="budget-overview-title">
+          <div className="wr-budget-lead">
+            <p className="wr-section-index">01 · Route allowance</p>
+            <div className="wr-budget-title-row">
+              <h2 id="budget-overview-title">Estimated {perPerson ? "per-traveller" : "trip"} spend</h2>
+              <div className="wr-budget-view-toggle" role="group" aria-label="Cost view">
+                <button type="button" aria-pressed={!perPerson} onClick={() => setPerPerson(false)}>Trip total</button>
+                <button type="button" aria-pressed={perPerson} onClick={() => setPerPerson(true)}>Per traveller</button>
+              </div>
+            </div>
+            <p className="wr-budget-total">{viewMoney(total)}</p>
+            <div className="wr-budget-status-line">
+              <span className="wr-status-marker" aria-hidden="true" />
+              <strong>{status.label}</strong>
+              <span>{status.note}</span>
             </div>
           </div>
 
-          {/* Legend */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-            {pieData.map((item) => (
-              <div key={item.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 3, background: item.color, flexShrink: 0 }} />
-                <span style={{ color: "#6B7280", fontSize: "0.72rem" }}>{item.name}</span>
-                <span style={{ color: item.color, fontWeight: 700, fontSize: "0.72rem", marginLeft: "auto" }}>{item.value}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
+          <dl className="wr-budget-facts">
+            <div>
+              <dt>Total budget</dt>
+              <dd>{viewMoney(itinerary.inputBudget)}</dd>
+            </div>
+            <div>
+              <dt>{remaining >= 0 ? "Remaining" : "Over plan by"}</dt>
+              <dd>{viewMoney(remaining)}</dd>
+            </div>
+            <div>
+              <dt>Average per day</dt>
+              <dd>{viewMoney(total / safeDays)}</dd>
+            </div>
+            <div>
+              <dt>{perPerson ? "Full-trip total" : "Per traveller"}</dt>
+              <dd>{perPerson ? money(total) : money(total / safePeople)}</dd>
+            </div>
+          </dl>
 
-        {/* Right column: breakdown + savings */}
-        <div>
-        {/* Category breakdown rows */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
-          {CATEGORIES.map((cat) => {
-            const amount = Math.round(costBreakdown[cat.key] / divisor);
-            const pct = Math.round((costBreakdown[cat.key] / total) * 100);
-            return (
-              <div
-                key={cat.key}
-                style={{
-                  background: "#fff", borderRadius: 16, padding: "16px 18px",
-                  boxShadow: "0 2px 12px rgba(11,19,64,0.05)",
-                }}
+          <div className="wr-budget-meter-copy">
+            <span>{budgetPercentage}% of the total budget allocated</span>
+            <span>{viewMoney(total)} / {viewMoney(itinerary.inputBudget)}</span>
+          </div>
+          <div
+            className="wr-budget-meter"
+            role="progressbar"
+            aria-label="Share of total budget allocated"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.min(100, Math.max(0, budgetPercentage))}
+            aria-valuetext={`${budgetPercentage}% of budget allocated`}
+          >
+            <span style={{ "--wr-meter-width": `${meterWidth}%` } as CSSProperties} />
+          </div>
+        </section>
+
+        <section className="wr-cost-ledger" aria-labelledby="cost-ledger-title">
+          <div className="wr-section-heading">
+            <div>
+              <p className="wr-section-index">02 · Cost route</p>
+              <h2 id="cost-ledger-title">Planned categories</h2>
+            </div>
+            <p>Amounts are shown {perPerson ? "per traveller" : "for the full trip"}.</p>
+          </div>
+
+          <ol className="wr-cost-route-list">
+            {categoryData.map((category, index) => (
+              <li
+                key={category.key}
+                style={{ "--wr-category-color": category.color } as CSSProperties}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{
-                      width: 36, height: 36, borderRadius: 10,
-                      background: `${cat.color}12`,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "1.1rem",
-                    }}>
-                      {cat.emoji}
-                    </div>
+                <div className="wr-cost-route-marker" aria-hidden="true">
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                </div>
+                <div className="wr-cost-route-content">
+                  <div className="wr-cost-route-label">
                     <div>
-                      <p style={{ color: NAVY, fontWeight: 700, fontSize: "0.88rem", margin: "0 0 1px" }}>{cat.label}</p>
-                      <p style={{ color: "#9CA3AF", fontSize: "0.72rem", margin: 0 }}>
-                        {pct}% of total
-                      </p>
+                      <span className="wr-cost-short">{category.short}</span>
+                      <h3>{category.label}</h3>
+                    </div>
+                    <div className="wr-cost-amount">
+                      <strong>{viewMoney(category.amount)}</strong>
+                      <span>{category.percentage}%</span>
                     </div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <p style={{ color: NAVY, fontWeight: 800, fontFamily: "'Playfair Display', serif", fontSize: "1.1rem", margin: 0 }}>
-                      {sym}{amount.toLocaleString()}
-                    </p>
-                    {perPerson && (
-                      <p style={{ color: "#9CA3AF", fontSize: "0.68rem", margin: 0 }}>
-                        {sym}{Math.round(costBreakdown[cat.key]).toLocaleString()} total
-                      </p>
-                    )}
+                  <div
+                    className="wr-cost-track"
+                    role="progressbar"
+                    aria-label={`${category.label}: ${category.percentage}% of estimated spend`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={category.percentage}
+                  >
+                    <span style={{ "--wr-category-width": `${category.percentage}%` } as CSSProperties} />
                   </div>
                 </div>
-                {/* Progress bar */}
-                <div style={{ background: "rgba(11,19,64,0.06)", borderRadius: 100, height: 5, overflow: "hidden" }}>
-                  <div style={{
-                    height: "100%", borderRadius: 100,
-                    background: cat.color,
-                    width: `${pct}%`, transition: "width 0.6s ease",
-                  }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Daily average */}
-        <div style={{
-          background: `linear-gradient(135deg, ${TEAL}12, ${TEAL}05)`,
-          border: `1px solid ${TEAL}20`,
-          borderRadius: 16, padding: "16px 18px", marginBottom: 24,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-        }}>
-          <div>
-            <p style={{ color: "#6B7280", fontSize: "0.75rem", margin: "0 0 2px" }}>Daily average {perPerson ? "per person" : "total"}</p>
-            <p style={{ color: NAVY, fontWeight: 800, fontFamily: "'Playfair Display', serif", fontSize: "1.4rem", margin: 0 }}>
-              {sym}{Math.round(total / divisor / itinerary.totalDays).toLocaleString()}
-            </p>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <p style={{ color: "#6B7280", fontSize: "0.75rem", margin: "0 0 2px" }}>Vs. agency average</p>
-            <p style={{ color: GREEN, fontWeight: 700, fontSize: "0.9rem", margin: 0 }}>
-              Save ~25%
-            </p>
-          </div>
-        </div>
-
-        {/* Savings tips */}
-        <div style={{ background: "#fff", borderRadius: 20, padding: "20px", boxShadow: "0 4px 20px rgba(11,19,64,0.06)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-            <span style={{ fontSize: "1.1rem" }}>💰</span>
-            <h3 style={{ color: NAVY, fontWeight: 800, fontSize: "0.95rem", margin: 0 }}>Cost-Cutting Playbook</h3>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {SAVINGS_TIPS.map((tip, i) => (
-              <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <div style={{
-                  background: `${GOLD}15`, borderRadius: 8, padding: "4px 8px",
-                  fontSize: "0.75rem", fontWeight: 700, color: "#92400E", flexShrink: 0,
-                }}>
-                  {tip.cat}
-                </div>
-                <p style={{ color: "#4B5563", fontSize: "0.78rem", lineHeight: 1.5, margin: 0 }}>{tip.tip}</p>
-              </div>
+              </li>
             ))}
-          </div>
-        </div>
+          </ol>
+        </section>
 
-        <div style={{ height: 8 }} />
-        </div>{/* end right column */}
+        <aside className="wr-budget-notes" aria-labelledby="budget-notes-title">
+          <div className="wr-budget-notes-mark" aria-hidden="true">
+            <Compass size={20} />
+          </div>
+          <div>
+            <p className="wr-section-index">Budget notes</p>
+            <h2 id="budget-notes-title">Useful context for the road</h2>
+            <ul>
+              <li>
+                {largestCategory.label} is the largest planned category at {largestCategory.percentage}% ({money(largestCategory.amount)}).
+              </li>
+              <li>
+                The route averages {money(total / safeDays)} per day, or {money(total / safePeople / safeDays)} per traveller per day.
+              </li>
+              <li>
+                {remaining >= 0
+                  ? `${money(remaining)} is not allocated to the current estimate.`
+                  : `The current estimate is ${money(remaining)} above the entered budget.`}
+              </li>
+              <li>Keep receipts and leave room for price changes or optional stops during the trip.</li>
+            </ul>
+          </div>
+        </aside>
       </div>
-    </div>
+    </main>
   );
 }

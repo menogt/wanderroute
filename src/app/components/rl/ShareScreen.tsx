@@ -1,13 +1,18 @@
 import { useState } from "react";
-import { Check, Link, ArrowLeft, Download } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Check,
+  Copy,
+  Download,
+  Mail,
+  MessageCircle,
+  Share2,
+} from "lucide-react";
 import type { GeneratedItinerary, Screen } from "./types";
 import { CURRENCY_SYMBOLS } from "./data";
-import { useBreakpoint } from "../../hooks/useBreakpoint";
-
-const NAVY = "#0B1340";
-const GOLD = "#C9A227";
-const TEAL = "#0D9488";
-const GREEN = "#10B981";
+import { downloadItineraryPDF } from "./generatePDF";
+import "../../../styles/secondary-screens.css";
 
 export function ShareScreen({
   itinerary,
@@ -17,233 +22,206 @@ export function ShareScreen({
   navigate: (s: Screen) => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const sym = CURRENCY_SYMBOLS[itinerary.currency];
-  const bp = useBreakpoint();
-  const isDesktop = bp === "desktop";
 
-  const handleCopy = () => {
-    const text = `🇱🇰 My Sri Lanka Trip — ${itinerary.routeName}\n📍 ${itinerary.cities.join(" → ")}\n📅 ${itinerary.totalDays} days · ${itinerary.totalPeople} ${itinerary.totalPeople === 1 ? "person" : "people"}\n💰 Est. ${sym}${itinerary.estimatedTotalCost.toLocaleString()} total\n\nPlanned with RouteLanka.app`;
-    navigator.clipboard.writeText(text).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
+  const shareTitle = `My Sri Lanka trip — ${itinerary.routeName}`;
+  const shareText = [
+    shareTitle,
+    itinerary.cities.join(" → "),
+    `${itinerary.totalDays} days · ${itinerary.totalPeople} ${itinerary.totalPeople === 1 ? "traveller" : "travellers"}`,
+    `Estimated total: ${sym}${itinerary.estimatedTotalCost.toLocaleString()}`,
+    "Planned with WanderRoute",
+  ].join("\n");
+
+  const currentUrl = typeof window === "undefined" ? "" : window.location.href;
+  const canNativeShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  const clearFeedback = () => {
+    setMessage(null);
+    setError(null);
   };
 
-  const handleDownload = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  const copySummary = async () => {
+    clearFeedback();
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareText);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = shareText;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const didCopy = document.execCommand("copy");
+        textarea.remove();
+        if (!didCopy) throw new Error("Copy command unavailable");
+      }
+      setCopied(true);
+      setMessage("Trip summary copied.");
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setError("Could not copy the summary. Select the itinerary details and copy them manually.");
+    }
   };
 
-  const shareButtons = [
-    {
-      label: "WhatsApp",
-      emoji: "💬",
-      color: "#25D366",
-      textColor: "#fff",
-      action: () => {},
-    },
-    {
-      label: "Email",
-      emoji: "📧",
-      color: "#EA4335",
-      textColor: "#fff",
-      action: () => {},
-    },
-    {
-      label: "Copy Link",
-      emoji: copied ? "✅" : "🔗",
-      color: copied ? GREEN : NAVY,
-      textColor: "#fff",
-      action: handleCopy,
-    },
-    {
-      label: "Instagram",
-      emoji: "📸",
-      color: "#E1306C",
-      textColor: "#fff",
-      action: () => {},
-    },
-  ];
+  const shareOnWhatsApp = () => {
+    clearFeedback();
+    const payload = currentUrl ? `${shareText}\n\n${currentUrl}` : shareText;
+    window.open(`https://wa.me/?text=${encodeURIComponent(payload)}`, "_blank", "noopener,noreferrer");
+  };
+
+  const shareByEmail = () => {
+    clearFeedback();
+    const body = currentUrl ? `${shareText}\n\n${currentUrl}` : shareText;
+    window.location.href = `mailto:?subject=${encodeURIComponent(shareTitle)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const shareNatively = async () => {
+    clearFeedback();
+    try {
+      await navigator.share({ title: shareTitle, text: shareText, url: currentUrl || undefined });
+      setMessage("Share sheet opened.");
+    } catch (shareError) {
+      if (shareError instanceof DOMException && shareError.name === "AbortError") return;
+      setError("Sharing is unavailable right now. You can copy the trip summary instead.");
+    }
+  };
+
+  const handleDownload = async () => {
+    clearFeedback();
+    setPdfLoading(true);
+    try {
+      await downloadItineraryPDF(itinerary);
+      setMessage("Your PDF download has started.");
+    } catch {
+      setError("Could not create the PDF. Please try again.");
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   return (
-    <div style={{ background: "#EEF2FA", minHeight: "100vh" }}>
-      {/* Header */}
-      <div style={{ background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 100%)`, padding: "36px 24px 32px" }}>
-        <button
-          onClick={() => navigate("itinerary")}
-          style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 10, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 20 }}
-        >
-          <ArrowLeft size={16} color="#fff" />
-          <span style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.8rem" }}>Back</span>
+    <main className="wr-screen wr-share-screen">
+      <header className="wr-editorial-header wr-share-header">
+        <button className="wr-back-button" onClick={() => navigate("itinerary")}>
+          <ArrowLeft aria-hidden="true" size={17} />
+          Back to itinerary
         </button>
-
-        <p style={{ color: GOLD, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", marginBottom: 8 }}>SHARE YOUR TRIP</p>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "2rem", fontWeight: 900, color: "#fff", lineHeight: 1.15 }}>
-          Share Your<br />Itinerary
-        </h1>
-        <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.85rem", lineHeight: 1.6, marginTop: 10 }}>
-          Send your plan to travel buddies or save it for offline access.
-        </p>
-      </div>
-
-      <div style={{ padding: isDesktop ? "40px" : "24px", maxWidth: isDesktop ? 640 : undefined, margin: isDesktop ? "0 auto" : undefined }}>
-        {/* Trip preview card */}
-        <div style={{
-          background: "#fff", borderRadius: 24, overflow: "hidden",
-          boxShadow: "0 8px 32px rgba(11,19,64,0.12)",
-          marginBottom: 24,
-        }}>
-          {/* Card header with gradient */}
-          <div style={{
-            background: `linear-gradient(135deg, ${NAVY} 0%, #1D3560 50%, #0B4040 100%)`,
-            padding: "24px 22px", position: "relative", overflow: "hidden",
-          }}>
-            <div style={{ position: "absolute", top: -20, right: -20, width: 100, height: 100, borderRadius: "50%", background: "rgba(201,162,39,0.08)" }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
-              <div style={{ width: 26, height: 26, background: GOLD, borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.85rem" }}>🧭</div>
-              <span style={{ color: "#fff", fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: "1rem" }}>
-                Route<span style={{ color: GOLD }}>Lanka</span>
-              </span>
-            </div>
-
-            <h2 style={{ color: "#fff", fontFamily: "'Playfair Display', serif", fontWeight: 900, fontSize: "1.3rem", lineHeight: 1.2, marginBottom: 6 }}>
-              {itinerary.routeName}
-            </h2>
-            <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.78rem", marginBottom: 16 }}>
-              {itinerary.routeSlogan}
-            </p>
-
-            {/* Cities */}
-            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
-              {itinerary.cities.map((city, i) => (
-                <span key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <span style={{ color: "#fff", fontSize: "0.78rem", fontWeight: 600 }}>{city}</span>
-                  {i < itinerary.cities.length - 1 && (
-                    <span style={{ color: GOLD, fontSize: "0.8rem" }}>→</span>
-                  )}
-                </span>
-              ))}
-            </div>
+        <div className="wr-header-grid">
+          <div>
+            <p className="wr-kicker">Travel document</p>
+            <h1>Take the plan with you.</h1>
           </div>
-
-          {/* Card body */}
-          <div style={{ padding: "20px 22px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
-              {[
-                { label: "Duration", value: `${itinerary.totalDays} days`, icon: "📅" },
-                { label: "Travellers", value: `${itinerary.totalPeople} ${itinerary.totalPeople === 1 ? "person" : "people"}`, icon: "👥" },
-                { label: "Total Cost", value: `${sym}${itinerary.estimatedTotalCost.toLocaleString()}`, icon: "💰" },
-                { label: "Per Person", value: `${sym}${itinerary.estimatedCostPerPerson.toLocaleString()}`, icon: "🧍" },
-              ].map(({ label, value, icon }) => (
-                <div key={label} style={{
-                  background: "rgba(11,19,64,0.03)", borderRadius: 12, padding: "12px 14px",
-                }}>
-                  <div style={{ fontSize: "0.9rem", marginBottom: 4 }}>{icon}</div>
-                  <p style={{ color: "#9CA3AF", fontSize: "0.68rem", fontWeight: 600, margin: "0 0 2px" }}>{label}</p>
-                  <p style={{ color: NAVY, fontWeight: 800, fontSize: "0.9rem", margin: 0, fontFamily: "'Playfair Display', serif" }}>{value}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Highlights mini */}
-            <div style={{ borderTop: "1px solid rgba(11,19,64,0.06)", paddingTop: 16 }}>
-              <p style={{ color: "#9CA3AF", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.05em", marginBottom: 10 }}>HIGHLIGHTS</p>
-              {itinerary.highlights.slice(0, 2).map((h, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <div style={{ width: 5, height: 5, borderRadius: "50%", background: GOLD, flexShrink: 0 }} />
-                  <span style={{ color: "#4B5563", fontSize: "0.78rem" }}>{h}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* RouteLanka branding */}
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "center",
-              gap: 6, marginTop: 16, paddingTop: 14,
-              borderTop: "1px solid rgba(11,19,64,0.06)",
-            }}>
-              <span style={{ color: "#9CA3AF", fontSize: "0.72rem" }}>Generated by</span>
-              <span style={{ color: NAVY, fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: "0.85rem" }}>
-                Wander<span style={{ color: GOLD }}>Route</span>
-              </span>
-            </div>
-          </div>
+          <p className="wr-header-intro">
+            Download the complete itinerary or send a concise route summary to the people travelling with you.
+          </p>
         </div>
+      </header>
 
-        {/* Share options */}
-        <div style={{ background: "#fff", borderRadius: 20, padding: "20px", boxShadow: "0 4px 16px rgba(11,19,64,0.06)", marginBottom: 16 }}>
-          <p style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 16 }}>SHARE VIA</p>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {shareButtons.map(({ label, emoji, color, textColor, action }) => (
-              <button
-                key={label}
-                onClick={action}
-                style={{
-                  padding: "14px 16px", borderRadius: 14, border: "none", cursor: "pointer",
-                  background: color, color: textColor,
-                  fontWeight: 700, fontSize: "0.85rem",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  transition: "all 0.2s",
-                }}
-              >
-                <span style={{ fontSize: "1.1rem" }}>{emoji}</span>
-                {label}
-              </button>
+      <div className="wr-secondary-shell wr-share-shell">
+        <article className="wr-share-document" aria-labelledby="share-route-title">
+          <div className="wr-share-document-masthead">
+            <div className="wr-wordmark" aria-label="WanderRoute">
+              <span aria-hidden="true">WR</span>
+              <strong>WanderRoute</strong>
+            </div>
+            <span className="wr-document-code">TRIP · {String(itinerary.totalDays).padStart(2, "0")}D</span>
+          </div>
+
+          <div className="wr-share-document-title">
+            <p>Your Sri Lanka route</p>
+            <h2 id="share-route-title">{itinerary.routeName}</h2>
+            {itinerary.routeSlogan && <p className="wr-share-slogan">{itinerary.routeSlogan}</p>}
+          </div>
+
+          <ol className="wr-share-route" aria-label="Trip destinations">
+            {itinerary.cities.map((city, index) => (
+              <li key={`${city}-${index}`}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <strong>{city}</strong>
+              </li>
             ))}
+          </ol>
+
+          <dl className="wr-share-facts">
+            <div>
+              <dt>Duration</dt>
+              <dd>{itinerary.totalDays} days</dd>
+            </div>
+            <div>
+              <dt>Travellers</dt>
+              <dd>{itinerary.totalPeople}</dd>
+            </div>
+            <div>
+              <dt>Estimated total</dt>
+              <dd>{sym}{itinerary.estimatedTotalCost.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Per traveller</dt>
+              <dd>{sym}{itinerary.estimatedCostPerPerson.toLocaleString()}</dd>
+            </div>
+          </dl>
+
+          {itinerary.highlights.length > 0 && (
+            <div className="wr-share-highlights">
+              <p>Route highlights</p>
+              <ul>
+                {itinerary.highlights.slice(0, 3).map((highlight) => <li key={highlight}>{highlight}</li>)}
+              </ul>
+            </div>
+          )}
+        </article>
+
+        <aside className="wr-share-actions" aria-labelledby="share-actions-title">
+          <div>
+            <p className="wr-section-index">Share & save</p>
+            <h2 id="share-actions-title">Choose how to carry it.</h2>
+            <p>Shared messages contain the route summary shown here. The PDF contains the complete itinerary.</p>
           </div>
-        </div>
 
-        {/* Download / Save options */}
-        <div style={{ background: "#fff", borderRadius: 20, padding: "20px", boxShadow: "0 4px 16px rgba(11,19,64,0.06)", marginBottom: 24 }}>
-          <p style={{ color: "#9CA3AF", fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 16 }}>SAVE OFFLINE</p>
-
-          <button
-            onClick={handleDownload}
-            style={{
-              width: "100%", padding: "14px 16px", borderRadius: 14, border: "none", cursor: "pointer",
-              background: saved ? `${GREEN}15` : `${NAVY}06`,
-              color: saved ? GREEN : NAVY,
-              fontWeight: 700, fontSize: "0.88rem",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-              marginBottom: 10, outline: saved ? `1.5px solid ${GREEN}` : "none",
-              transition: "all 0.3s",
-            }}
-          >
-            {saved ? <Check size={16} /> : <Download size={16} />}
-            {saved ? "Saved to My Trips!" : "Download PDF"}
+          <button className="wr-download-button" onClick={handleDownload} disabled={pdfLoading}>
+            <Download aria-hidden="true" size={19} />
+            <span>
+              <strong>{pdfLoading ? "Preparing PDF…" : "Download itinerary PDF"}</strong>
+              <small>Save the complete travel plan</small>
+            </span>
           </button>
 
-          <button
-            onClick={handleCopy}
-            style={{
-              width: "100%", padding: "14px 16px", borderRadius: 14, cursor: "pointer",
-              background: "transparent",
-              color: "#6B7280",
-              fontWeight: 600, fontSize: "0.85rem",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
-              border: "1px solid rgba(11,19,64,0.1)",
-            }}
-          >
-            {copied ? <Check size={16} color={GREEN} /> : <Link size={16} />}
-            {copied ? "Link copied!" : "Copy trip summary"}
+          <div className="wr-share-action-grid">
+            <button onClick={shareOnWhatsApp}>
+              <MessageCircle aria-hidden="true" size={18} />
+              WhatsApp
+            </button>
+            <button onClick={shareByEmail}>
+              <Mail aria-hidden="true" size={18} />
+              Email
+            </button>
+            <button onClick={copySummary}>
+              {copied ? <Check aria-hidden="true" size={18} /> : <Copy aria-hidden="true" size={18} />}
+              {copied ? "Copied" : "Copy summary"}
+            </button>
+            {canNativeShare && (
+              <button onClick={shareNatively}>
+                <Share2 aria-hidden="true" size={18} />
+                More options
+              </button>
+            )}
+          </div>
+
+          <div className="wr-share-feedback" aria-live="polite" aria-atomic="true">
+            {message && <p className="wr-feedback-success"><Check aria-hidden="true" size={15} />{message}</p>}
+            {error && <p className="wr-feedback-error" role="alert"><AlertCircle aria-hidden="true" size={15} />{error}</p>}
+          </div>
+
+          <button className="wr-text-button" onClick={() => navigate("planner")}>
+            Plan another trip
           </button>
-        </div>
-
-        {/* Plan another trip */}
-        <button
-          onClick={() => navigate("planner")}
-          style={{
-            width: "100%", padding: "16px", borderRadius: 16, border: "none", cursor: "pointer",
-            background: `linear-gradient(135deg, ${GOLD}, #E8C547)`,
-            color: NAVY, fontWeight: 800, fontSize: "0.95rem",
-            boxShadow: "0 6px 20px rgba(201,162,39,0.3)",
-          }}
-        >
-          ✈️ Plan Another Trip
-        </button>
-
-        <div style={{ height: 8 }} />
+        </aside>
       </div>
-    </div>
+    </main>
   );
 }

@@ -1,13 +1,21 @@
-import { useState, useEffect } from "react";
-import { X, Trash2, MapPin, Calendar, Users, Wallet, Clock } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Bookmark,
+  CalendarDays,
+  Check,
+  Clock3,
+  Compass,
+  MapPin,
+  Trash2,
+  Users,
+  WalletCards,
+  X,
+} from "lucide-react";
 import type { GeneratedItinerary } from "./types";
 import { clearAllTrips, formatSavedDate } from "./tripStorage";
-import { loadTrips, deleteTrip } from "../../lib/tripsDb";
+import { deleteTrip, loadTrips } from "../../lib/tripsDb";
 import { CURRENCY_SYMBOLS } from "./data";
-
-const NAVY = "#0B1340";
-const GOLD = "#C9A227";
-const TEAL = "#0D9488";
+import "../../../styles/core-ui.css";
 
 export function TripsDrawer({
   isOpen,
@@ -22,264 +30,225 @@ export function TripsDrawer({
 }) {
   const [trips, setTrips] = useState<GeneratedItinerary[]>([]);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
 
-  // Reload trips whenever drawer opens — local first, then merged with Supabase
   useEffect(() => {
-    if (isOpen) {
-      setConfirmClear(false);
-      loadTrips().then(setTrips);
-    }
+    if (!isOpen) return;
+    let active = true;
+    setConfirmClear(false);
+    setLoading(true);
+    loadTrips()
+      .then((loaded) => {
+        if (active) setTrips(loaded);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [isOpen]);
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    await deleteTrip(id);
-    const updated = await loadTrips();
-    setTrips(updated);
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previousFocus?.focus?.();
+    };
+  }, [isOpen, onClose]);
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await deleteTrip(id);
+      const updated = await loadTrips();
+      setTrips(updated);
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const handleClearAll = async () => {
     if (confirmClear) {
-      // Remove the cloud copies for this device too, so they don't reappear on reopen.
-      await Promise.all(trips.map((t) => deleteTrip(t.id)));
-      clearAllTrips();
-      setTrips([]);
-      setConfirmClear(false);
-    } else {
-      setConfirmClear(true);
-      setTimeout(() => setConfirmClear(false), 3000);
+      setLoading(true);
+      try {
+        await Promise.all(trips.map((trip) => deleteTrip(trip.id)));
+        clearAllTrips();
+        setTrips([]);
+        setConfirmClear(false);
+      } finally {
+        setLoading(false);
+      }
+      return;
     }
+
+    setConfirmClear(true);
+    setTimeout(() => setConfirmClear(false), 3000);
   };
 
-  const sym = (trip: GeneratedItinerary) =>
-    CURRENCY_SYMBOLS[trip.currency] ?? "$";
-
-  const budgetColor = (status: string) => {
-    switch (status) {
-      case "great": return "#10B981";
-      case "ok":    return TEAL;
-      case "tight": return "#F59E0B";
-      case "over":  return "#EF4444";
-      default:      return TEAL;
-    }
+  const selectTrip = (trip: GeneratedItinerary) => {
+    onSelectTrip(trip);
+    onClose();
   };
+
+  const symbolFor = (trip: GeneratedItinerary) => CURRENCY_SYMBOLS[trip.currency] ?? "$";
 
   return (
     <>
-      {/* Backdrop */}
-      {isOpen && (
-        <div
-          onClick={onClose}
-          style={{
-            position: "fixed", inset: 0, zIndex: 200,
-            background: "rgba(11,19,64,0.5)",
-            backdropFilter: "blur(2px)",
-          }}
-        />
-      )}
+      <button
+        type="button"
+        className={`wr-trips-backdrop${isOpen ? " is-open" : ""}`}
+        onClick={onClose}
+        aria-label="Close saved trips"
+        tabIndex={isOpen ? 0 : -1}
+      />
 
-      {/* Drawer panel */}
-      <div
-        style={{
-          position: "fixed", top: 0, right: 0, bottom: 0,
-          width: "min(360px, 92vw)",
-          background: "#F8F9FD",
-          zIndex: 201,
-          transform: isOpen ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-          display: "flex", flexDirection: "column",
-          boxShadow: "-8px 0 40px rgba(11,19,64,0.15)",
-        }}
+      <aside
+        ref={panelRef}
+        className={`wr-trips${isOpen ? " is-open" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="saved-trips-title"
+        aria-hidden={!isOpen}
+        inert={!isOpen ? true : undefined}
       >
-        {/* Header */}
-        <div style={{
-          background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 100%)`,
-          padding: "52px 20px 24px",
-          flexShrink: 0,
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <div>
-              <p style={{ color: GOLD, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", marginBottom: 6 }}>
-                MY TRIPS
-              </p>
-              <h2 style={{
-                fontFamily: "'Playfair Display', serif",
-                fontSize: "1.6rem", fontWeight: 900,
-                color: "#fff", lineHeight: 1.15, margin: 0,
-              }}>
-                Saved Itineraries
-              </h2>
-              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.78rem", marginTop: 6, margin: 0 }}>
-                {trips.length} trip{trips.length !== 1 ? "s" : ""} saved
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              style={{
-                background: "rgba(255,255,255,0.1)", border: "none",
-                borderRadius: 10, padding: 8, cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}
-            >
-              <X size={18} color="#fff" />
-            </button>
+        <header className="wr-trips__header">
+          <div className="wr-trips__brandline">
+            <span className="wr-brand-mark" aria-hidden="true"><Compass size={17} /></span>
+            <span>WanderRoute atlas</span>
           </div>
-        </div>
+          <button
+            type="button"
+            ref={closeButtonRef}
+            className="wr-trips__close"
+            onClick={onClose}
+            aria-label="Close saved trips"
+          >
+            <X size={19} aria-hidden="true" />
+          </button>
+          <div className="wr-trips__heading">
+            <p className="wr-kicker">Saved journeys</p>
+            <h2 id="saved-trips-title">Your travel atlas</h2>
+            <p>{loading ? "Loading your trips…" : `${trips.length} ${trips.length === 1 ? "route" : "routes"} saved on this device`}</p>
+          </div>
+        </header>
 
-        {/* Trip list */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-          {trips.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "60px 20px" }}>
-              <div style={{ fontSize: "3rem", marginBottom: 16 }}>🗺️</div>
-              <p style={{ color: NAVY, fontWeight: 700, fontSize: "1rem", marginBottom: 8 }}>
-                No saved trips yet
-              </p>
-              <p style={{ color: "#6B7280", fontSize: "0.85rem", lineHeight: 1.6 }}>
-                Generate an itinerary and it will automatically appear here.
-              </p>
+        <div className="wr-trips__body" aria-live="polite" aria-busy={loading}>
+          {loading && trips.length === 0 ? (
+            <div className="wr-trips__loading" role="status">
+              <span className="wr-sr-only">Loading saved trips</span>
+              {[0, 1, 2].map((item) => <i key={item} />)}
+            </div>
+          ) : trips.length === 0 ? (
+            <div className="wr-trips__empty">
+              <span aria-hidden="true"><Bookmark size={25} strokeWidth={1.5} /></span>
+              <h3>No saved routes yet</h3>
+              <p>Your generated itinerary will appear here automatically, ready to reopen.</p>
             </div>
           ) : (
-            trips.map((trip) => {
-              const isActive = trip.id === currentTripId;
-              return (
-                <div
-                  key={trip.id}
-                  onClick={() => {
-                    onSelectTrip(trip);
-                    onClose();
-                  }}
-                  style={{
-                    background: "#fff",
-                    borderRadius: 16,
-                    marginBottom: 12,
-                    cursor: "pointer",
-                    border: isActive
-                      ? `2px solid ${GOLD}`
-                      : "2px solid transparent",
-                    boxShadow: isActive
-                      ? `0 4px 20px rgba(201,162,39,0.2)`
-                      : "0 2px 12px rgba(11,19,64,0.07)",
-                    overflow: "hidden",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  {/* Active indicator */}
-                  {isActive && (
-                    <div style={{
-                      background: GOLD,
-                      padding: "4px 12px",
-                      display: "flex", alignItems: "center", gap: 6,
-                    }}>
-                      <div style={{ width: 6, height: 6, borderRadius: "50%", background: NAVY }} />
-                      <span style={{ color: NAVY, fontSize: "0.65rem", fontWeight: 800 }}>
-                        CURRENTLY VIEWING
+            <div className="wr-trips__list">
+              {trips.map((trip, index) => {
+                const active = trip.id === currentTripId;
+                const deleting = deletingId === trip.id;
+                return (
+                  <article
+                    key={trip.id}
+                    className={`wr-trip-row wr-trip-row--${trip.budgetStatus}${active ? " is-active" : ""}`}
+                  >
+                    <button
+                      type="button"
+                      className="wr-trip-row__select"
+                      onClick={() => selectTrip(trip)}
+                      aria-label={`Open ${trip.routeName}, ${trip.totalDays} days, ${symbolFor(trip)}${trip.estimatedTotalCost.toLocaleString()}`}
+                      aria-current={active ? "true" : undefined}
+                    >
+                      <span className="wr-trip-row__number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                      <span className="wr-trip-row__main">
+                        <span className="wr-trip-row__titleline">
+                          <strong>{trip.routeName}</strong>
+                          {active && <small><Check size={11} aria-hidden="true" /> Viewing</small>}
+                        </span>
+                        <span className="wr-trip-row__cities">
+                          <MapPin size={13} strokeWidth={1.8} aria-hidden="true" />
+                          {trip.cities.join(" — ")}
+                        </span>
+                        <span className="wr-trip-row__meta">
+                          <span><CalendarDays size={13} aria-hidden="true" /> {trip.totalDays} days</span>
+                          <span><Users size={13} aria-hidden="true" /> {trip.totalPeople}</span>
+                          <span><WalletCards size={13} aria-hidden="true" /> {symbolFor(trip)}{trip.estimatedTotalCost.toLocaleString()}</span>
+                        </span>
                       </span>
-                    </div>
-                  )}
+                    </button>
 
-                  <div style={{ padding: "14px 16px" }}>
-                    {/* Route name + time */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                      <h3 style={{
-                        color: NAVY, fontFamily: "'Playfair Display', serif",
-                        fontWeight: 800, fontSize: "0.95rem",
-                        lineHeight: 1.3, flex: 1, paddingRight: 8, margin: 0,
-                      }}>
-                        {trip.routeName}
-                      </h3>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                        <Clock size={11} color="#9CA3AF" />
-                        <span style={{ color: "#9CA3AF", fontSize: "0.68rem" }}>
-                          {formatSavedDate(trip.id)}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Cities */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 10, flexWrap: "wrap" }}>
-                      <MapPin size={11} color={TEAL} />
-                      <span style={{ color: "#4B5563", fontSize: "0.75rem" }}>
-                        {trip.cities.join(" → ")}
-                      </span>
-                    </div>
-
-                    {/* Stats row */}
-                    <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <Calendar size={11} color="#9CA3AF" />
-                        <span style={{ color: "#6B7280", fontSize: "0.72rem" }}>
-                          {trip.totalDays} days
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <Users size={11} color="#9CA3AF" />
-                        <span style={{ color: "#6B7280", fontSize: "0.72rem" }}>
-                          {trip.totalPeople} {trip.totalPeople === 1 ? "person" : "people"}
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <Wallet size={11} color="#9CA3AF" />
-                        <span style={{ color: budgetColor(trip.budgetStatus), fontSize: "0.72rem", fontWeight: 700 }}>
-                          {sym(trip)}{trip.estimatedTotalCost.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Travel style badge + delete */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{
-                        background: "rgba(11,19,64,0.06)",
-                        color: NAVY, borderRadius: 100,
-                        padding: "3px 10px",
-                        fontSize: "0.68rem", fontWeight: 700,
-                        textTransform: "capitalize",
-                      }}>
-                        {trip.travelStyle === "budget" ? "🎒" : trip.travelStyle === "comfort" ? "✨" : "👑"} {trip.travelStyle}
-                      </span>
+                    <footer className="wr-trip-row__footer">
+                      <span className="wr-trip-row__date"><Clock3 size={12} aria-hidden="true" /> {formatSavedDate(trip.id)}</span>
+                      <span className="wr-trip-row__style">{trip.travelStyle}</span>
                       <button
-                        onClick={(e) => handleDelete(trip.id, e)}
-                        style={{
-                          background: "none", border: "none",
-                          cursor: "pointer", padding: "4px 6px",
-                          borderRadius: 6,
-                          color: "#D1D5DB",
-                          display: "flex", alignItems: "center",
-                        }}
+                        type="button"
+                        className="wr-trip-row__delete"
+                        onClick={() => handleDelete(trip.id)}
+                        disabled={deleting}
+                        aria-label={`Delete ${trip.routeName}`}
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={15} aria-hidden="true" />
                       </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
+                    </footer>
+                  </article>
+                );
+              })}
+            </div>
           )}
         </div>
 
-        {/* Footer */}
         {trips.length > 0 && (
-          <div style={{
-            padding: "12px 16px 24px",
-            borderTop: "1px solid rgba(11,19,64,0.07)",
-            flexShrink: 0,
-          }}>
+          <footer className="wr-trips__footer">
             <button
+              type="button"
+              className={confirmClear ? "is-confirming" : ""}
               onClick={handleClearAll}
-              style={{
-                width: "100%", padding: "10px",
-                borderRadius: 12, cursor: "pointer",
-                background: confirmClear ? "#FEE2E2" : "transparent",
-                color: confirmClear ? "#EF4444" : "#9CA3AF",
-                border: `1px solid ${confirmClear ? "#EF4444" : "rgba(11,19,64,0.1)"}`,
-                fontSize: "0.8rem", fontWeight: 600,
-                transition: "all 0.2s",
-              }}
+              disabled={loading}
             >
-              {confirmClear ? "Tap again to confirm clear all" : "Clear all trips"}
+              <Trash2 size={14} aria-hidden="true" />
+              {confirmClear ? "Select again to clear every trip" : "Clear all saved trips"}
             </button>
-          </div>
+            <p>Trips are also synced when cloud persistence is available.</p>
+          </footer>
         )}
-      </div>
+      </aside>
     </>
   );
 }

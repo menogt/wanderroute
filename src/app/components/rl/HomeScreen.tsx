@@ -1,49 +1,105 @@
-import { useState } from "react";
-import { ArrowRight, MapPin, Sparkles, Users, Clock, Star, ChevronRight, Zap, Compass } from "lucide-react";
-import { POPULAR_ROUTES } from "./data";
+import { useMemo, useState } from "react";
+import {
+  ArrowRight,
+  BedDouble,
+  CalendarDays,
+  Camera,
+  Check,
+  Compass,
+  Download,
+  FileText,
+  Landmark,
+  MapPinned,
+  Minus,
+  Mountain,
+  Navigation,
+  Plus,
+  Route,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  UtensilsCrossed,
+  WalletCards,
+  Waves,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import hillCountryImage from "../../../assets/wanderroute-hill-country.jpg";
+import { CURRENCY_SYMBOLS, POPULAR_ROUTES, generateItinerary } from "./data";
+import type { Interest, Screen, TravelStyle, TripInputs } from "./types";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
-import type { Screen } from "./types";
-
-const NAVY = "#0B1340";
-const GOLD = "#C9A227";
-const GOLD_LIGHT = "#E8C547";
-const TEAL = "#0D9488";
-
-const howItWorks = [
-  { icon: "💰", step: "01", title: "Set Your Budget", desc: "Enter your total trip budget and we crunch the numbers." },
-  { icon: "📅", step: "02", title: "Choose Your Trip", desc: "Pick duration, group size, interests & travel style." },
-  { icon: "🗺️", step: "03", title: "Get Your Itinerary", desc: "Instant day-by-day plan with real cost breakdowns." },
-];
-
-const stats = [
-  { value: "4,200+", label: "Trips Generated" },
-  { value: "98%", label: "Budget Accuracy" },
-  { value: "50+", label: "Sri Lanka Destinations" },
-  { value: "4.9 ★", label: "Traveller Rating" },
-];
-
-const testimonials = [
-  {
-    name: "Sarah M.", flag: "🇬🇧", rating: 5,
-    text: "Used WanderRoute for my solo trip. Saved over $200 vs what travel agents quoted. The hidden cost warnings alone were worth it.",
-  },
-  {
-    name: "Raj & Priya", flag: "🇮🇳", rating: 5,
-    text: "Honeymoon trip to Ella and Mirissa. The itinerary was spot-on — even the tuk-tuk prices were accurate!",
-  },
-];
+import "../../../styles/core-ui.css";
 
 const ADMIN_TAP_THRESHOLD = 5;
 const ADMIN_TAP_WINDOW_MS = 2500;
 
-export function HomeScreen({ navigate }: { navigate: (s: Screen) => void }) {
-  const bp = useBreakpoint();
-  const isDesktop = bp === "desktop";
-  const isTabletPlus = bp === "tablet" || bp === "desktop";
+const QUICK_DAYS = [5, 7, 10, 14];
+const QUICK_STARTS = ["Colombo", "Kandy", "Negombo", "Galle", "Sigiriya", "Ella"];
+const QUICK_INTERESTS: Array<{ key: Interest; label: string; icon: LucideIcon }> = [
+  { key: "beaches", label: "Beaches", icon: Waves },
+  { key: "culture", label: "Culture", icon: Landmark },
+  { key: "wildlife", label: "Wildlife", icon: Navigation },
+  { key: "hiking", label: "Hiking", icon: Mountain },
+  { key: "food", label: "Food", icon: UtensilsCrossed },
+  { key: "temples", label: "Temples", icon: Landmark },
+  { key: "adventure", label: "Adventure", icon: Compass },
+  { key: "photography", label: "Photography", icon: Camera },
+];
 
-  // Admin easter egg on mobile: tap logo 5× quickly
+const QUICK_STYLES: Array<{ key: TravelStyle; label: string }> = [
+  { key: "budget", label: "Budget" },
+  { key: "comfort", label: "Comfort" },
+  { key: "luxury", label: "Luxury" },
+];
+
+const STORY_STEPS = [
+  { number: "01", label: "Set a real budget", icon: WalletCards },
+  { number: "02", label: "Build a connected route", icon: Route },
+  { number: "03", label: "Follow each day", icon: CalendarDays },
+  { number: "04", label: "Take the plan offline", icon: Download },
+];
+
+export function HomeScreen({
+  navigate,
+  onGenerate,
+}: {
+  navigate: (s: Screen) => void;
+  onGenerate?: (inputs: TripInputs) => void;
+}) {
+  const bp = useBreakpoint();
   const [tapCount, setTapCount] = useState(0);
   const [tapTimer, setTapTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [budget, setBudget] = useState(800);
+  const [days, setDays] = useState(7);
+  const [people, setPeople] = useState(2);
+  const [startCity, setStartCity] = useState("Colombo");
+  const [interests, setInterests] = useState<Interest[]>(["beaches", "culture"]);
+  const [travelStyle, setTravelStyle] = useState<TravelStyle>("comfort");
+
+  const quickInputs: TripInputs = {
+    budget,
+    currency: "USD",
+    days,
+    people,
+    startCity,
+    interests,
+    travelStyle,
+  };
+
+  const preview = useMemo(
+    () => generateItinerary(quickInputs),
+    [budget, days, people, startCity, interests, travelStyle]
+  );
+  const previewDay = preview.days[0];
+  const breakdownTotal = Object.values(preview.costBreakdown).reduce((sum, value) => sum + value, 0);
+  const currencySymbol = CURRENCY_SYMBOLS[preview.currency];
+
+  const budgetRows = [
+    { label: "Accommodation", value: preview.costBreakdown.hotels, tone: "navy" },
+    { label: "Food", value: preview.costBreakdown.food, tone: "gold" },
+    { label: "Transport", value: preview.costBreakdown.transport, tone: "blue" },
+    { label: "Activities", value: preview.costBreakdown.activities, tone: "tea" },
+    { label: "Entry fees & misc.", value: preview.costBreakdown.entryFees + preview.costBreakdown.misc, tone: "sand" },
+  ];
 
   const handleLogoTap = () => {
     if (bp !== "mobile") return;
@@ -60,352 +116,416 @@ export function HomeScreen({ navigate }: { navigate: (s: Screen) => void }) {
     setTapTimer(timer);
   };
 
-  const sectionPadding = isDesktop ? "80px 0 0" : "36px 0 0";
-  const innerPad = isDesktop ? "0 40px" : "0 24px";
-  const h1Size = isDesktop ? "3rem" : "2.4rem";
+  const toggleQuickInterest = (interest: Interest) => {
+    setInterests((current) =>
+      current.includes(interest)
+        ? current.filter((item) => item !== interest)
+        : [...current, interest]
+    );
+  };
+
+  const handleQuickGenerate = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (interests.length === 0 || budget <= 0) return;
+    if (onGenerate) {
+      onGenerate(quickInputs);
+      return;
+    }
+    navigate("planner");
+  };
 
   return (
-    <div style={{ background: "#EEF2FA", minHeight: "100vh" }}>
-      {/* ── Hero ── */}
-      <div style={{
-        background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 45%, #0B3D3A 100%)`,
-        padding: isDesktop ? "0 0 60px" : "0 0 40px",
-        position: "relative", overflow: "hidden",
-      }}>
-        {/* Decorative circles */}
-        <div style={{ position: "absolute", top: -60, right: -60, width: 220, height: 220, borderRadius: "50%", background: "rgba(201,162,39,0.06)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", top: 80, right: -30, width: 120, height: 120, borderRadius: "50%", background: "rgba(13,148,136,0.08)", pointerEvents: "none" }} />
-        <div style={{ position: "absolute", bottom: -20, left: -40, width: 180, height: 180, borderRadius: "50%", background: "rgba(201,162,39,0.04)", pointerEvents: "none" }} />
+    <main className="wr-home">
+      <header className="wr-home-hero">
+        <img
+          className="wr-home-hero__image"
+          src={hillCountryImage}
+          alt="A train crossing Sri Lanka's green central highlands"
+        />
+        <div className="wr-home-hero__wash" aria-hidden="true" />
 
-        {/* Mobile header bar (hidden on tablet+ where TopNav takes over) */}
-        {!isTabletPlus && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px 0" }}>
-            <button
-              onClick={handleLogoTap}
-              style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", cursor: "pointer" }}
-            >
-              <div style={{ width: 32, height: 32, background: GOLD, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Compass size={16} color={NAVY} strokeWidth={2.5} />
-              </div>
-              <span style={{ color: "#fff", fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: "1.2rem" }}>
-                Wander<span style={{ color: GOLD }}>Route</span>
-              </span>
-            </button>
-            <button
-              onClick={() => navigate("routes")}
-              style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.8rem", fontWeight: 600, background: "none", border: "none", cursor: "pointer" }}
-            >
-              View Routes
-            </button>
-          </div>
-        )}
+        <div className="wr-home-mobilebar">
+          <button
+            type="button"
+            className="wr-home-mobilebar__brand"
+            onClick={handleLogoTap}
+            aria-label="WanderRoute"
+          >
+            <span className="wr-brand-mark" aria-hidden="true"><Compass size={17} /></span>
+            <span>Wander<strong>Route</strong></span>
+          </button>
+          <button type="button" onClick={() => navigate("routes")}>Routes</button>
+        </div>
 
-        {/* Hero content — two columns at desktop */}
-        <div style={{
-          padding: isDesktop ? "60px 40px 0" : "40px 24px 0",
-          display: isDesktop ? "grid" : "block",
-          gridTemplateColumns: isDesktop ? "1fr 420px" : undefined,
-          gap: isDesktop ? 48 : undefined,
-          maxWidth: isDesktop ? 1200 : undefined,
-          margin: isDesktop ? "0 auto" : undefined,
-        }}>
-          {/* Left: text + CTA */}
-          <div>
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 6,
-              background: "rgba(201,162,39,0.15)", borderRadius: 100,
-              padding: "5px 12px", marginBottom: 20,
-            }}>
-              <Sparkles size={12} color={GOLD} />
-              <span style={{ color: GOLD, fontSize: "0.72rem", fontWeight: 700, letterSpacing: "0.05em" }}>AI-POWERED TRIP PLANNER</span>
+        <div className="wr-home-hero__content">
+          <div className="wr-home-hero__copy">
+            <p className="wr-kicker">The living Sri Lanka atlas</p>
+            <h1>Plan Sri Lanka around your real budget.</h1>
+            <p className="wr-home-hero__lead">
+              Build a personalised day-by-day route with realistic local costs, places to stay and roads you can actually follow.
+            </p>
+            <div className="wr-home-hero__actions">
+              <button
+                type="button"
+                className="wr-button wr-button--gold"
+                onClick={() => navigate("planner")}
+              >
+                Plan My Free Trip
+                <ArrowRight size={17} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="wr-button wr-button--glass"
+                onClick={() => navigate("routes")}
+              >
+                Explore a Sample Route
+              </button>
             </div>
-
-            <h1 style={{
-              fontFamily: "'Playfair Display', serif",
-              fontSize: h1Size, fontWeight: 900,
-              color: "#fff", lineHeight: 1.1,
-              marginBottom: 16,
-            }}>
-              Your Perfect<br />
-              Sri Lanka Trip,<br />
-              <span style={{ color: GOLD }}>Planned in 60s</span>
-            </h1>
-
-            <p style={{ color: "rgba(255,255,255,0.65)", fontSize: isDesktop ? "1rem" : "0.95rem", lineHeight: 1.6, marginBottom: 32, maxWidth: 420 }}>
-              Enter your budget & trip length. We generate a real day-by-day itinerary with honest cost breakdowns — no hidden fees, no agent markup.
-            </p>
-
-            <button
-              onClick={() => navigate("planner")}
-              style={{
-                background: `linear-gradient(135deg, ${GOLD} 0%, ${GOLD_LIGHT} 100%)`,
-                color: NAVY, fontWeight: 800, fontSize: "1rem",
-                border: "none", borderRadius: 14, padding: "16px 28px",
-                display: "flex", alignItems: "center", gap: 10,
-                cursor: "pointer",
-                width: isDesktop ? "auto" : "100%",
-                boxShadow: "0 8px 32px rgba(201,162,39,0.35)",
-              }}
-            >
-              <Zap size={18} fill={NAVY} />
-              Plan My Sri Lanka Trip
-              <ArrowRight size={18} style={{ marginLeft: isDesktop ? 24 : "auto" }} />
-            </button>
-
-            <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.75rem", textAlign: isDesktop ? "left" : "center", marginTop: 12 }}>
-              Free · No signup required · Instant results
+            <p className="wr-home-hero__assurance">
+              <Check size={14} aria-hidden="true" />
+              Free to use · No account required
             </p>
           </div>
 
-          {/* Right: decorative stats card (desktop only) */}
-          {isDesktop && (
-            <div style={{
-              background: "rgba(255,255,255,0.07)", borderRadius: 24,
-              border: "1px solid rgba(255,255,255,0.12)",
-              padding: "32px", display: "flex", flexDirection: "column", gap: 16,
-              backdropFilter: "blur(10px)",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 36, height: 36, background: GOLD, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ fontSize: "1.2rem" }}>🇱🇰</span>
-                </div>
-                <div>
-                  <p style={{ color: "#fff", fontWeight: 700, fontSize: "0.9rem", margin: 0 }}>WanderRoute AI</p>
-                  <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.75rem", margin: 0 }}>Sri Lanka trip planner</p>
-                </div>
-              </div>
-
-              {[
-                { emoji: "✅", title: "Colombo → Kandy → Ella", sub: "7 days · 2 people · Budget" },
-                { emoji: "📍", title: "9 Arch Bridge, Ella", sub: "Train crossing at 3:47pm" },
-                { emoji: "💰", title: "Estimated total: $640", sub: "Within your $800 budget" },
-                { emoji: "⭐", title: "4 hidden gems included", sub: "Local tips no agency shares" },
-              ].map((item, i) => (
-                <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "12px", background: "rgba(255,255,255,0.06)", borderRadius: 12 }}>
-                  <span style={{ fontSize: "1.1rem" }}>{item.emoji}</span>
-                  <div>
-                    <p style={{ color: "#fff", fontWeight: 600, fontSize: "0.83rem", margin: "0 0 2px" }}>{item.title}</p>
-                    <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.72rem", margin: 0 }}>{item.sub}</p>
-                  </div>
-                </div>
+          <div className="wr-home-hero__preview" aria-label="Live route preview">
+            <div className="wr-home-hero__preview-head">
+              <span><Sparkles size={14} aria-hidden="true" /> Route preview</span>
+              <small>{preview.totalDays} days</small>
+            </div>
+            <h2>{preview.routeName}</h2>
+            <div className="wr-home-hero__route">
+              {preview.cities.map((city, index) => (
+                <span key={city}>
+                  <i className={index === 0 ? "is-start" : index === preview.cities.length - 1 ? "is-end" : ""} />
+                  <b>{city}</b>
+                </span>
               ))}
             </div>
-          )}
+            <div className="wr-home-hero__preview-meta">
+              <span><Users size={15} aria-hidden="true" /> {preview.totalPeople}</span>
+              <span><WalletCards size={15} aria-hidden="true" /> {currencySymbol}{preview.estimatedTotalCost.toLocaleString()}</span>
+              <span><Navigation size={15} aria-hidden="true" /> {preview.travelStyle}</span>
+            </div>
+          </div>
         </div>
 
-        {/* Stats bar */}
-        <div style={{
-          display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0,
-          margin: isDesktop ? "40px auto 0" : "32px 24px 0",
-          maxWidth: isDesktop ? 1200 : undefined,
-          paddingLeft: isDesktop ? 40 : 0, paddingRight: isDesktop ? 40 : 0,
-        }}>
-          <div style={{
-            gridColumn: "1 / -1",
-            display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0,
-            background: "rgba(255,255,255,0.06)", borderRadius: 16, padding: "16px 0",
-            border: "1px solid rgba(255,255,255,0.08)",
-          }}>
-            {stats.map((s, i) => (
-              <div key={i} style={{ textAlign: "center", padding: "0 8px", borderRight: i < 3 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
-                <div style={{ color: GOLD, fontWeight: 800, fontSize: isDesktop ? "1.3rem" : "1.1rem", fontFamily: "'Playfair Display', serif" }}>{s.value}</div>
-                <div style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.65rem", marginTop: 2, lineHeight: 1.3 }}>{s.label}</div>
+        <span className="wr-coordinates wr-home-hero__coordinates" aria-hidden="true">
+          Central Highlands · 06.8667° N · 81.0466° E
+        </span>
+      </header>
+
+      <section className="wr-quick" id="quick-planner" aria-labelledby="quick-planner-title">
+        <div className="wr-quick__intro">
+          <p className="wr-kicker">Quick planner</p>
+          <h2 id="quick-planner-title">Start with the choices that change the route.</h2>
+          <p>Use the short form here, or open the full planner for more guidance at every step.</p>
+        </div>
+
+        <form className="wr-quick__form" onSubmit={handleQuickGenerate}>
+          <div className="wr-quick__primary-fields">
+            <label className="wr-quick__budget" htmlFor="quick-budget">
+              <span>Total budget</span>
+              <span className="wr-quick__budget-control">
+                <b aria-hidden="true">$</b>
+                <input
+                  id="quick-budget"
+                  type="number"
+                  min="1"
+                  inputMode="decimal"
+                  value={budget}
+                  onChange={(event) => setBudget(Math.max(0, Number(event.target.value)))}
+                />
+                <small>USD</small>
+              </span>
+            </label>
+
+            <label>
+              <span>Duration</span>
+              <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
+                {QUICK_DAYS.map((item) => <option key={item} value={item}>{item} days</option>)}
+              </select>
+            </label>
+
+            <label>
+              <span>Start in</span>
+              <select value={startCity} onChange={(event) => setStartCity(event.target.value)}>
+                {QUICK_STARTS.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+
+            <fieldset className="wr-quick__people">
+              <legend>Travellers</legend>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setPeople(Math.max(1, people - 1))}
+                  disabled={people <= 1}
+                  aria-label="Remove one traveller"
+                ><Minus size={16} aria-hidden="true" /></button>
+                <output aria-live="polite">{people}</output>
+                <button
+                  type="button"
+                  onClick={() => setPeople(Math.min(12, people + 1))}
+                  disabled={people >= 12}
+                  aria-label="Add one traveller"
+                ><Plus size={16} aria-hidden="true" /></button>
+              </div>
+            </fieldset>
+          </div>
+
+          <fieldset className="wr-quick__options">
+            <legend>What should shape the trip?</legend>
+            <div>
+              {QUICK_INTERESTS.map(({ key, label, icon: Icon }) => {
+                const selected = interests.includes(key);
+                return (
+                  <button
+                    type="button"
+                    key={key}
+                    className={selected ? "is-selected" : ""}
+                    onClick={() => toggleQuickInterest(key)}
+                    aria-pressed={selected}
+                  >
+                    <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+
+          <div className="wr-quick__footer">
+            <fieldset className="wr-quick__style">
+              <legend>Travel style</legend>
+              <div>
+                {QUICK_STYLES.map(({ key, label }) => (
+                  <button
+                    type="button"
+                    key={key}
+                    className={travelStyle === key ? "is-selected" : ""}
+                    onClick={() => setTravelStyle(key)}
+                    aria-pressed={travelStyle === key}
+                  >{label}</button>
+                ))}
+              </div>
+            </fieldset>
+            <div className="wr-quick__submit-wrap">
+              {interests.length === 0 && <p role="alert">Choose at least one interest.</p>}
+              <button
+                type="submit"
+                className="wr-button wr-button--gold"
+                disabled={interests.length === 0 || budget <= 0}
+              >
+                Create My Route
+                <ArrowRight size={17} aria-hidden="true" />
+              </button>
+              <small>Free to use · No account required</small>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section className="wr-home-story" aria-labelledby="story-title">
+        <div className="wr-home-story__heading">
+          <p className="wr-kicker">From question to field guide</p>
+          <h2 id="story-title">A route you can understand before you travel.</h2>
+        </div>
+        <ol className="wr-home-story__line">
+          {STORY_STEPS.map(({ number, label, icon: Icon }) => (
+            <li key={number}>
+              <span className="wr-home-story__number">{number}</span>
+              <Icon size={22} strokeWidth={1.5} aria-hidden="true" />
+              <strong>{label}</strong>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section className="wr-home-itinerary" aria-labelledby="itinerary-preview-title">
+        <div className="wr-home-itinerary__route-panel">
+          <p className="wr-kicker">A connected journey</p>
+          <h2 id="itinerary-preview-title">{preview.routeName}</h2>
+          <p>{preview.routeSlogan}</p>
+          <div className="wr-atlas-route" aria-label={`Route through ${preview.cities.join(", ")}`}>
+            {preview.cities.map((city, index) => (
+              <div key={city}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <strong>{city}</strong>
+                {index < preview.cities.length - 1 && <i aria-hidden="true" />}
               </div>
             ))}
           </div>
-        </div>
-      </div>
-
-      {/* ── How It Works ── */}
-      <div style={{ padding: isDesktop ? "80px 40px 0" : "36px 24px 0", maxWidth: isDesktop ? 1280 : undefined, margin: isDesktop ? "0 auto" : undefined }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-          <h2 style={{ color: NAVY, fontFamily: "'Playfair Display', serif", fontSize: isDesktop ? "1.8rem" : "1.4rem", fontWeight: 800 }}>How It Works</h2>
-          <span style={{ color: TEAL, fontSize: "0.78rem", fontWeight: 700 }}>3 simple steps</span>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: isDesktop ? "row" : "column", gap: 16 }}>
-          {howItWorks.map((h, i) => (
-            <div
-              key={i}
-              style={{
-                flex: isDesktop ? 1 : undefined,
-                background: "#fff", borderRadius: 16, padding: isDesktop ? "28px 24px" : "18px 20px",
-                display: "flex", alignItems: "flex-start", gap: 16,
-                boxShadow: "0 2px 12px rgba(11,19,64,0.06)",
-                border: "1px solid rgba(11,19,64,0.05)",
-              }}
-            >
-              <div style={{
-                width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-                background: i === 0 ? "rgba(201,162,39,0.1)" : i === 1 ? "rgba(13,148,136,0.1)" : "rgba(11,19,64,0.06)",
-                display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem",
-              }}>
-                {h.icon}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ color: GOLD, fontSize: "0.7rem", fontWeight: 800, fontFamily: "JetBrains Mono, monospace" }}>{h.step}</span>
-                  <span style={{ color: NAVY, fontWeight: 700, fontSize: isDesktop ? "1rem" : "0.95rem" }}>{h.title}</span>
-                </div>
-                <p style={{ color: "#6B7280", fontSize: isDesktop ? "0.88rem" : "0.82rem", lineHeight: 1.5, margin: 0 }}>{h.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Popular Routes ── */}
-      <div style={{ padding: isDesktop ? "80px 0 0" : "36px 0 0" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: isDesktop ? "0 40px" : "0 24px", marginBottom: 16 }}>
-          <h2 style={{ color: NAVY, fontFamily: "'Playfair Display', serif", fontSize: isDesktop ? "1.8rem" : "1.4rem", fontWeight: 800 }}>Popular Routes</h2>
-          <button
-            onClick={() => navigate("routes")}
-            style={{ color: TEAL, fontSize: "0.8rem", fontWeight: 700, background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
-          >
-            See all <ChevronRight size={14} />
+          <button type="button" className="wr-text-link" onClick={() => navigate("routes")}>
+            Browse established routes <ArrowRight size={15} aria-hidden="true" />
           </button>
         </div>
 
-        {isTabletPlus ? (
-          /* Grid layout on tablet+ */
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: isDesktop ? "repeat(3, 1fr)" : "repeat(2, 1fr)",
-            gap: 16,
-            padding: isDesktop ? "0 40px" : "0 24px",
-            maxWidth: isDesktop ? 1280 : undefined,
-            margin: isDesktop ? "0 auto" : undefined,
-          }}>
-            {POPULAR_ROUTES.slice(0, isDesktop ? 6 : 4).map((route) => (
-              <div
-                key={route.key}
-                onClick={() => navigate("routes")}
-                style={{ borderRadius: 20, overflow: "hidden", cursor: "pointer", boxShadow: "0 4px 20px rgba(11,19,64,0.12)" }}
-              >
-                <div style={{ background: route.gradient, padding: "20px 18px 16px" }}>
-                  <div style={{ fontSize: "2rem", marginBottom: 8 }}>{route.image}</div>
-                  <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 4 }}>{route.type.toUpperCase()}</p>
-                  <h3 style={{ color: "#fff", fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: "1.1rem", lineHeight: 1.2, margin: 0 }}>{route.name}</h3>
-                </div>
-                <div style={{ background: "#fff", padding: "14px 18px" }}>
-                  <p style={{ color: "#6B7280", fontSize: "0.75rem", lineHeight: 1.5, marginBottom: 10 }}>{route.description}</p>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <span style={{ color: "#6B7280", fontSize: "0.72rem" }}>{route.duration} · </span>
-                      <span style={{ color: TEAL, fontWeight: 700, fontSize: "0.8rem" }}>From ${route.fromPrice}</span>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); navigate("planner"); }}
-                      style={{ background: GOLD, color: NAVY, border: "none", borderRadius: 8, padding: "5px 10px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer" }}
-                    >
-                      Plan →
-                    </button>
-                  </div>
-                </div>
+        {previewDay && (
+          <article className="wr-day-spread">
+            <header>
+              <span>Day {String(previewDay.day).padStart(2, "0")}</span>
+              <div>
+                <h3>{previewDay.city}</h3>
+                <p>{currencySymbol}{previewDay.dailyCostPerPerson.toLocaleString()} per person</p>
               </div>
-            ))}
-          </div>
-        ) : (
-          /* Horizontal scroll on mobile */
-          <div style={{ display: "flex", gap: 14, overflowX: "auto", padding: "0 24px 4px", scrollbarWidth: "none" }}>
-            {POPULAR_ROUTES.map((route) => (
-              <div
-                key={route.key}
-                onClick={() => navigate("routes")}
-                style={{ minWidth: 240, borderRadius: 20, overflow: "hidden", cursor: "pointer", boxShadow: "0 4px 20px rgba(11,19,64,0.15)", flexShrink: 0 }}
-              >
-                <div style={{ background: route.gradient, padding: "20px 18px 16px", position: "relative" }}>
-                  <div style={{ fontSize: "2rem", marginBottom: 8 }}>{route.image}</div>
-                  <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.68rem", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 4 }}>{route.type.toUpperCase()}</p>
-                  <h3 style={{ color: "#fff", fontFamily: "'Playfair Display', serif", fontWeight: 800, fontSize: "1.1rem", lineHeight: 1.2, margin: 0 }}>{route.name}</h3>
-                </div>
-                <div style={{ background: "#fff", padding: "12px 18px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 10, flexWrap: "nowrap", overflowX: "auto" }}>
-                    {route.cities.map((city, ci) => (
-                      <span key={ci} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ color: NAVY, fontSize: "0.72rem", fontWeight: 700, whiteSpace: "nowrap" }}>{city}</span>
-                        {ci < route.cities.length - 1 && (
-                          <svg width="16" height="8" viewBox="0 0 16 8" fill="none">
-                            <path d="M0 4h12M12 4L9 1.5M12 4L9 6.5" stroke={GOLD} strokeWidth="1.5" strokeLinecap="round" />
-                          </svg>
-                        )}
-                      </span>
-                    ))}
+            </header>
+            <ol>
+              {previewDay.items.slice(0, 4).map((item, index) => (
+                <li key={`${item.time}-${item.label}-${index}`}>
+                  <time>{item.time}</time>
+                  <span aria-hidden="true" />
+                  <div>
+                    <strong>{item.label}</strong>
+                    <p>{item.detail}</p>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <span style={{ color: "#6B7280", fontSize: "0.72rem" }}>{route.duration} · </span>
-                      <span style={{ color: TEAL, fontWeight: 700, fontSize: "0.8rem" }}>From ${route.fromPrice}</span>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); navigate("planner"); }}
-                      style={{ background: GOLD, color: NAVY, border: "none", borderRadius: 8, padding: "5px 10px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer" }}
-                    >
-                      Plan →
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+                  <b>{item.cost === 0 ? "Free" : `${currencySymbol}${item.cost}`}</b>
+                </li>
+              ))}
+            </ol>
+            <footer>
+              <BedDouble size={17} strokeWidth={1.7} aria-hidden="true" />
+              <span>
+                <small>Tonight</small>
+                <strong>{previewDay.accommodation}</strong>
+              </span>
+            </footer>
+          </article>
         )}
-      </div>
+      </section>
 
-      {/* ── Testimonials ── */}
-      <div style={{ padding: isDesktop ? "80px 40px 0" : "36px 24px 0", maxWidth: isDesktop ? 1280 : undefined, margin: isDesktop ? "0 auto" : undefined }}>
-        <h2 style={{ color: NAVY, fontFamily: "'Playfair Display', serif", fontSize: isDesktop ? "1.8rem" : "1.4rem", fontWeight: 800, marginBottom: 20 }}>
-          Real Travellers
-        </h2>
-        <div style={{ display: "flex", flexDirection: isDesktop ? "row" : "column", gap: 16 }}>
-          {testimonials.map((t, i) => (
-            <div key={i} style={{ flex: isDesktop ? 1 : undefined, background: "#fff", borderRadius: 16, padding: isDesktop ? "24px" : "18px 20px", boxShadow: "0 2px 12px rgba(11,19,64,0.05)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                <div style={{ width: 38, height: 38, borderRadius: "50%", background: `linear-gradient(135deg, ${NAVY}, ${TEAL})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem" }}>
-                  {t.flag}
-                </div>
-                <div>
-                  <div style={{ color: NAVY, fontWeight: 700, fontSize: "0.85rem" }}>{t.name}</div>
-                  <div style={{ display: "flex", gap: 2 }}>
-                    {Array.from({ length: t.rating }).map((_, ri) => (
-                      <Star key={ri} size={10} fill={GOLD} color={GOLD} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <p style={{ color: "#4B5563", fontSize: isDesktop ? "0.9rem" : "0.83rem", lineHeight: 1.6, margin: 0 }}>"{t.text}"</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Bottom CTA ── */}
-      <div style={{ padding: isDesktop ? "80px 40px 80px" : "36px 24px 36px", maxWidth: isDesktop ? 1280 : undefined, margin: isDesktop ? "0 auto" : undefined }}>
-        <div style={{
-          background: `linear-gradient(135deg, ${NAVY} 0%, #1D3560 100%)`,
-          borderRadius: 24, padding: isDesktop ? "48px 40px" : "32px 24px",
-          textAlign: "center", position: "relative", overflow: "hidden",
-        }}>
-          <div style={{ position: "absolute", top: -30, right: -30, width: 120, height: 120, borderRadius: "50%", background: "rgba(201,162,39,0.08)" }} />
-          <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🇱🇰</div>
-          <h3 style={{ color: "#fff", fontFamily: "'Playfair Display', serif", fontSize: isDesktop ? "2rem" : "1.5rem", fontWeight: 800, marginBottom: 10 }}>
-            Ready to Explore<br />Sri Lanka?
-          </h3>
-          <p style={{ color: "rgba(255,255,255,0.6)", fontSize: isDesktop ? "1rem" : "0.85rem", lineHeight: 1.6, marginBottom: 24 }}>
-            Join 4,200+ travellers who planned smarter with WanderRoute.
+      <section className="wr-home-budget" aria-labelledby="budget-preview-title">
+        <div className="wr-home-budget__copy">
+          <p className="wr-kicker">Cost intelligence</p>
+          <h2 id="budget-preview-title">See where the money goes — before it goes.</h2>
+          <p>
+            The estimate stays connected to the route, number of travellers and travel style you choose above.
           </p>
-          <button
-            onClick={() => navigate("planner")}
-            style={{
-              background: `linear-gradient(135deg, ${GOLD}, ${GOLD_LIGHT})`,
-              color: NAVY, fontWeight: 800, fontSize: "0.95rem",
-              border: "none", borderRadius: 12,
-              padding: "14px 48px", cursor: "pointer",
-            }}
-          >
-            Start Planning — It's Free
+          <dl>
+            <div>
+              <dt>Trip budget</dt>
+              <dd>{currencySymbol}{preview.inputBudget.toLocaleString()}</dd>
+            </div>
+            <div>
+              <dt>Route estimate</dt>
+              <dd>{currencySymbol}{preview.estimatedTotalCost.toLocaleString()}</dd>
+            </div>
+            <div className={preview.remainingBudget < 0 ? "is-over" : ""}>
+              <dt>{preview.remainingBudget < 0 ? "Over budget" : "Remaining"}</dt>
+              <dd>{currencySymbol}{Math.abs(preview.remainingBudget).toLocaleString()}</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="wr-home-budget__ledger" aria-label="Estimated cost categories">
+          {budgetRows.map(({ label, value, tone }) => {
+            const percent = breakdownTotal > 0 ? Math.round((value / breakdownTotal) * 100) : 0;
+            return (
+              <div key={label} className={`is-${tone}`}>
+                <span><strong>{label}</strong><small>{percent}%</small></span>
+                <i><b style={{ width: `${percent}%` }} /></i>
+                <output>{currencySymbol}{value.toLocaleString()}</output>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="wr-home-map" aria-labelledby="map-preview-title">
+        <div className="wr-home-map__visual" aria-hidden="true">
+          <span className="wr-map-ring wr-map-ring--one" />
+          <span className="wr-map-ring wr-map-ring--two" />
+          <div className="wr-home-map__path">
+            {preview.cities.slice(0, 4).map((city, index) => (
+              <span key={city} className={`is-${index + 1}`}>
+                <i>{index + 1}</i>
+                <b>{city}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="wr-home-map__copy">
+          <p className="wr-kicker">Roads you can follow</p>
+          <h2 id="map-preview-title">See the journey as a route, not a list.</h2>
+          <p>
+            Open the interactive atlas to explore destination markers, nearby stays and places along the way. Generated itineraries add road geometry when routing is available.
+          </p>
+          <button type="button" className="wr-button wr-button--outline-light" onClick={() => navigate("map")}>
+            <MapPinned size={17} aria-hidden="true" />
+            Open Interactive Map
           </button>
         </div>
-      </div>
-    </div>
+      </section>
+
+      <section className="wr-home-routes" aria-labelledby="route-library-title">
+        <div className="wr-home-routes__heading">
+          <div>
+            <p className="wr-kicker">Route library</p>
+            <h2 id="route-library-title">Start with a proven shape, then make it yours.</h2>
+          </div>
+          <button type="button" className="wr-text-link" onClick={() => navigate("routes")}>
+            View all routes <ArrowRight size={15} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="wr-home-routes__list">
+          {POPULAR_ROUTES.slice(0, 3).map((routeItem, index) => (
+            <article key={routeItem.key}>
+              <span className="wr-home-routes__index">{String(index + 1).padStart(2, "0")}</span>
+              <div>
+                <small>{routeItem.type} · {routeItem.duration}</small>
+                <h3>{routeItem.name}</h3>
+                <p>{routeItem.cities.join(" — ")}</p>
+              </div>
+              <button type="button" onClick={() => navigate("planner")} aria-label={`Plan the ${routeItem.name} route`}>
+                <ArrowRight size={17} aria-hidden="true" />
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="wr-home-pdf" aria-labelledby="pdf-preview-title">
+        <div className="wr-home-pdf__document" aria-hidden="true">
+          <div className="wr-home-pdf__document-head">
+            <Compass size={16} />
+            <span>WanderRoute</span>
+            <small>Travel plan</small>
+          </div>
+          <h3>{preview.routeName}</h3>
+          <p>{preview.cities.join(" · ")}</p>
+          <div className="wr-home-pdf__document-rule" />
+          <div className="wr-home-pdf__document-grid">
+            <span><small>Days</small><strong>{preview.totalDays}</strong></span>
+            <span><small>People</small><strong>{preview.totalPeople}</strong></span>
+            <span><small>Estimate</small><strong>{currencySymbol}{preview.estimatedTotalCost.toLocaleString()}</strong></span>
+          </div>
+          <div className="wr-home-pdf__document-lines"><i /><i /><i /><i /></div>
+        </div>
+        <div className="wr-home-pdf__copy">
+          <p className="wr-kicker">A plan that travels with you</p>
+          <h2 id="pdf-preview-title">Turn the itinerary into a practical travel document.</h2>
+          <p>
+            Your generated route, daily plan, costs and local tips can be downloaded as a PDF for offline reference.
+          </p>
+          <ul>
+            <li><FileText size={16} aria-hidden="true" /> Day-by-day schedule</li>
+            <li><WalletCards size={16} aria-hidden="true" /> Cost breakdown</li>
+            <li><ShieldCheck size={16} aria-hidden="true" /> Warnings and local tips</li>
+          </ul>
+        </div>
+      </section>
+
+      <section className="wr-home-final" aria-labelledby="final-cta-title">
+        <span className="wr-coordinates" aria-hidden="true">Your next pin · Sri Lanka</span>
+        <h2 id="final-cta-title">Start with the budget. Leave with the route.</h2>
+        <p>Build a Sri Lanka itinerary you can price, follow and take offline.</p>
+        <div>
+          <button type="button" className="wr-button wr-button--gold" onClick={() => navigate("planner")}>
+            Plan My Free Trip <ArrowRight size={17} aria-hidden="true" />
+          </button>
+          <button type="button" className="wr-button wr-button--glass" onClick={() => navigate("routes")}>
+            Explore a Sample Route
+          </button>
+        </div>
+      </section>
+    </main>
   );
 }

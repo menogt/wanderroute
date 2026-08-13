@@ -1,10 +1,22 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
-  ChevronDown, ChevronUp, Share2, BarChart2,
-  AlertTriangle, Lightbulb, Calendar, Users, Wallet, Download
+  AlertTriangle,
+  BarChart3,
+  BedDouble,
+  BusFront,
+  CalendarDays,
+  Download,
+  Landmark,
+  Lightbulb,
+  Map as MapIcon,
+  MapPin,
+  Share2,
+  UtensilsCrossed,
+  Users,
+  WalletCards,
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
-import type { GeneratedItinerary, DayPlan, DayItem, Screen } from "./types";
+import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
+import type { DayItem, DayPlan, GeneratedItinerary, Screen } from "./types";
 import { CURRENCY_SYMBOLS } from "./data";
 import { downloadItineraryPDF } from "./generatePDF";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
@@ -12,186 +24,137 @@ import { getCityCoords, MARKER_COLORS } from "./mapConfig";
 import { createColorMarker, createNumberMarker } from "./leafletSetup";
 import { useFoursquareGeocoding } from "../../hooks/useFoursquareGeocoding";
 import { extractPlaceName } from "./placeExtractor";
-import { getGeoCacheStats } from "./geocoder";
 import { fetchRoadRoute } from "../../lib/osrmRoute";
+import "../../../styles/itinerary-atlas.css";
 
-const NAVY = "#0B1340";
-const GOLD = "#C9A227";
-const TEAL = "#0D9488";
-const RED = "#EF4444";
-const GREEN = "#10B981";
-
-const CATEGORY_ICONS: Record<string, string> = {
-  transport: "🚌",
-  activity: "🎯",
-  meal: "🍽️",
-  accommodation: "🏨",
+const CATEGORY_META: Record<DayItem["category"], { label: string; color: string; icon: typeof BusFront }> = {
+  transport: { label: "Transport", color: "#477791", icon: BusFront },
+  activity: { label: "Activity", color: "#4F6F52", icon: Landmark },
+  meal: { label: "Meal", color: "#B96F42", icon: UtensilsCrossed },
+  accommodation: { label: "Stay", color: "#D4A64A", icon: BedDouble },
 };
-const CATEGORY_COLORS: Record<string, string> = {
-  transport: "#6366F1",
-  activity: TEAL,
-  meal: "#F59E0B",
-  accommodation: NAVY,
-};
-
-function BudgetMeter({
-  used, total, sym,
-}: { used: number; total: number; sym: string }) {
-  const pct = Math.min(100, (used / total) * 100);
-  const over = used > total;
-  const barColor = over ? RED : pct > 85 ? "#F59E0B" : GREEN;
-
-  return (
-    <div style={{ background: "#fff", borderRadius: 20, padding: "20px", boxShadow: "0 4px 20px rgba(11,19,64,0.08)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-        <div style={{ flex: 1 }}>
-          <p style={{ color: "#6B7280", fontSize: "0.75rem", fontWeight: 600, marginBottom: 4 }}>ESTIMATED TOTAL COST</p>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-            <span style={{
-              fontFamily: "'Playfair Display', serif", fontSize: "2rem", fontWeight: 900,
-              color: over ? RED : NAVY,
-            }}>
-              {sym}{used.toLocaleString()}
-            </span>
-            <span style={{ color: "#9CA3AF", fontSize: "0.85rem" }}>/ {sym}{total.toLocaleString()}</span>
-          </div>
-        </div>
-        <div style={{
-          background: over ? `${RED}15` : pct > 85 ? "#FEF3C7" : `${GREEN}15`,
-          borderRadius: 12, padding: "6px 12px",
-          textAlign: "center",
-        }}>
-          <p style={{ color: over ? RED : pct > 85 ? "#92400E" : GREEN, fontWeight: 800, fontSize: "0.85rem", margin: 0 }}>
-            {over ? "Over budget" : `${sym}${(total - used).toLocaleString()} left`}
-          </p>
-        </div>
-      </div>
-
-      <div style={{ background: "rgba(11,19,64,0.06)", borderRadius: 100, height: 8, overflow: "hidden", marginBottom: 10 }}>
-        <div style={{
-          height: "100%", borderRadius: 100,
-          background: `linear-gradient(90deg, ${barColor}, ${barColor}CC)`,
-          width: `${pct}%`, transition: "width 0.8s ease",
-        }} />
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <span style={{ color: "#6B7280", fontSize: "0.72rem" }}>{Math.round(pct)}% of budget used</span>
-        <span style={{ color: "#6B7280", fontSize: "0.72rem" }}>
-          {over ? "💸 Consider adjusting" : pct < 70 ? "🎉 Great value!" : "⚠️ Getting close"}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 function FitBounds({ positions }: { positions: [number, number][] }) {
   const map = useMap();
+  const positionKey = positions.map(([lat, lng]) => `${lat},${lng}`).join("|");
+
   useEffect(() => {
-    if (positions.length >= 2) {
-      map.fitBounds(positions, { padding: [30, 30] });
-    }
+    const timeout = window.setTimeout(() => {
+      map.invalidateSize();
+      if (positions.length >= 2) map.fitBounds(positions, { padding: [44, 44] });
+    }, 60);
+    return () => window.clearTimeout(timeout);
+    // positions are represented by the stable scalar key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [map, positionKey]);
+
   return null;
 }
 
-function RouteMap({ cities, days, onDaySelect }: {
+function destinationName(day: DayPlan | undefined) {
+  if (!day) return "";
+  return day.city.split("→").pop()?.trim() || day.city;
+}
+
+function RouteMap({
+  cities,
+  days,
+  selectedDay,
+  onDaySelect,
+}: {
   cities: string[];
   days: DayPlan[];
+  selectedDay: number;
   onDaySelect: (dayNum: number) => void;
 }) {
-  const positions = cities
-    .map(getCityCoords)
-    .filter(Boolean) as [number, number][];
-
-  // Real driving-route geometry from OSRM, once it loads. Until then (or if
-  // the free public OSRM server fails/times out) we fall back to the
-  // straight dashed line — same "static fallback" philosophy used for the
-  // AI itinerary generator elsewhere in this app.
-  const [roadRoute, setRoadRoute] = useState<[number, number][] | null>(null);
+  const positions = cities.map(getCityCoords).filter(Boolean) as [number, number][];
   const cityKey = cities.join("|");
+  const [roadRoute, setRoadRoute] = useState<[number, number][] | null>(null);
+  const [routeSettled, setRouteSettled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setRoadRoute(null); // reset when the route changes (new trip generated)
-    if (positions.length >= 2) {
-      fetchRoadRoute(positions).then((route) => {
-        if (!cancelled) setRoadRoute(route);
-      });
+    setRoadRoute(null);
+    setRouteSettled(false);
+    if (positions.length < 2) {
+      setRouteSettled(true);
+      return () => { cancelled = true; };
     }
+    fetchRoadRoute(positions).then((route) => {
+      if (!cancelled) {
+        setRoadRoute(route);
+        setRouteSettled(true);
+      }
+    });
     return () => { cancelled = true; };
+    // cityKey intentionally represents the complete route.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityKey]);
 
-  if (positions.length < 2) return null;
+  if (positions.length < 2) {
+    return (
+      <div className="wr-route-map-unavailable" role="status">
+        <MapIcon size={24} aria-hidden="true" />
+        <strong>Route map unavailable</strong>
+        <span>The written itinerary and costs are still ready to use.</span>
+      </div>
+    );
+  }
 
-  // Find which day(s) are spent in each city
   const cityDays: Record<string, number[]> = {};
-  days.forEach(d => {
-    const cityName = d.city.split("→").pop()?.trim() || d.city;
-    if (!cityDays[cityName]) cityDays[cityName] = [];
-    cityDays[cityName].push(d.day);
+  days.forEach((day) => {
+    const city = destinationName(day);
+    if (!cityDays[city]) cityDays[city] = [];
+    cityDays[city].push(day.day);
   });
+  const activeCity = destinationName(days.find((day) => day.day === selectedDay));
 
   return (
-    <div style={{ borderRadius: 16, overflow: "hidden", marginBottom: 16, boxShadow: "0 4px 20px rgba(11,19,64,0.1)" }}>
+    <div className="wr-route-map">
       <MapContainer
+        key={cityKey}
         center={positions[0]}
         zoom={7}
-        style={{ height: 220, width: "100%" }}
-        zoomControl={false}
-        scrollWheelZoom={false}
-        attributionControl={false}
+        style={{ height: "100%", width: "100%" }}
+        zoomControl
+        scrollWheelZoom
+        attributionControl
       >
         <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="© OpenStreetMap"
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          attribution="&copy; OpenStreetMap contributors &copy; CARTO"
         />
         <FitBounds positions={positions} />
-
-        {/* Real driving route once OSRM loads; dashed straight line while
-            loading or if the free OSRM server is unavailable. */}
         <Polyline
           positions={roadRoute || positions}
-          pathOptions={
-            roadRoute
-              ? { color: "#C9A227", weight: 3, opacity: 0.85 }
-              : { color: "#C9A227", weight: 2.5, dashArray: "6 5", opacity: 0.8 }
-          }
+          pathOptions={roadRoute
+            ? { color: "#D4A64A", weight: 4, opacity: 0.94 }
+            : { color: "#D4A64A", weight: 3, dashArray: "8 7", opacity: 0.88 }}
         />
-
-        {/* City markers */}
-        {cities.map((city, i) => {
+        {cities.map((city, index) => {
           const coords = getCityCoords(city);
           if (!coords) return null;
-          const color = i === 0
-            ? MARKER_COLORS.ancient  // gold for start
-            : i === cities.length - 1
-            ? MARKER_COLORS.beach    // teal for end
-            : MARKER_COLORS.city;    // navy for middle
+          const active = city === activeCity;
+          const color = active
+            ? "#D4A64A"
+            : index === 0
+              ? MARKER_COLORS.ancient
+              : index === cities.length - 1
+                ? MARKER_COLORS.beach
+                : MARKER_COLORS.city;
           const daysHere = cityDays[city] || [];
 
           return (
-            <Marker key={city} position={coords} icon={createColorMarker(color, 14)}>
+            <Marker key={`${city}-${index}`} position={coords} icon={createColorMarker(color, active ? 19 : 14)}>
               <Popup>
-                <div style={{ fontFamily: "sans-serif", minWidth: 120 }}>
-                  <strong style={{ color: "#0B1340" }}>{city}</strong>
+                <div className="wr-map-popup">
+                  <strong>{city}</strong>
                   {daysHere.length > 0 && (
-                    <p style={{ margin: "4px 0 6px", color: "#6B7280", fontSize: 12 }}>
-                      Day{daysHere.length > 1 ? "s" : ""} {daysHere.join(", ")}
-                    </p>
+                    <span>Day{daysHere.length > 1 ? "s" : ""} {daysHere.join(", ")}</span>
                   )}
                   {daysHere.length > 0 && (
-                    <button
-                      onClick={() => onDaySelect(daysHere[0])}
-                      style={{
-                        background: "#C9A227", color: "#0B1340",
-                        border: "none", borderRadius: 6, padding: "5px 10px",
-                        fontSize: 11, fontWeight: 700, cursor: "pointer", width: "100%",
-                      }}
-                    >
-                      View Day {daysHere[0]} →
+                    <button type="button" onClick={() => onDaySelect(daysHere[0])}>
+                      Open day {daysHere[0]}
                     </button>
                   )}
                 </div>
@@ -200,54 +163,30 @@ function RouteMap({ cities, days, onDaySelect }: {
           );
         })}
       </MapContainer>
+      <div className="wr-map-route-status" role="status">
+        <span className={roadRoute ? "is-live" : "is-fallback"} aria-hidden="true" />
+        {!routeSettled ? "Finding the road route…" : roadRoute ? "Road route connected" : "Approximate route shown"}
+      </div>
     </div>
   );
 }
 
-// Helper — color by activity category
-function getCategoryColor(category: string): string {
-  switch (category) {
-    case "activity":  return "#0D9488"; // teal
-    case "meal":      return "#F59E0B"; // amber
-    case "accommodation": return "#C9A227"; // gold
-    default:          return "#0B1340"; // navy
-  }
-}
-
-function DayActivityMap({ day, city }: { day: DayPlan; city: string }) {
-  // The destination city — last leg of "Colombo → Kandy" — biases Foursquare search.
+function DayActivityMap({ day, city, sym }: { day: DayPlan; city: string; sym: string }) {
   const destCity = city.split("→").pop()?.trim() || city;
-
-  // Locatable activities/meals (transport, check-ins, free time are filtered out).
   const itemQueries = day.items
     .map((item, index) => ({ item, index, place: extractPlaceName(item.label) }))
-    .filter((x): x is { item: DayItem; index: number; place: string } => x.place !== null);
-
-  // Build Foursquare queries — activities + the hotel, each with a stable key.
+    .filter((entry): entry is { item: DayItem; index: number; place: string } => entry.place !== null);
   const queries = [
-    ...itemQueries.map(x => ({ key: `item-${x.index}`, placeName: x.place, city: destCity })),
+    ...itemQueries.map((entry) => ({ key: `item-${entry.index}`, placeName: entry.place, city: destCity })),
     ...(day.accommodation ? [{ key: "hotel", placeName: day.accommodation, city: destCity }] : []),
   ];
-
   const { coords, loading, resolved, total } = useFoursquareGeocoding(queries);
-
-  // Map geocoded coords back to the original items (matched by stable key).
   const locatedItems = itemQueries
-    .map(x => ({ item: x.item, coords: coords[`item-${x.index}`] || null, index: x.index }))
-    .filter((x): x is { item: DayItem; coords: [number, number]; index: number } => x.coords !== null);
-
-  // Hotel coords
-  const hotelCoords = day.accommodation ? coords["hotel"] || null : null;
-
-  const allCoords = [
-    ...locatedItems.map(x => x.coords),
-    ...(hotelCoords ? [hotelCoords] : []),
-  ];
-
-  // Real walking-route geometry from OSRM (foot profile), once it loads.
-  // Falls back to the straight dashed line while loading or if it fails —
-  // same pattern as the main city-to-city route map.
-  const walkPositions = locatedItems.map(x => x.coords);
+    .map((entry) => ({ item: entry.item, coords: coords[`item-${entry.index}`] || null, index: entry.index }))
+    .filter((entry): entry is { item: DayItem; coords: [number, number]; index: number } => entry.coords !== null);
+  const hotelCoords = day.accommodation ? coords.hotel || null : null;
+  const allCoords = [...locatedItems.map((entry) => entry.coords), ...(hotelCoords ? [hotelCoords] : [])];
+  const walkPositions = locatedItems.map((entry) => entry.coords);
   const walkKey = walkPositions.map(([lat, lng]) => `${lat.toFixed(4)},${lng.toFixed(4)}`).join(";");
   const [walkRoute, setWalkRoute] = useState<[number, number][] | null>(null);
 
@@ -260,117 +199,84 @@ function DayActivityMap({ day, city }: { day: DayPlan; city: string }) {
       });
     }
     return () => { cancelled = true; };
+    // walkKey represents the complete ordered point set.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walkKey]);
 
-  // Need at least 1 located point to show the map (or still loading).
-  if (allCoords.length === 0 && !loading) return null;
+  if (queries.length === 0) return null;
+  if (allCoords.length === 0 && !loading) {
+    return (
+      <div className="wr-day-map-empty" role="status">
+        <MapPin size={17} aria-hidden="true" />
+        These places could not be pinpointed right now. The schedule below is still available.
+      </div>
+    );
+  }
 
-  const centerLat = allCoords.length > 0 ? allCoords.reduce((s, c) => s + c[0], 0) / allCoords.length : 7.8731;
-  const centerLng = allCoords.length > 0 ? allCoords.reduce((s, c) => s + c[1], 0) / allCoords.length : 80.7718;
+  const centerLat = allCoords.length
+    ? allCoords.reduce((sum, coordsPair) => sum + coordsPair[0], 0) / allCoords.length
+    : 7.8731;
+  const centerLng = allCoords.length
+    ? allCoords.reduce((sum, coordsPair) => sum + coordsPair[1], 0) / allCoords.length
+    : 80.7718;
 
   return (
-    <div style={{ margin: "12px 16px" }}>
-      {/* Loading progress bar */}
-      {loading && (
-        <div style={{
-          background: "rgba(11,19,64,0.04)",
-          borderRadius: 8, padding: "8px 12px",
-          marginBottom: 8,
-          display: "flex", alignItems: "center", gap: 10,
-        }}>
-          <div style={{ flex: 1, background: "rgba(11,19,64,0.08)", borderRadius: 100, height: 4, overflow: "hidden" }}>
-            <div style={{
-              height: "100%", borderRadius: 100,
-              background: "#C9A227",
-              width: `${total > 0 ? (resolved / total) * 100 : 0}%`,
-              transition: "width 0.3s ease",
-            }} />
-          </div>
-          <span style={{ color: "#6B7280", fontSize: "0.72rem", whiteSpace: "nowrap" }}>
-            Pinpointing {resolved}/{total} places...
-          </span>
+    <section className="wr-day-map-block" aria-label={`Places for day ${day.day}`}>
+      <div className="wr-day-map-heading">
+        <div>
+          <span className="wr-eyebrow">Places & walking route</span>
+          <strong>{destCity}</strong>
         </div>
-      )}
-
-      {/* Map — show as soon as we have at least 1 pin */}
+        {loading && <span className="wr-geocode-progress">Pinpointing {resolved}/{total}</span>}
+      </div>
       {allCoords.length > 0 && (
-        <div style={{
-          borderRadius: 12, overflow: "hidden",
-          border: "1px solid rgba(11,19,64,0.08)",
-          boxShadow: "0 2px 12px rgba(11,19,64,0.08)",
-        }}>
+        <div className="wr-day-map-canvas">
           <MapContainer
+            key={`${day.day}-${walkKey}`}
             center={[centerLat, centerLng]}
             zoom={13}
-            style={{ height: 200, width: "100%" }}
-            zoomControl={true}
+            style={{ height: "100%", width: "100%" }}
+            zoomControl
             scrollWheelZoom={false}
-            attributionControl={false}
+            attributionControl
           >
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-
-            {/* Route line connecting activity pins in order — real walking
-                route once OSRM loads, straight dashed line while loading
-                or as a fallback. */}
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+              attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+            />
             {locatedItems.length >= 2 && (
               <Polyline
-                positions={walkRoute || locatedItems.map(x => x.coords)}
-                pathOptions={
-                  walkRoute
-                    ? { color: "#C9A227", weight: 2.5, opacity: 0.75 }
-                    : { color: "#C9A227", weight: 2, dashArray: "4 4", opacity: 0.7 }
-                }
+                positions={walkRoute || locatedItems.map((entry) => entry.coords)}
+                pathOptions={walkRoute
+                  ? { color: "#D4A64A", weight: 3, opacity: 0.85 }
+                  : { color: "#D4A64A", weight: 2, dashArray: "5 5", opacity: 0.76 }}
               />
             )}
-
-            {/* Activity markers — numbered in order */}
-            {locatedItems.map((located, i) => (
+            {locatedItems.map((located, index) => (
               <Marker
-                key={i}
+                key={`${located.index}-${located.item.label}`}
                 position={located.coords}
-                icon={createNumberMarker(i + 1, getCategoryColor(located.item.category))}
+                icon={createNumberMarker(index + 1, CATEGORY_META[located.item.category].color)}
               >
                 <Popup>
-                  <div style={{ fontFamily: "sans-serif", minWidth: 160 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                      <span style={{ fontSize: 16 }}>{located.item.icon}</span>
-                      <strong style={{ color: "#0B1340", fontSize: 13, lineHeight: 1.3 }}>
-                        {located.item.label}
-                      </strong>
-                    </div>
-                    <p style={{ color: "#6B7280", fontSize: 11, margin: "0 0 4px" }}>
-                      {located.item.time} · {located.item.detail}
-                    </p>
-                    {located.item.cost > 0 && (
-                      <p style={{ color: "#0D9488", fontSize: 11, fontWeight: 700, margin: 0 }}>
-                        Cost: ${located.item.cost}
-                      </p>
-                    )}
-                    {located.item.tip && (
-                      <p style={{ color: "#92400E", fontSize: 11, margin: "4px 0 0", lineHeight: 1.4 }}>
-                        💡 {located.item.tip}
-                      </p>
-                    )}
+                  <div className="wr-map-popup">
+                    <strong>{located.item.label}</strong>
+                    <span>{located.item.time} · {located.item.detail}</span>
+                    {located.item.cost > 0 && <b>{sym}{located.item.cost.toLocaleString()}</b>}
+                    {located.item.tip && <small>{located.item.tip}</small>}
                   </div>
                 </Popup>
               </Marker>
             ))}
-
-            {/* Hotel marker — special gold pin */}
             {hotelCoords && (
-              <Marker position={hotelCoords} icon={createColorMarker("#C9A227", 16)}>
+              <Marker position={hotelCoords} icon={createColorMarker("#D4A64A", 17)}>
                 <Popup>
-                  <div style={{ fontFamily: "sans-serif" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 16 }}>🏨</span>
-                      <strong style={{ color: "#0B1340", fontSize: 13 }}>
-                        {day.accommodation}
-                      </strong>
-                    </div>
-                    <p style={{ color: "#6B7280", fontSize: 11, margin: "4px 0 0" }}>
-                      Tonight's stay · ${day.accommodationCostPerNight}/night
-                    </p>
+                  <div className="wr-map-popup">
+                    <strong>{day.accommodation}</strong>
+                    <span>Tonight’s stay</span>
+                    {day.accommodationCostPerNight > 0 && (
+                      <b>{sym}{day.accommodationCostPerNight.toLocaleString()} / night</b>
+                    )}
                   </div>
                 </Popup>
               </Marker>
@@ -378,193 +284,82 @@ function DayActivityMap({ day, city }: { day: DayPlan; city: string }) {
           </MapContainer>
         </div>
       )}
-
-      {/* Legend */}
       {allCoords.length > 0 && (
-        <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#0D9488", border: "1.5px solid white" }} />
-            <span style={{ fontSize: "0.68rem", color: "#6B7280" }}>Activities</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#F59E0B", border: "1.5px solid white" }} />
-            <span style={{ fontSize: "0.68rem", color: "#6B7280" }}>Meals</span>
-          </div>
-          {hotelCoords && (
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#C9A227", border: "1.5px solid white" }} />
-              <span style={{ fontSize: "0.68rem", color: "#6B7280" }}>Hotel</span>
-            </div>
-          )}
-          <span style={{ fontSize: "0.68rem", color: "#9CA3AF", marginLeft: "auto" }}>
-            {allCoords.length} place{allCoords.length !== 1 ? "s" : ""} pinpointed
-          </span>
-        </div>
+        <p className="wr-day-map-caption">{allCoords.length} place{allCoords.length === 1 ? "" : "s"} located for this day.</p>
       )}
-    </div>
+    </section>
   );
 }
 
-function GeocodingStatus() {
-  const stats = getGeoCacheStats();
-  if (stats.total === 0) return null;
+function DayCard({ day, sym, onViewHotels }: { day: DayPlan; sym: string; onViewHotels: () => void }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 6,
-      padding: "6px 12px", margin: "0 0 12px",
-      background: "rgba(13,148,136,0.06)", borderRadius: 8,
-    }}>
-      <span style={{ fontSize: "0.75rem" }}>📍</span>
-      <span style={{ color: "#0D9488", fontSize: "0.72rem", fontWeight: 600 }}>
-        {stats.fresh} places auto-pinpointed on map
-      </span>
-    </div>
-  );
-}
+    <article id={`day-${day.day}`} className="wr-day-sheet" aria-labelledby={`day-title-${day.day}`}>
+      <header className="wr-day-sheet-header">
+        <div className="wr-day-number">
+          <span>Day</span>
+          <strong>{String(day.day).padStart(2, "0")}</strong>
+        </div>
+        <div>
+          <p className="wr-coordinates">Daily field note · Sri Lanka</p>
+          <h2 id={`day-title-${day.day}`}>{day.city}</h2>
+        </div>
+        <div className="wr-day-total">
+          <span>Per person</span>
+          <strong>{sym}{day.dailyCostPerPerson.toLocaleString()}</strong>
+        </div>
+      </header>
 
-function DayCard({ day, sym }: { day: DayPlan; sym: string }) {
-  const [expanded, setExpanded] = useState(day.day <= 2);
-  return (
-    <div id={`day-${day.day}`} style={{
-      background: "#fff", borderRadius: 20,
-      boxShadow: "0 4px 20px rgba(11,19,64,0.06)",
-      overflow: "hidden", border: "1px solid rgba(11,19,64,0.04)",
-    }}>
-      {/* City gradient header */}
-      <div
-        style={{ background: day.heroGradient, padding: "16px 20px", cursor: "pointer", position: "relative" }}
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div style={{ position: "absolute", top: -10, right: -10, width: 60, height: 60, borderRadius: "50%", background: "rgba(255,255,255,0.06)" }} />
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: "rgba(201,162,39,0.2)", border: "1px solid rgba(201,162,39,0.3)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              <span style={{ color: GOLD, fontFamily: "'Playfair Display', serif", fontWeight: 900, fontSize: "0.9rem" }}>
-                {day.day}
+      <DayActivityMap day={day} city={day.city} sym={sym} />
+
+      <ol className="wr-day-timeline">
+        {day.items.length > 0 ? day.items.map((item, index) => {
+          const meta = CATEGORY_META[item.category];
+          const ItemIcon = meta.icon;
+          return (
+            <li key={`${item.time}-${item.label}-${index}`}>
+              <time>{item.time || "Flexible"}</time>
+              <span className="wr-timeline-marker" style={{ "--item-color": meta.color } as React.CSSProperties}>
+                <ItemIcon size={16} aria-hidden="true" />
               </span>
-            </div>
-            <div>
-              <span style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.65rem", fontWeight: 700, letterSpacing: "0.05em" }}>DAY {day.day}</span>
-              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ fontSize: "0.9rem" }}>{day.flag}</span>
-                <h3 style={{ color: "#fff", fontWeight: 800, fontSize: "1rem", margin: 0 }}>{day.city}</h3>
-              </div>
-            </div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.65rem", margin: "0 0 2px" }}>per person</p>
-            <p style={{ color: GOLD, fontWeight: 800, fontFamily: "'Playfair Display', serif", fontSize: "1.1rem", margin: 0 }}>
-              {sym}{day.dailyCostPerPerson.toLocaleString()}
-            </p>
-            <div style={{ marginTop: 4 }}>
-              {expanded ? <ChevronUp size={14} color="rgba(255,255,255,0.5)" /> : <ChevronDown size={14} color="rgba(255,255,255,0.5)" />}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Day items */}
-      {expanded && (
-        <div style={{ padding: "4px 0 8px" }}>
-          {/* Day activity mini-map (auto-geocoded) */}
-          <DayActivityMap day={day} city={day.city} />
-
-          {day.items.map((item, i) => (
-            <div
-              key={i}
-              style={{
-                padding: "12px 20px",
-                borderBottom: i < day.items.length - 1 ? "1px solid rgba(11,19,64,0.04)" : "none",
-              }}
-            >
-              <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                {/* Time */}
-                <div style={{ minWidth: 44, flexShrink: 0 }}>
-                  <span style={{ color: "#9CA3AF", fontSize: "0.68rem", fontFamily: "JetBrains Mono, monospace" }}>{item.time}</span>
-                </div>
-
-                {/* Icon circle */}
-                <div style={{
-                  width: 34, height: 34, borderRadius: 10, flexShrink: 0,
-                  background: `${CATEGORY_COLORS[item.category]}12`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "1rem",
-                }}>
-                  {item.icon}
-                </div>
-
-                {/* Content */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
-                        <p style={{ color: NAVY, fontWeight: 700, fontSize: "0.85rem", margin: 0 }}>{item.label}</p>
-                        {item.isHidden && (
-                          <span style={{
-                            background: `${TEAL}15`, color: TEAL,
-                            borderRadius: 100, padding: "1px 6px", fontSize: "0.6rem", fontWeight: 700,
-                          }}>
-                            HIDDEN GEM
-                          </span>
-                        )}
-                      </div>
-                      <p style={{ color: "#6B7280", fontSize: "0.75rem", margin: 0, lineHeight: 1.4 }}>{item.detail}</p>
-                    </div>
-                    {item.cost > 0 && (
-                      <span style={{
-                        color: NAVY, fontWeight: 700, fontSize: "0.82rem",
-                        fontFamily: "JetBrains Mono, monospace", flexShrink: 0,
-                      }}>
-                        {sym}{item.cost}
-                      </span>
-                    )}
-                    {item.cost === 0 && (
-                      <span style={{
-                        background: `${GREEN}15`, color: GREEN,
-                        borderRadius: 100, padding: "2px 8px", fontSize: "0.68rem", fontWeight: 700,
-                        flexShrink: 0,
-                      }}>
-                        FREE
-                      </span>
-                    )}
+              <div className="wr-timeline-copy">
+                <div className="wr-timeline-title-row">
+                  <div>
+                    <span className="wr-item-category">{meta.label}</span>
+                    <h3>{item.label || "Planned stop"}</h3>
                   </div>
-
-                  {/* Tip */}
-                  {item.tip && (
-                    <div style={{
-                      background: "rgba(201,162,39,0.08)", borderRadius: 8,
-                      padding: "8px 10px", marginTop: 8,
-                      display: "flex", gap: 6, alignItems: "flex-start",
-                    }}>
-                      <span style={{ fontSize: "0.8rem", flexShrink: 0 }}>💡</span>
-                      <p style={{ color: "#92400E", fontSize: "0.72rem", lineHeight: 1.5, margin: 0 }}>{item.tip}</p>
-                    </div>
-                  )}
+                  <strong className="wr-item-cost">{item.cost > 0 ? `${sym}${item.cost.toLocaleString()}` : "No added cost"}</strong>
                 </div>
+                {item.detail && <p>{item.detail}</p>}
+                {item.tip && <aside className="wr-item-note"><Lightbulb size={14} aria-hidden="true" /> {item.tip}</aside>}
               </div>
-            </div>
-          ))}
+            </li>
+          );
+        }) : (
+          <li className="wr-timeline-empty">No timed activities were supplied for this day.</li>
+        )}
+      </ol>
 
-          {/* Local tip */}
-          <div style={{
-            margin: "8px 16px 8px",
-            background: `linear-gradient(135deg, ${TEAL}08, ${TEAL}04)`,
-            border: `1px solid ${TEAL}20`,
-            borderRadius: 12, padding: "12px 14px",
-            display: "flex", gap: 8, alignItems: "flex-start",
-          }}>
-            <Lightbulb size={14} color={TEAL} style={{ flexShrink: 0, marginTop: 1 }} />
-            <p style={{ color: "#0D6B60", fontSize: "0.75rem", lineHeight: 1.5, margin: 0 }}>
-              <strong>Local tip:</strong> {day.localTip}
-            </p>
+      {day.accommodation && (
+        <section className="wr-day-stay" aria-label="Tonight's accommodation">
+          <BedDouble size={19} aria-hidden="true" />
+          <div>
+            <span>Tonight’s stay</span>
+            <strong>{day.accommodation}</strong>
+            {day.accommodationCostPerNight > 0 && (
+              <small>{sym}{day.accommodationCostPerNight.toLocaleString()} per night</small>
+            )}
           </div>
-        </div>
+          <button type="button" onClick={onViewHotels}>Explore stays</button>
+        </section>
       )}
-    </div>
+
+      {day.localTip && (
+        <aside className="wr-local-note">
+          <Lightbulb size={17} aria-hidden="true" />
+          <div><span>Local note</span><p>{day.localTip}</p></div>
+        </aside>
+      )}
+    </article>
   );
 }
 
@@ -573,299 +368,193 @@ export function ItineraryScreen({
   navigate,
 }: {
   itinerary: GeneratedItinerary;
-  navigate: (s: Screen) => void;
+  navigate: (screen: Screen) => void;
 }) {
-  const sym = CURRENCY_SYMBOLS[itinerary.currency];
+  const sym = CURRENCY_SYMBOLS[itinerary.currency] ?? itinerary.currency;
+  const days = itinerary.days ?? [];
+  const [selectedDay, setSelectedDay] = useState(days[0]?.day ?? 1);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [mobilePane, setMobilePane] = useState<"plan" | "map">("plan");
   const bp = useBreakpoint();
-  const isDesktop = bp === "desktop";
+  const isMobile = bp === "mobile";
+  const activeDay = days.find((day) => day.day === selectedDay) ?? days[0];
+  const remaining = itinerary.remainingBudget ?? itinerary.inputBudget - itinerary.estimatedTotalCost;
+  const averagePerDay = Math.round(itinerary.estimatedTotalCost / Math.max(1, itinerary.totalDays));
+  const statusCopy = {
+    great: { label: "Comfortably within budget", tone: "great" },
+    ok: { label: "Within budget", tone: "ok" },
+    tight: { label: "Close to budget", tone: "tight" },
+    over: { label: "Over budget", tone: "over" },
+  }[itinerary.budgetStatus] ?? { label: "Budget calculated", tone: "ok" };
+
+  const selectDay = (dayNumber: number) => {
+    setSelectedDay(dayNumber);
+    if (isMobile) setMobilePane("plan");
+    window.requestAnimationFrame(() => {
+      document.getElementById(`day-tab-${dayNumber}`)?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    });
+  };
 
   const handleDownloadPDF = async () => {
     setPdfLoading(true);
+    setPdfError(null);
     try {
       await downloadItineraryPDF(itinerary);
+    } catch {
+      setPdfError("The PDF could not be prepared. Please try again.");
     } finally {
       setPdfLoading(false);
     }
   };
 
-  const statusConfig = {
-    great: { color: GREEN, label: "Great value!", bg: `${GREEN}12` },
-    ok: { color: TEAL, label: "On budget", bg: `${TEAL}12` },
-    tight: { color: "#F59E0B", label: "Tight budget", bg: "#FEF3C7" },
-    over: { color: RED, label: "Over budget", bg: `${RED}10` },
-  }[itinerary.budgetStatus];
-
   return (
-    <div style={{ background: "#EEF2FA", minHeight: "100vh" }}>
-      {/* ── Hero header ─────────────────────────────── */}
-      <div style={{ background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 50%, #0B3D3A 100%)`, padding: "36px 24px 32px", position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180, borderRadius: "50%", background: "rgba(201,162,39,0.06)" }} />
-        <div style={{ position: "absolute", bottom: -20, left: -20, width: 100, height: 100, borderRadius: "50%", background: "rgba(13,148,136,0.08)" }} />
-
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(201,162,39,0.15)", borderRadius: 100, padding: "4px 12px", marginBottom: 16 }}>
-          <span style={{ color: GOLD, fontSize: "0.68rem", fontWeight: 800, letterSpacing: "0.06em" }}>✨ YOUR ITINERARY IS READY</span>
-        </div>
-
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "1.9rem", fontWeight: 900, color: "#fff", lineHeight: 1.15, marginBottom: 6 }}>
-          {itinerary.routeName}
-        </h1>
-        <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.82rem", lineHeight: 1.5, marginBottom: 20 }}>
-          {itinerary.routeSlogan}
-        </p>
-
-        {/* Trip meta pills */}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
-          {[
-            { icon: <Calendar size={11} />, label: `${itinerary.totalDays} days` },
-            { icon: <Users size={11} />, label: `${itinerary.totalPeople} ${itinerary.totalPeople === 1 ? "person" : "people"}` },
-            { icon: <Wallet size={11} />, label: itinerary.travelStyle.charAt(0).toUpperCase() + itinerary.travelStyle.slice(1) },
-          ].map(({ icon, label }) => (
-            <div key={label} style={{
-              display: "flex", alignItems: "center", gap: 5,
-              background: "rgba(255,255,255,0.1)", borderRadius: 100,
-              padding: "5px 12px",
-            }}>
-              <span style={{ color: "rgba(255,255,255,0.6)" }}>{icon}</span>
-              <span style={{ color: "#fff", fontSize: "0.75rem", fontWeight: 600 }}>{label}</span>
-            </div>
-          ))}
-          <div style={{
-            display: "flex", alignItems: "center", gap: 5,
-            background: statusConfig.bg, borderRadius: 100, padding: "5px 12px",
-          }}>
-            <span style={{ color: statusConfig.color, fontSize: "0.75rem", fontWeight: 700 }}>
-              {statusConfig.label}
-            </span>
-          </div>
-        </div>
-
-        {/* Action buttons */}
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={() => navigate("costs")}
-            style={{
-              flex: 1, padding: "12px 16px", borderRadius: 12, border: "none", cursor: "pointer",
-              background: `linear-gradient(135deg, ${GOLD}, #E8C547)`,
-              color: NAVY, fontWeight: 700, fontSize: "0.82rem",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            }}
-          >
-            <BarChart2 size={14} />
-            Cost Breakdown
-          </button>
-          <button
-            onClick={handleDownloadPDF}
-            disabled={pdfLoading}
-            style={{
-              padding: "12px 16px", borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: pdfLoading ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.08)",
-              cursor: pdfLoading ? "not-allowed" : "pointer",
-              color: "#fff", fontWeight: 700, fontSize: "0.82rem",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              transition: "all 0.2s",
-            }}
-          >
-            <Download size={14} />
-            {pdfLoading ? "..." : "PDF"}
-          </button>
-          <button
-            onClick={() => navigate("share")}
-            style={{
-              padding: "12px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)",
-              background: "rgba(255,255,255,0.08)", cursor: "pointer",
-              color: "#fff", fontWeight: 700, fontSize: "0.82rem",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            }}
-          >
-            <Share2 size={14} />
-            Share
-          </button>
-        </div>
-      </div>
-
-      <div style={{ padding: "24px" }}>
-        {/* Budget meter */}
-        <BudgetMeter
-          used={itinerary.estimatedTotalCost}
-          total={itinerary.inputBudget}
-          sym={sym}
-        />
-
-        {/* Per person cost */}
-        <div style={{
-          background: `linear-gradient(135deg, ${TEAL}15, ${TEAL}05)`,
-          border: `1px solid ${TEAL}25`,
-          borderRadius: 14, padding: "14px 18px", marginTop: 12,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-        }}>
-          <div>
-            <p style={{ color: "#6B7280", fontSize: "0.72rem", fontWeight: 600, margin: "0 0 2px" }}>PER PERSON</p>
-            <p style={{ color: NAVY, fontWeight: 800, fontFamily: "'Playfair Display', serif", fontSize: "1.3rem", margin: 0 }}>
-              {sym}{itinerary.estimatedCostPerPerson.toLocaleString()}
-            </p>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <p style={{ color: "#6B7280", fontSize: "0.72rem", fontWeight: 600, margin: "0 0 2px" }}>PER DAY / PERSON</p>
-            <p style={{ color: TEAL, fontWeight: 700, fontSize: "1rem", margin: 0 }}>
-              {sym}{Math.round(itinerary.estimatedCostPerPerson / itinerary.totalDays).toLocaleString()}
-            </p>
-          </div>
-        </div>
-
-        {/* Route visualization */}
-        <div style={{ marginTop: 16 }}>
-          <RouteMap
-            cities={itinerary.cities}
-            days={itinerary.days}
-            onDaySelect={(dayNum) => {
-              setSelectedDay(dayNum);
-              document.getElementById(`day-${dayNum}`)?.scrollIntoView({ behavior: "smooth" });
-            }}
-          />
-        </div>
-
-        {/* Highlights */}
-        <div style={{ background: "#fff", borderRadius: 20, padding: "18px 20px", marginTop: 16, boxShadow: "0 4px 16px rgba(11,19,64,0.05)" }}>
-          <p style={{ color: "#9CA3AF", fontSize: "0.7rem", fontWeight: 700, letterSpacing: "0.06em", marginBottom: 12 }}>TRIP HIGHLIGHTS</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {itinerary.highlights.map((h, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: GOLD, flexShrink: 0 }} />
-                <span style={{ color: "#4B5563", fontSize: "0.82rem" }}>{h}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Warnings */}
-        {itinerary.warnings.length > 0 && (
-          <div style={{
-            background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.15)",
-            borderRadius: 16, padding: "16px 18px", marginTop: 16,
-          }}>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-              <AlertTriangle size={15} color={RED} />
-              <p style={{ color: RED, fontWeight: 700, fontSize: "0.82rem", margin: 0 }}>Watch Out For</p>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {itinerary.warnings.map((w, i) => (
-                <p key={i} style={{ color: "#6B7280", fontSize: "0.78rem", lineHeight: 1.5, margin: 0 }}>{w}</p>
+    <main className={`wr-itinerary wr-mobile-pane-${mobilePane}`}>
+      <header className="wr-itinerary-hero">
+        <div className="wr-itinerary-hero-inner">
+          <div className="wr-itinerary-title-block">
+            <p className="wr-coordinates">Route file · 07.8731° N, 80.7718° E</p>
+            <span className={`wr-budget-status is-${statusCopy.tone}`}>{statusCopy.label}</span>
+            <h1>{itinerary.routeName}</h1>
+            {itinerary.routeSlogan && <p className="wr-route-slogan">{itinerary.routeSlogan}</p>}
+            <div className="wr-route-path" aria-label={`Route: ${itinerary.cities.join(" to ")}`}>
+              {(itinerary.cities ?? []).map((city, index) => (
+                <span key={`${city}-${index}`}>
+                  <i aria-hidden="true" />{city}
+                </span>
               ))}
             </div>
           </div>
-        )}
 
-        {/* Section header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "28px 0 16px" }}>
-          <h2 style={{ color: NAVY, fontFamily: "'Playfair Display', serif", fontSize: "1.4rem", fontWeight: 800 }}>
-            Day by Day
-          </h2>
-          <span style={{ color: "#9CA3AF", fontSize: "0.75rem" }}>{itinerary.totalDays} days</span>
-        </div>
-
-        {/* Geocoding status */}
-        <GeocodingStatus />
-
-        {/* Day cards — desktop shows selector sidebar + single day content */}
-        {isDesktop ? (
-          <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-            {/* Day selector sidebar */}
-            <div style={{ width: 160, flexShrink: 0, position: "sticky", top: 92 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {itinerary.days.map((day) => {
-                  const active = (selectedDay ?? 1) === day.day;
-                  return (
-                    <button
-                      key={day.day}
-                      onClick={() => setSelectedDay(day.day)}
-                      style={{
-                        padding: "10px 14px", borderRadius: 12, border: "none", cursor: "pointer",
-                        background: active ? NAVY : "#fff",
-                        color: active ? "#fff" : "#4B5563",
-                        fontWeight: active ? 700 : 500, fontSize: "0.8rem", textAlign: "left",
-                        boxShadow: "0 2px 8px rgba(11,19,64,0.06)",
-                        transition: "all 0.15s",
-                      }}
-                    >
-                      <div style={{ color: active ? GOLD : "#9CA3AF", fontSize: "0.65rem", fontWeight: 700, marginBottom: 2 }}>DAY {day.day}</div>
-                      <div style={{ fontSize: "0.78rem", lineHeight: 1.3 }}>{day.city}</div>
-                      <div style={{ color: active ? "rgba(255,255,255,0.6)" : "#9CA3AF", fontSize: "0.68rem", marginTop: 2 }}>{sym}{day.dailyCostPerPerson}/p</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            {/* Selected day content */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {(() => {
-                const day = itinerary.days.find(d => d.day === (selectedDay ?? 1)) ?? itinerary.days[0];
-                return <DayCard key={day.day} day={day} sym={sym} />;
-              })()}
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {itinerary.days.map((day) => (
-              <DayCard key={day.day} day={day} sym={sym} />
-            ))}
-          </div>
-        )}
-
-        {/* Global budget tips */}
-        <div style={{
-          background: `linear-gradient(135deg, ${NAVY}, #1D3560)`,
-          borderRadius: 20, padding: "22px 20px", marginTop: 24,
-        }}>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
-            <Lightbulb size={16} color={GOLD} />
-            <p style={{ color: GOLD, fontWeight: 800, fontSize: "0.88rem", margin: 0 }}>Money-Saving Tips</p>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {itinerary.globalTips.map((tip, i) => (
-              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                <div style={{
-                  width: 20, height: 20, borderRadius: 6, background: "rgba(201,162,39,0.15)",
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1,
-                }}>
-                  <span style={{ color: GOLD, fontSize: "0.65rem", fontWeight: 800 }}>
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                </div>
-                <p style={{ color: "rgba(255,255,255,0.75)", fontSize: "0.78rem", lineHeight: 1.6, margin: 0 }}>{tip}</p>
-              </div>
-            ))}
+          <div className="wr-itinerary-actions" aria-label="Itinerary actions">
+            <button type="button" className="wr-button wr-button-gold" onClick={() => navigate("costs")}>
+              <BarChart3 size={17} aria-hidden="true" /> Costs
+            </button>
+            <button type="button" className="wr-button wr-button-quiet" onClick={handleDownloadPDF} disabled={pdfLoading}>
+              <Download size={17} aria-hidden="true" /> {pdfLoading ? "Preparing…" : "Download PDF"}
+            </button>
+            <button type="button" className="wr-button wr-button-quiet" onClick={() => navigate("share")}>
+              <Share2 size={17} aria-hidden="true" /> Share
+            </button>
           </div>
         </div>
 
-        {/* Bottom CTA */}
-        <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
-          <button
-            onClick={() => navigate("hotels")}
-            style={{
-              flex: 1, padding: "14px 16px", borderRadius: 14,
-              background: "#fff", border: "1px solid rgba(11,19,64,0.08)",
-              color: NAVY, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
-            }}
-          >
-            🏨 View Hotels
+        <div className="wr-trip-ledger" aria-label="Trip summary">
+          <div><CalendarDays size={17} aria-hidden="true" /><span>Duration<strong>{itinerary.totalDays} days</strong></span></div>
+          <div><Users size={17} aria-hidden="true" /><span>Travellers<strong>{itinerary.totalPeople}</strong></span></div>
+          <div><WalletCards size={17} aria-hidden="true" /><span>Total budget<strong>{sym}{itinerary.inputBudget.toLocaleString()}</strong></span></div>
+          <div><span className="wr-ledger-mark" aria-hidden="true" /> <span>Estimated spend<strong>{sym}{itinerary.estimatedTotalCost.toLocaleString()}</strong></span></div>
+          <div className={remaining < 0 ? "is-over" : ""}><span className="wr-ledger-mark" aria-hidden="true" /> <span>{remaining < 0 ? "Over by" : "Remaining"}<strong>{sym}{Math.abs(remaining).toLocaleString()}</strong></span></div>
+          <div><span className="wr-ledger-mark" aria-hidden="true" /> <span>Average / day<strong>{sym}{averagePerDay.toLocaleString()}</strong></span></div>
+        </div>
+        {pdfError && <p className="wr-pdf-error" role="alert">{pdfError}</p>}
+      </header>
+
+      {isMobile && (
+        <div className="wr-itinerary-view-switch" aria-label="Itinerary view">
+          <button type="button" aria-pressed={mobilePane === "plan"} onClick={() => setMobilePane("plan")}>
+            <CalendarDays size={16} aria-hidden="true" /> Itinerary
           </button>
-          <button
-            onClick={() => navigate("share")}
-            style={{
-              flex: 1, padding: "14px 16px", borderRadius: 14,
-              background: `linear-gradient(135deg, ${GOLD}, #E8C547)`,
-              border: "none", color: NAVY, fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
-            }}
-          >
-            📤 Share Trip
+          <button type="button" aria-pressed={mobilePane === "map"} onClick={() => setMobilePane("map")}>
+            <MapIcon size={16} aria-hidden="true" /> Route map
           </button>
         </div>
+      )}
 
-        <div style={{ height: 8 }} />
+      <div className="wr-itinerary-workspace">
+        <section className="wr-itinerary-plan" aria-label="Day-by-day itinerary">
+          <div className="wr-day-navigation-wrap">
+            <div className="wr-day-navigation-heading">
+              <div><span className="wr-eyebrow">Day by day</span><strong>Choose a day</strong></div>
+              <span>{days.length} planned day{days.length === 1 ? "" : "s"}</span>
+            </div>
+            <div className="wr-day-navigation" role="tablist" aria-label="Itinerary days">
+              {days.map((day) => (
+                <button
+                  id={`day-tab-${day.day}`}
+                  key={day.day}
+                  type="button"
+                  role="tab"
+                  aria-selected={selectedDay === day.day}
+                  aria-controls={`day-${day.day}`}
+                  onClick={() => selectDay(day.day)}
+                >
+                  <span>Day {String(day.day).padStart(2, "0")}</span>
+                  <strong>{destinationName(day)}</strong>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {days.length < itinerary.totalDays && (
+            <div className="wr-itinerary-notice" role="status">
+              <AlertTriangle size={16} aria-hidden="true" />
+              This standard route currently includes {days.length} detailed day{days.length === 1 ? "" : "s"} for a {itinerary.totalDays}-day request.
+            </div>
+          )}
+
+          {activeDay ? (
+            <DayCard day={activeDay} sym={sym} onViewHotels={() => navigate("hotels")} />
+          ) : (
+            <div className="wr-itinerary-empty">
+              <CalendarDays size={26} aria-hidden="true" />
+              <h2>No daily schedule was returned</h2>
+              <p>Your trip totals are still available. Try planning again to rebuild the daily route.</p>
+              <button type="button" className="wr-button wr-button-gold" onClick={() => navigate("planner")}>Plan again</button>
+            </div>
+          )}
+
+          {(itinerary.highlights?.length > 0 || itinerary.warnings?.length > 0) && (
+            <div className="wr-trip-notes-grid">
+              {itinerary.highlights?.length > 0 && (
+                <section>
+                  <span className="wr-eyebrow">Route highlights</span>
+                  <ul>{itinerary.highlights.map((highlight, index) => <li key={`${highlight}-${index}`}>{highlight}</li>)}</ul>
+                </section>
+              )}
+              {itinerary.warnings?.length > 0 && (
+                <section className="wr-watch-notes">
+                  <span className="wr-eyebrow"><AlertTriangle size={13} aria-hidden="true" /> Practical notes</span>
+                  <ul>{itinerary.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul>
+                </section>
+              )}
+            </div>
+          )}
+
+          {itinerary.globalTips?.length > 0 && (
+            <section className="wr-money-notes">
+              <div><Lightbulb size={20} aria-hidden="true" /><span><small>Useful on the road</small><strong>Budget notes</strong></span></div>
+              <ol>{itinerary.globalTips.map((tip, index) => <li key={`${tip}-${index}`}><b>{String(index + 1).padStart(2, "0")}</b>{tip}</li>)}</ol>
+            </section>
+          )}
+
+          <div className="wr-itinerary-footer-actions">
+            <button type="button" className="wr-button wr-button-outline" onClick={() => navigate("hotels")}>
+              <BedDouble size={17} aria-hidden="true" /> Explore hotels
+            </button>
+            <button type="button" className="wr-button wr-button-gold" onClick={() => navigate("share")}>
+              <Share2 size={17} aria-hidden="true" /> Share this trip
+            </button>
+          </div>
+        </section>
+
+        {(!isMobile || mobilePane === "map") && (
+          <aside className="wr-itinerary-map-panel" aria-label="Interactive route map">
+            <div className="wr-map-panel-heading">
+              <div><span className="wr-eyebrow">Real-road overview</span><strong>Your island route</strong></div>
+              <span className="wr-coordinates">{itinerary.cities.length} stops</span>
+            </div>
+            <RouteMap cities={itinerary.cities ?? []} days={days} selectedDay={selectedDay} onDaySelect={selectDay} />
+            {activeDay && (
+              <div className="wr-map-day-summary">
+                <span>Selected · Day {String(activeDay.day).padStart(2, "0")}</span>
+                <strong>{activeDay.city}</strong>
+                <small>{activeDay.items.length} scheduled stop{activeDay.items.length === 1 ? "" : "s"} · {sym}{activeDay.dailyCostPerPerson.toLocaleString()} per person</small>
+              </div>
+            )}
+          </aside>
+        )}
       </div>
-    </div>
+    </main>
   );
 }

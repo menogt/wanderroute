@@ -1,120 +1,79 @@
-import { Home, Map, MapPin, Hotel, Zap } from "lucide-react";
+import { BedDouble, Bookmark, Compass, Home, MapPinned } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { Screen } from "./types";
+import "../../../styles/core-ui.css";
 
-const NAVY = "#0B1340";
-const GOLD = "#C9A227";
-
-type NavItem = {
+type ScreenNavItem = {
   key: Screen;
   label: string;
-  icon: React.ReactNode;
-  isCTA?: boolean;
+  icon: LucideIcon;
+  isPrimary?: boolean;
 };
 
-const NAV_ITEMS: NavItem[] = [
-  { key: "home", label: "Home", icon: <Home size={20} /> },
-  { key: "routes", label: "Routes", icon: <Map size={20} /> },
-  { key: "planner", label: "Plan", icon: <Zap size={20} />, isCTA: true },
-  { key: "hotels", label: "Hotels", icon: <Hotel size={20} /> },
-  { key: "map", label: "Map", icon: <MapPin size={20} /> },
+const NAV_ITEMS: ScreenNavItem[] = [
+  { key: "home", label: "Home", icon: Home },
+  { key: "map", label: "Explore", icon: MapPinned },
+  { key: "planner", label: "Plan", icon: Compass, isPrimary: true },
+  { key: "hotels", label: "Hotels", icon: BedDouble },
 ];
 
 export function BottomNav({
   screen,
   navigate,
+  onOpenTrips,
 }: {
   screen: Screen;
   navigate: (s: Screen) => void;
+  onOpenTrips?: () => void;
 }) {
-  return (
-    <div style={{
-      position: "sticky",
-      bottom: 0,
-      left: 0,
-      right: 0,
-      background: "#fff",
-      borderTop: "1px solid rgba(11,19,64,0.07)",
-      display: "flex",
-      alignItems: "center",
-      padding: "8px 8px 16px",
-      zIndex: 100,
-      boxShadow: "0 -4px 24px rgba(11,19,64,0.08)",
-    }}>
-      {NAV_ITEMS.map(({ key, label, icon, isCTA }) => {
-        const active =
-          key === screen ||
-          (key === "map" && screen === "map") ||
-          (key === "home" && (screen === "home" || screen === "itinerary" || screen === "costs"));
+  const isActive = (key: Screen) => {
+    if (key === "home") {
+      return screen === "home";
+    }
+    if (key === "planner") {
+      return ["planner", "itinerary", "costs", "share"].includes(screen);
+    }
+    if (key === "map") {
+      return screen === "map" || screen === "routes";
+    }
+    return screen === key;
+  };
 
-        if (isCTA) {
+  return (
+    <nav className="wr-bottomnav" aria-label="Primary mobile navigation">
+      <div className="wr-bottomnav__inner">
+        {NAV_ITEMS.map(({ key, label, icon: Icon, isPrimary }) => {
+          const active = isActive(key);
           return (
             <button
+              type="button"
               key={key}
+              className={`wr-bottomnav__item${isPrimary ? " is-primary" : ""}${active ? " is-active" : ""}`}
               onClick={() => navigate(key)}
-              style={{
-                flex: 1.2,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                gap: 0,
-              }}
+              aria-current={active ? "page" : undefined}
+              aria-label={isPrimary ? "Plan a trip" : label}
             >
-              <div style={{
-                width: 50, height: 50, borderRadius: 16,
-                background: `linear-gradient(135deg, ${GOLD}, #E8C547)`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                boxShadow: "0 4px 16px rgba(201,162,39,0.4)",
-                transform: "translateY(-8px)",
-              }}>
-                <Zap size={22} fill={NAVY} color={NAVY} />
-              </div>
-              <span style={{ color: GOLD, fontSize: "0.62rem", fontWeight: 800, marginTop: -4 }}>
-                {label}
+              <span className="wr-bottomnav__icon" aria-hidden="true">
+                <Icon size={isPrimary ? 21 : 19} strokeWidth={isPrimary ? 2.1 : 1.8} />
               </span>
+              <span className="wr-bottomnav__label">{label}</span>
             </button>
           );
-        }
+        })}
 
-        const isActive = screen === key ||
-          (key === "home" && !["routes", "hotels", "map", "planner"].includes(screen));
-
-        return (
-          <button
-            key={key}
-            onClick={() => navigate(key)}
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              padding: "6px 0",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: isActive ? NAVY : "#9CA3AF",
-              transition: "color 0.2s",
-            }}
-          >
-            <div style={{
-              padding: "4px 12px",
-              borderRadius: 10,
-              background: isActive ? "rgba(11,19,64,0.06)" : "transparent",
-              transition: "background 0.2s",
-            }}>
-              {icon}
-            </div>
-            <span style={{ fontSize: "0.65rem", fontWeight: isActive ? 700 : 500, lineHeight: 1 }}>
-              {label}
-            </span>
-          </button>
-        );
-      })}
-    </div>
+        <button
+          type="button"
+          className="wr-bottomnav__item"
+          onClick={onOpenTrips}
+          disabled={!onOpenTrips}
+          aria-label="Open Saved Trips"
+        >
+          <span className="wr-bottomnav__icon" aria-hidden="true">
+            <Bookmark size={19} strokeWidth={1.8} />
+          </span>
+          <span className="wr-bottomnav__label">Saved</span>
+        </button>
+      </div>
+    </nav>
   );
 }

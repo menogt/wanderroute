@@ -1,58 +1,116 @@
-import { useState, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import { Search, Hotel, Utensils, Landmark } from "lucide-react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import {
-  CITY_COORDS, SRI_LANKA_CENTER, SRI_LANKA_ZOOM,
-  CITY_CATEGORIES, MARKER_COLORS
+  MapContainer,
+  Marker,
+  Popup,
+  TileLayer,
+  useMap,
+} from "react-leaflet";
+import {
+  ArrowRight,
+  Compass,
+  Hotel,
+  Landmark,
+  MapPin,
+  Search,
+  Utensils,
+  X,
+} from "lucide-react";
+import {
+  CITY_CATEGORIES,
+  CITY_COORDS,
+  MARKER_COLORS,
+  SRI_LANKA_CENTER,
+  SRI_LANKA_ZOOM,
 } from "./mapConfig";
 import { createColorMarker, createHotelMarker } from "./leafletSetup";
 import { HOTELS_BY_CITY } from "./data";
 import { usePlaceDiscovery } from "../../hooks/usePlaceDiscovery";
-import type { DiscoveryCategory } from "./foursquareDiscovery";
+import type {
+  DiscoveredPlace,
+  DiscoveryCategory,
+} from "./foursquareDiscovery";
 import type { Screen } from "./types";
-
-const NAVY = "#0B1340";
-const GOLD = "#C9A227";
+import "../../../styles/map-hotels.css";
 
 type Category = "all" | "city" | "beach" | "hill" | "ancient" | "wildlife";
 
+type HotelPin = {
+  city: string;
+  name: string;
+  priceUSD: number;
+  type: string;
+  bookingUrl?: string;
+  location: [number, number];
+};
+
+type MapSelection =
+  | { kind: "city"; city: string; location: [number, number] }
+  | { kind: "hotel"; hotel: HotelPin }
+  | { kind: "place"; place: DiscoveredPlace };
+
 const FILTER_LABELS: Record<Category, string> = {
-  all:     "🗺️ All",
-  city:    "🏙️ Cities",
-  beach:   "🏖️ Beaches",
-  hill:    "🌿 Hill Country",
-  ancient: "🏰 Ancient Sites",
-  wildlife:"🐘 Wildlife",
+  all: "All places",
+  city: "Cities",
+  beach: "Coast",
+  hill: "Highlands",
+  ancient: "Heritage",
+  wildlife: "Wildlife",
 };
 
-// Budget hints per city (nightly estimate, budget tier)
-const CITY_BUDGET_HINT: Record<string, string> = {
-  Colombo:       "From $12/night",
-  Kandy:         "From $11/night",
-  Ella:          "From $15/night",
-  Mirissa:       "From $10/night",
-  Galle:         "From $12/night",
-  Sigiriya:      "From $18/night",
-  Negombo:       "From $13/night",
-  "Nuwara Eliya":"From $14/night",
-  Dambulla:      "From $11/night",
-  Trincomalee:   "From $12/night",
-  Unawatuna:     "From $14/night",
-  Hikkaduwa:     "From $12/night",
-  "Arugam Bay":  "From $13/night",
-  Jaffna:        "From $15/night",
-  Anuradhapura:  "From $12/night",
-  Yala:          "From $20/night",
-  Minneriya:     "From $18/night",
-  Kalpitiya:     "From $16/night",
+const CATEGORY_LABELS: Record<Exclude<Category, "all">, string> = {
+  city: "City",
+  beach: "Coast",
+  hill: "Highlands",
+  ancient: "Heritage",
+  wildlife: "Wildlife",
 };
 
-// Discovery category metadata — drives the toggle pills, marker colour, and labels
-const DISCOVERY_META: Record<DiscoveryCategory, { label: string; icon: typeof Hotel; color: string }> = {
-  hotel:      { label: "Hotels",      icon: Hotel,    color: "#0D9488" },
-  restaurant: { label: "Restaurants", icon: Utensils, color: "#DC2626" },
-  attraction: { label: "Attractions", icon: Landmark, color: "#7C3AED" },
+const DISCOVERY_META: Record<
+  DiscoveryCategory,
+  { label: string; singular: string; icon: typeof Hotel; color: string }
+> = {
+  hotel: {
+    label: "Hotels",
+    singular: "Hotel",
+    icon: Hotel,
+    color: "#0D9488",
+  },
+  restaurant: {
+    label: "Restaurants",
+    singular: "Restaurant",
+    icon: Utensils,
+    color: "#B9513D",
+  },
+  attraction: {
+    label: "Attractions",
+    singular: "Attraction",
+    icon: Landmark,
+    color: "#70563D",
+  },
 };
+
+function MapFocus({
+  target,
+  zoom,
+}: {
+  target: [number, number] | null;
+  zoom: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!target) return;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      map.setView(target, zoom);
+      return;
+    }
+    map.flyTo(target, zoom, { duration: 0.65 });
+  }, [map, target, zoom]);
+
+  return null;
+}
 
 export function MapScreen({
   navigate,
@@ -64,293 +122,449 @@ export function MapScreen({
   const [filter, setFilter] = useState<Category>("all");
   const [search, setSearch] = useState("");
   const [showHotels, setShowHotels] = useState(false);
-  const [discoveryCategory, setDiscoveryCategory] = useState<DiscoveryCategory | null>(null);
+  const [discoveryCategory, setDiscoveryCategory] =
+    useState<DiscoveryCategory | null>(null);
+  const [selection, setSelection] = useState<MapSelection | null>(null);
 
-  // Only discover near the currently visible cities — keeps API usage low
-  const visibleCityNames = useMemo(() => Object.keys(CITY_COORDS).filter(city => {
-    const cat = CITY_CATEGORIES[city] ?? "city";
-    const matchesFilter = filter === "all" || cat === filter;
-    const matchesSearch = city.toLowerCase().includes(search.toLowerCase());
-    return matchesFilter && matchesSearch;
-  }), [filter, search]);
+  const visibleCityNames = useMemo(
+    () =>
+      Object.keys(CITY_COORDS).filter((city) => {
+        const category = CITY_CATEGORIES[city] ?? "city";
+        const matchesFilter = filter === "all" || category === filter;
+        const matchesSearch = city.toLowerCase().includes(search.trim().toLowerCase());
+        return matchesFilter && matchesSearch;
+      }),
+    [filter, search],
+  );
 
-  const { places: discoveredPlaces, loading: discoveringPlaces, resolvedCities, totalCities } =
-    usePlaceDiscovery(visibleCityNames, discoveryCategory ?? "hotel", discoveryCategory !== null, 5);
+  const {
+    places: discoveredPlaces,
+    loading: discoveringPlaces,
+    resolvedCities,
+    totalCities,
+  } = usePlaceDiscovery(
+    visibleCityNames,
+    discoveryCategory ?? "hotel",
+    discoveryCategory !== null,
+    5,
+  );
 
-  // Flatten all hotels with their city + coordinates, skipping any without location data
   const allHotelPins = useMemo(() => {
-    const pins: Array<{
-      city: string; name: string; priceUSD: number; type: string;
-      stars: number; bookingUrl?: string; location: [number, number];
-    }> = [];
+    const pins: HotelPin[] = [];
     Object.entries(HOTELS_BY_CITY).forEach(([city, hotels]) => {
-      hotels.forEach(h => {
-        if (h.location) {
-          pins.push({ city, name: h.name, priceUSD: h.priceUSD, type: h.type, stars: h.stars, bookingUrl: h.bookingUrl, location: h.location });
-        }
+      hotels.forEach((hotel) => {
+        if (!hotel.location) return;
+        pins.push({
+          city,
+          name: hotel.name,
+          priceUSD: hotel.priceUSD,
+          type: hotel.type,
+          bookingUrl: hotel.bookingUrl,
+          location: hotel.location,
+        });
       });
     });
     return pins;
   }, []);
 
-  const visibleCities = useMemo(() => {
-    return Object.entries(CITY_COORDS).filter(([city]) => {
-      const cat = CITY_CATEGORIES[city] ?? "city";
-      const matchesFilter = filter === "all" || cat === filter;
-      const matchesSearch = city.toLowerCase().includes(search.toLowerCase());
-      return matchesFilter && matchesSearch;
-    });
-  }, [filter, search]);
+  const visibleCities = useMemo(
+    () =>
+      Object.entries(CITY_COORDS).filter(([city]) =>
+        visibleCityNames.includes(city),
+      ),
+    [visibleCityNames],
+  );
+
+  const selectedTarget = useMemo<[number, number] | null>(() => {
+    if (!selection) return null;
+    if (selection.kind === "city") return selection.location;
+    if (selection.kind === "hotel") return selection.hotel.location;
+    return selection.place.location;
+  }, [selection]);
+
+  const selectedZoom = selection?.kind === "city" ? 10 : 14;
+
+  const selectCityAndPlan = (city: string) => {
+    // Preserve this order: PlannerScreen reads the city override set first.
+    onCitySelect(city);
+    navigate("planner");
+  };
+
+  const discoveryStatus = (() => {
+    if (!discoveryCategory) return null;
+    const label = DISCOVERY_META[discoveryCategory].label.toLowerCase();
+    if (discoveringPlaces) {
+      return `Mapping ${label} near visible destinations · ${resolvedCities}/${totalCities}`;
+    }
+    if (discoveredPlaces.length === 0) {
+      return `No additional ${label} are available for this view.`;
+    }
+    return `${discoveredPlaces.length} additional ${label} mapped.`;
+  })();
 
   return (
-    <div style={{ background: "#EEF2FA", minHeight: "100vh" }}>
-      {/* Header */}
-      <div style={{
-        background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 100%)`,
-        padding: "52px 24px 24px",
-      }}>
-        <p style={{ color: GOLD, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", marginBottom: 8 }}>EXPLORE</p>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: "2rem", fontWeight: 900, color: "#fff", lineHeight: 1.15, marginBottom: 10 }}>
-          Sri Lanka<br />Interactive Map
-        </h1>
-        <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "0.85rem", lineHeight: 1.6, margin: 0 }}>
-          Tap any location to plan a trip there instantly.
-        </p>
-      </div>
-
-      <div style={{ padding: "20px 24px 0" }}>
-        {/* Search bar */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 10,
-          background: "#fff", borderRadius: 12, padding: "10px 14px",
-          marginBottom: 14, boxShadow: "0 2px 10px rgba(11,19,64,0.06)",
-        }}>
-          <Search size={16} color="#9CA3AF" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search cities..."
-            style={{
-              border: "none", outline: "none", flex: 1,
-              fontSize: "0.88rem", color: NAVY, background: "transparent",
-            }}
-          />
-        </div>
-
-        {/* Category filter pills */}
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 10, paddingBottom: 4, scrollbarWidth: "none" }}>
-          {(Object.keys(FILTER_LABELS) as Category[]).map(cat => (
-            <button
-              key={cat}
-              onClick={() => setFilter(cat)}
-              style={{
-                whiteSpace: "nowrap", padding: "7px 14px",
-                borderRadius: 100, border: "none", cursor: "pointer",
-                fontWeight: 600, fontSize: "0.78rem", flexShrink: 0,
-                background: filter === cat ? NAVY : "#fff",
-                color: filter === cat ? "#fff" : "#6B7280",
-                boxShadow: filter === cat ? "0 2px 8px rgba(11,19,64,0.2)" : "0 1px 4px rgba(11,19,64,0.06)",
-              }}
-            >
-              {FILTER_LABELS[cat]}
-            </button>
-          ))}
-        </div>
-
-        {/* Hotel pins toggle */}
-        <button
-          onClick={() => setShowHotels(v => !v)}
-          style={{
-            display: "flex", alignItems: "center", gap: 8,
-            width: "100%", padding: "10px 14px", marginBottom: 10,
-            borderRadius: 12, border: "none", cursor: "pointer",
-            background: showHotels ? GOLD : "#fff",
-            color: showHotels ? NAVY : "#6B7280",
-            fontWeight: 700, fontSize: "0.82rem",
-            boxShadow: showHotels ? "0 2px 10px rgba(201,162,39,0.35)" : "0 1px 4px rgba(11,19,64,0.06)",
-            transition: "all 0.2s",
-          }}
-        >
-          <Hotel size={15} />
-          {showHotels ? `Showing ${allHotelPins.length} curated hotels` : "Show curated hotels on map"}
-        </button>
-
-        {/* Foursquare discovery — pick a category to auto-find nearby places, no manual entry */}
-        <div style={{ marginBottom: 14 }}>
-          <p style={{ fontSize: "0.72rem", color: "#9CA3AF", fontWeight: 700, marginBottom: 8, letterSpacing: "0.04em" }}>
-            DISCOVER NEARBY (AUTO)
-          </p>
-          <div style={{ display: "flex", gap: 8 }}>
-            {(Object.keys(DISCOVERY_META) as DiscoveryCategory[]).map(cat => {
-              const meta = DISCOVERY_META[cat];
-              const Icon = meta.icon;
-              const active = discoveryCategory === cat;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => setDiscoveryCategory(active ? null : cat)}
-                  style={{
-                    flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                    padding: "10px 8px", borderRadius: 12, border: "none", cursor: "pointer",
-                    background: active ? meta.color : "#fff",
-                    color: active ? "#fff" : "#6B7280",
-                    fontWeight: 700, fontSize: "0.76rem",
-                    boxShadow: active ? `0 2px 10px ${meta.color}55` : "0 1px 4px rgba(11,19,64,0.06)",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  <Icon size={14} />
-                  {meta.label}
-                </button>
-              );
-            })}
-          </div>
-          {discoveryCategory && (
-            <p style={{ fontSize: "0.74rem", color: DISCOVERY_META[discoveryCategory].color, fontWeight: 600, marginTop: 8 }}>
-              {discoveringPlaces
-                ? `Discovering ${DISCOVERY_META[discoveryCategory].label.toLowerCase()}... (${resolvedCities}/${totalCities} cities)`
-                : `Found ${discoveredPlaces.length} ${DISCOVERY_META[discoveryCategory].label.toLowerCase()} nearby`}
+    <main className="wr-map-screen">
+      <div className="wr-map-layout">
+        <aside className="wr-map-panel" aria-label="Map explorer controls">
+          <header className="wr-map-heading">
+            <span className="wr-kicker">
+              <Compass aria-hidden="true" size={14} />
+              Island explorer
+            </span>
+            <h1>Explore Sri Lanka by place.</h1>
+            <p>
+              Filter destinations, reveal listed stays, or search nearby places on
+              the live map.
             </p>
-          )}
-        </div>
+          </header>
 
-        {/* Map */}
-        <div style={{ borderRadius: 20, overflow: "hidden", boxShadow: "0 4px 24px rgba(11,19,64,0.12)", marginBottom: 16 }}>
-          <MapContainer
-            center={SRI_LANKA_CENTER}
-            zoom={SRI_LANKA_ZOOM}
-            style={{ height: 420, width: "100%" }}
-            scrollWheelZoom={true}
-            attributionControl={false}
-          >
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            {visibleCities.map(([city, coords]) => {
-              const cat = CITY_CATEGORIES[city] ?? "city";
-              const color = MARKER_COLORS[cat];
-              const hotelCount = (HOTELS_BY_CITY[city] || []).length;
-              return (
-                <Marker key={city} position={coords} icon={createColorMarker(color, 14)}>
-                  <Popup>
-                    <div style={{ fontFamily: "sans-serif", minWidth: 140 }}>
-                      <strong style={{ color: NAVY, fontSize: 14 }}>{city}</strong>
-                      <div style={{
-                        display: "inline-block", marginLeft: 6,
-                        background: color + "20", color: color,
-                        borderRadius: 4, padding: "1px 6px",
-                        fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-                      }}>
-                        {cat}
-                      </div>
-                      {CITY_BUDGET_HINT[city] && (
-                        <p style={{ margin: "4px 0 2px", color: "#6B7280", fontSize: 12 }}>
-                          {CITY_BUDGET_HINT[city]}
-                        </p>
-                      )}
-                      {hotelCount > 0 && (
-                        <p style={{ margin: "0 0 8px", color: "#6B7280", fontSize: 11 }}>
-                          🏨 {hotelCount} hotel{hotelCount !== 1 ? "s" : ""} listed
-                        </p>
-                      )}
-                      <button
-                        onClick={() => {
-                          onCitySelect(city);
-                          navigate("planner");
-                        }}
-                        style={{
-                          width: "100%", background: GOLD, color: NAVY,
-                          border: "none", borderRadius: 8,
-                          padding: "7px 10px", fontSize: 12, fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        Plan a trip here →
-                      </button>
-                    </div>
-                  </Popup>
-                </Marker>
-              );
-            })}
-
-            {/* Individual hotel pins — only rendered when toggled on */}
-            {showHotels && allHotelPins.map((hotel, i) => (
-              <Marker
-                key={`${hotel.city}-${hotel.name}-${i}`}
-                position={hotel.location}
-                icon={createHotelMarker(hotel.type as "budget" | "comfort" | "luxury")}
+          <div className="wr-map-search">
+            <label className="wr-visually-hidden" htmlFor="map-city-search">
+              Search destinations
+            </label>
+            <Search aria-hidden="true" size={17} />
+            <input
+              id="map-city-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search destinations"
+              autoComplete="off"
+            />
+            {search && (
+              <button
+                type="button"
+                className="wr-icon-button"
+                onClick={() => setSearch("")}
+                aria-label="Clear destination search"
               >
-                <Popup>
-                  <div style={{ fontFamily: "sans-serif", minWidth: 160 }}>
-                    <strong style={{ color: NAVY, fontSize: 13 }}>{hotel.name}</strong>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, margin: "4px 0" }}>
-                      {Array.from({ length: hotel.stars }).map((_, s) => (
-                        <span key={s} style={{ color: GOLD, fontSize: 11 }}>★</span>
-                      ))}
-                      <span style={{ color: "#9CA3AF", fontSize: 11, marginLeft: 4 }}>{hotel.city}</span>
-                    </div>
-                    <p style={{ margin: "2px 0 8px", color: NAVY, fontSize: 14, fontWeight: 800 }}>
-                      ${hotel.priceUSD}<span style={{ fontSize: 11, color: "#9CA3AF", fontWeight: 400 }}>/night</span>
-                    </p>
-                    {hotel.bookingUrl && (
+                <X aria-hidden="true" size={15} />
+              </button>
+            )}
+          </div>
+
+          <fieldset className="wr-control-group">
+            <legend>Destination type</legend>
+            <div className="wr-filter-grid">
+              {(Object.keys(FILTER_LABELS) as Category[]).map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  className="wr-filter-button"
+                  aria-pressed={filter === category}
+                  onClick={() => setFilter(category)}
+                >
+                  {FILTER_LABELS[category]}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          <fieldset className="wr-control-group">
+            <legend>Map layers</legend>
+            <button
+              type="button"
+              className="wr-layer-toggle"
+              aria-pressed={showHotels}
+              onClick={() => setShowHotels((visible) => !visible)}
+            >
+              <span className="wr-layer-icon wr-layer-icon--gold">
+                <Hotel aria-hidden="true" size={16} />
+              </span>
+              <span>
+                <strong>Listed hotels</strong>
+                <small>
+                  {showHotels
+                    ? `${allHotelPins.length} locations visible`
+                    : "Reveal hotel markers"}
+                </small>
+              </span>
+              <span className="wr-switch" aria-hidden="true" />
+            </button>
+
+            <div className="wr-discovery-heading">
+              <span>Nearby place search</span>
+              <small>Runs only when selected</small>
+            </div>
+            <div className="wr-discovery-grid">
+              {(Object.keys(DISCOVERY_META) as DiscoveryCategory[]).map(
+                (category) => {
+                  const meta = DISCOVERY_META[category];
+                  const Icon = meta.icon;
+                  const active = discoveryCategory === category;
+                  return (
+                    <button
+                      key={category}
+                      type="button"
+                      className="wr-discovery-button"
+                      aria-pressed={active}
+                      onClick={() =>
+                        setDiscoveryCategory(active ? null : category)
+                      }
+                      style={{ "--marker-color": meta.color } as CSSProperties}
+                    >
+                      <Icon aria-hidden="true" size={15} />
+                      {meta.label}
+                    </button>
+                  );
+                },
+              )}
+            </div>
+            {discoveryStatus && (
+              <p className="wr-map-status" role="status" aria-live="polite">
+                <span className={discoveringPlaces ? "is-loading" : ""} />
+                {discoveryStatus}
+              </p>
+            )}
+          </fieldset>
+
+          <section className="wr-destination-results" aria-labelledby="map-results-title">
+            <div className="wr-results-heading">
+              <h2 id="map-results-title">Destinations</h2>
+              <span>
+                {visibleCities.length}/{Object.keys(CITY_COORDS).length}
+              </span>
+            </div>
+            {visibleCities.length === 0 ? (
+              <div className="wr-compact-empty">
+                <MapPin aria-hidden="true" size={18} />
+                <p>No destination matches this search and filter.</p>
+              </div>
+            ) : (
+              <div className="wr-destination-list">
+                {visibleCities.map(([city, location]) => {
+                  const category = CITY_CATEGORIES[city] ?? "city";
+                  const active = selection?.kind === "city" && selection.city === city;
+                  return (
+                    <button
+                      type="button"
+                      key={city}
+                      className="wr-destination-row"
+                      aria-current={active ? "location" : undefined}
+                      onClick={() => setSelection({ kind: "city", city, location })}
+                    >
+                      <span
+                        className="wr-destination-dot"
+                        style={{ backgroundColor: MARKER_COLORS[category] }}
+                      />
+                      <span>
+                        <strong>{city}</strong>
+                        <small>{CATEGORY_LABELS[category]}</small>
+                      </span>
+                      <ArrowRight aria-hidden="true" size={14} />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </aside>
+
+        <section className="wr-map-stage" aria-label="Interactive Sri Lanka map">
+          <div className="wr-map-frame wr-map-frame--explorer">
+            <MapContainer
+              center={SRI_LANKA_CENTER}
+              zoom={SRI_LANKA_ZOOM}
+              className="wr-leaflet-map"
+              scrollWheelZoom
+              attributionControl
+            >
+              <TileLayer
+                attribution="&copy; OpenStreetMap contributors"
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <MapFocus target={selectedTarget} zoom={selectedZoom} />
+
+              {visibleCities.map(([city, location]) => {
+                const category = CITY_CATEGORIES[city] ?? "city";
+                const color = MARKER_COLORS[category];
+                const selected = selection?.kind === "city" && selection.city === city;
+                const hotelCount = (HOTELS_BY_CITY[city] || []).length;
+                return (
+                  <Marker
+                    key={city}
+                    position={location}
+                    icon={createColorMarker(color, selected ? 18 : 14)}
+                    eventHandlers={{
+                      click: () => setSelection({ kind: "city", city, location }),
+                    }}
+                  >
+                    <Popup>
+                      <div className="wr-map-popup">
+                        <span className="wr-popup-eyebrow">
+                          {CATEGORY_LABELS[category]}
+                        </span>
+                        <strong>{city}</strong>
+                        {hotelCount > 0 && (
+                          <p>
+                            {hotelCount} listed hotel{hotelCount === 1 ? "" : "s"}
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => selectCityAndPlan(city)}
+                        >
+                          Plan from {city}
+                          <ArrowRight aria-hidden="true" size={13} />
+                        </button>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })}
+
+              {showHotels &&
+                allHotelPins.map((hotel, index) => {
+                  const selected =
+                    selection?.kind === "hotel" &&
+                    selection.hotel.city === hotel.city &&
+                    selection.hotel.name === hotel.name;
+                  return (
+                    <Marker
+                      key={`${hotel.city}-${hotel.name}-${index}`}
+                      position={hotel.location}
+                      icon={createHotelMarker(
+                        hotel.type as "budget" | "comfort" | "luxury",
+                      )}
+                      opacity={selected ? 1 : 0.9}
+                      eventHandlers={{ click: () => setSelection({ kind: "hotel", hotel }) }}
+                    >
+                      <Popup>
+                        <div className="wr-map-popup">
+                          <span className="wr-popup-eyebrow">Listed hotel</span>
+                          <strong>{hotel.name}</strong>
+                          <p>{hotel.city}</p>
+                          {Number.isFinite(hotel.priceUSD) && hotel.priceUSD > 0 && (
+                            <p className="wr-popup-price">From ${hotel.priceUSD} / night</p>
+                          )}
+                          {hotel.bookingUrl && (
+                            <a
+                              href={hotel.bookingUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              Open hotel page
+                              <ArrowRight aria-hidden="true" size={13} />
+                            </a>
+                          )}
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })}
+
+              {discoveryCategory &&
+                discoveredPlaces.map((place) => (
+                  <Marker
+                    key={place.fsqId}
+                    position={place.location}
+                    icon={createColorMarker(
+                      DISCOVERY_META[discoveryCategory].color,
+                      selection?.kind === "place" &&
+                        selection.place.fsqId === place.fsqId
+                        ? 14
+                        : 10,
+                    )}
+                    eventHandlers={{ click: () => setSelection({ kind: "place", place }) }}
+                  >
+                    <Popup>
+                      <div className="wr-map-popup">
+                        <span className="wr-popup-eyebrow">
+                          {DISCOVERY_META[discoveryCategory].singular}
+                        </span>
+                        <strong>{place.name}</strong>
+                        {(place.address || place.city) && (
+                          <p>{place.address || place.city}</p>
+                        )}
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+            </MapContainer>
+
+            <div className="wr-map-legend" aria-label="Map marker legend">
+              <span>
+                <i className="is-start" /> Destination
+              </span>
+              {showHotels && (
+                <span>
+                  <i className="is-hotel" /> Hotel
+                </span>
+              )}
+              {discoveryCategory && (
+                <span>
+                  <i
+                    style={{
+                      backgroundColor: DISCOVERY_META[discoveryCategory].color,
+                    }}
+                  />
+                  Nearby {DISCOVERY_META[discoveryCategory].label.toLowerCase()}
+                </span>
+              )}
+            </div>
+
+            {selection && (
+              <aside className="wr-map-selection" aria-live="polite">
+                <button
+                  type="button"
+                  className="wr-icon-button wr-selection-close"
+                  onClick={() => setSelection(null)}
+                  aria-label="Close selected place details"
+                >
+                  <X aria-hidden="true" size={16} />
+                </button>
+
+                {selection.kind === "city" && (
+                  <>
+                    <span className="wr-selection-kicker">
+                      {CATEGORY_LABELS[CITY_CATEGORIES[selection.city] ?? "city"]}
+                    </span>
+                    <h2>{selection.city}</h2>
+                    <p>Select this destination as the starting point for a new route.</p>
+                    <button
+                      type="button"
+                      className="wr-inline-cta"
+                      onClick={() => selectCityAndPlan(selection.city)}
+                    >
+                      Plan from here
+                      <ArrowRight aria-hidden="true" size={14} />
+                    </button>
+                  </>
+                )}
+
+                {selection.kind === "hotel" && (
+                  <>
+                    <span className="wr-selection-kicker">Listed hotel</span>
+                    <h2>{selection.hotel.name}</h2>
+                    <p>{selection.hotel.city}</p>
+                    {selection.hotel.bookingUrl && (
                       <a
-                        href={hotel.bookingUrl}
+                        className="wr-inline-cta"
+                        href={selection.hotel.bookingUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{
-                          display: "block", textAlign: "center",
-                          background: NAVY, color: "#fff",
-                          borderRadius: 8, padding: "7px 10px",
-                          fontSize: 12, fontWeight: 700, textDecoration: "none",
-                        }}
                       >
-                        View on Booking.com →
+                        Open hotel page
+                        <ArrowRight aria-hidden="true" size={14} />
                       </a>
                     )}
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
+                  </>
+                )}
 
-            {/* Foursquare-discovered places — colour-coded dots by category, distinct from curated bed icons */}
-            {discoveryCategory && discoveredPlaces.map((place) => (
-              <Marker
-                key={place.fsqId}
-                position={place.location}
-                icon={createColorMarker(DISCOVERY_META[discoveryCategory].color, 10)}
-              >
-                <Popup>
-                  <div style={{ fontFamily: "sans-serif", minWidth: 150 }}>
-                    <strong style={{ color: NAVY, fontSize: 13 }}>{place.name}</strong>
-                    <p style={{ margin: "4px 0 6px", color: "#9CA3AF", fontSize: 11 }}>
-                      {place.address || place.city}
-                    </p>
-                    {place.rating && (
-                      <p style={{ margin: "0 0 6px", color: GOLD, fontSize: 12, fontWeight: 700 }}>
-                        ★ {place.rating.toFixed(1)}
-                      </p>
-                    )}
-                    <p style={{ margin: 0, color: DISCOVERY_META[discoveryCategory].color, fontSize: 10, fontWeight: 600 }}>
-                      Discovered via Foursquare
-                    </p>
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer>
-        </div>
-
-        {/* City count */}
-        <p style={{ color: "#9CA3AF", fontSize: "0.78rem", textAlign: "center", marginBottom: 6 }}>
-          Showing {visibleCities.length} of {Object.keys(CITY_COORDS).length} destinations
-        </p>
-        {discoveryCategory && !discoveringPlaces && discoveredPlaces.length > 0 && (
-          <p style={{ color: DISCOVERY_META[discoveryCategory].color, fontSize: "0.72rem", textAlign: "center", marginBottom: 24, fontWeight: 600 }}>
-            🟢 {discoveredPlaces.length} additional {DISCOVERY_META[discoveryCategory].label.toLowerCase()} found automatically — no manual entry needed
-          </p>
-        )}
-        {(!discoveryCategory || discoveringPlaces || discoveredPlaces.length === 0) && (
-          <div style={{ marginBottom: 24 }} />
-        )}
+                {selection.kind === "place" && (
+                  <>
+                    <span className="wr-selection-kicker">
+                      {DISCOVERY_META[selection.place.category].singular}
+                    </span>
+                    <h2>{selection.place.name}</h2>
+                    <p>{selection.place.address || selection.place.city}</p>
+                  </>
+                )}
+              </aside>
+            )}
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

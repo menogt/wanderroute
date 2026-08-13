@@ -1,70 +1,117 @@
-import { useState, useEffect } from "react";
-import { Star, MapPin, Wifi, Waves, Utensils, Dumbbell } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { useEffect, useState } from "react";
+import {
+  ArrowRight,
+  CalendarDays,
+  Dumbbell,
+  Hotel,
+  List,
+  Map as MapIcon,
+  MapPin,
+  Sparkles,
+  Utensils,
+  Wifi,
+  Waves,
+} from "lucide-react";
+import {
+  MapContainer,
+  Marker,
+  Popup,
+  TileLayer,
+  useMap,
+} from "react-leaflet";
 import { fetchHotels } from "../../lib/placesDb";
 import { HOTELS_BY_CITY } from "./data";
-import { bookingLink, agodaLink, AGODA_ENABLED } from "../../lib/affiliates";
+import {
+  AGODA_ENABLED,
+  agodaLink,
+  bookingLink,
+} from "../../lib/affiliates";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
-import { getCityCoords, MARKER_COLORS, CITY_CATEGORIES } from "./mapConfig";
+import {
+  CITY_CATEGORIES,
+  MARKER_COLORS,
+  getCityCoords,
+} from "./mapConfig";
 import { createColorMarker } from "./leafletSetup";
 import { useFoursquareGeocoding } from "../../hooks/useFoursquareGeocoding";
 import type { Screen, TravelStyle } from "./types";
+import "../../../styles/map-hotels.css";
 
-const NAVY = "#0B1340";
-const GOLD = "#C9A227";
-const TEAL = "#0D9488";
-const AGODA_RED = "#E63946";
+type HotelResult = {
+  name: string;
+  city?: string;
+  stars?: number;
+  priceUSD?: number;
+  type: TravelStyle;
+  amenities?: string[];
+  area?: string;
+  tip?: string;
+  bookingUrl?: string;
+  agodaUrl?: string;
+  location?: [number, number];
+};
 
 const CITIES = [
-  "Colombo", "Kandy", "Ella", "Mirissa", "Galle", "Sigiriya",
-  "Nuwara Eliya", "Trincomalee", "Negombo", "Dambulla",
+  "Colombo",
+  "Kandy",
+  "Ella",
+  "Mirissa",
+  "Galle",
+  "Sigiriya",
+  "Nuwara Eliya",
+  "Trincomalee",
+  "Negombo",
+  "Dambulla",
 ];
+
 const STYLES: TravelStyle[] = ["budget", "comfort", "luxury"];
-const STYLE_LABELS: Record<TravelStyle, string> = { budget: "🎒 Budget", comfort: "✨ Comfort", luxury: "👑 Luxury" };
-const STYLE_COLORS: Record<TravelStyle, string> = { budget: TEAL, comfort: GOLD, luxury: "#8B5CF6" };
-// Hardcoded hotels for a city, shaped like the cards expect — used only as a
-// last-resort fallback if Supabase (and the merge) somehow return nothing.
-// Style/price bucketing for real hotels now happens in fetchHotels (placesDb.ts).
-function fallbackHotels(city: string): any[] {
-  return (HOTELS_BY_CITY as Record<string, any[]>)[city] ?? [];
-}
+const STYLE_LABELS: Record<TravelStyle, string> = {
+  budget: "Budget",
+  comfort: "Comfort",
+  luxury: "Luxury",
+};
 
 const AMENITY_ICONS: Record<string, React.ReactNode> = {
-  WiFi: <Wifi size={11} />,
-  Pool: <Waves size={11} />,
-  Breakfast: <Utensils size={11} />,
-  Gym: <Dumbbell size={11} />,
-  Spa: <Star size={11} />,
+  WiFi: <Wifi aria-hidden="true" size={13} />,
+  Pool: <Waves aria-hidden="true" size={13} />,
+  Breakfast: <Utensils aria-hidden="true" size={13} />,
+  Gym: <Dumbbell aria-hidden="true" size={13} />,
+  Spa: <Sparkles aria-hidden="true" size={13} />,
 };
 
 function todayStr() {
   return new Date().toISOString().split("T")[0];
 }
+
 function tomorrowStr() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().split("T")[0];
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return date.toISOString().split("T")[0];
 }
 
-export function HotelsScreen({ navigate }: { navigate: (s: Screen) => void }) {
+function fallbackHotels(city: string): HotelResult[] {
+  return ((HOTELS_BY_CITY as Record<string, HotelResult[]>)[city] ?? []).map(
+    (hotel) => ({ ...hotel, city }),
+  );
+}
+
+export function HotelsScreen({
+  navigate: _navigate,
+}: {
+  navigate: (screen: Screen) => void;
+}) {
   const [city, setCity] = useState("Colombo");
   const [style, setStyle] = useState<TravelStyle>("comfort");
   const [checkIn, setCheckIn] = useState(todayStr());
   const [checkOut, setCheckOut] = useState(tomorrowStr());
   const [selectedHotelIndex, setSelectedHotelIndex] = useState<number | null>(null);
-
-  const [hotels, setHotels] = useState<any[]>([]);
+  const [hotels, setHotels] = useState<HotelResult[]>([]);
   const [loadingHotels, setLoadingHotels] = useState(false);
-  const bp = useBreakpoint();
-  const isDesktop = bp === "desktop";
-  const isTabletPlus = bp === "tablet" || bp === "desktop";
+  const [mobileView, setMobileView] = useState<"list" | "map">("list");
+  const breakpoint = useBreakpoint();
 
-  // Load every real hotel for the city from Supabase (merged with the curated
-  // hardcoded list inside fetchHotels). We deliberately do NOT pass `style` to
-  // the DB query: imported hotels have no style column, so filtering by it there
-  // would hide all of them. fetchHotels buckets them into budget/comfort/luxury,
-  // and we filter by the selected style below. Falls back to the hardcoded list
-  // for the city if nothing comes back (also keeps it correct offline).
+  // Keep the established data flow: fetch every hotel for a city, then filter
+  // the merged Supabase + listed data by style in the browser.
   useEffect(() => {
     let active = true;
     setLoadingHotels(true);
@@ -76,283 +123,243 @@ export function HotelsScreen({ navigate }: { navigate: (s: Screen) => void }) {
       .finally(() => {
         if (active) setLoadingHotels(false);
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [city]);
 
-  const cityHotels = hotels.filter((h) => h.type === style);
+  const cityHotels = hotels.filter((hotel) => hotel.type === style);
+  const visibleHotels = loadingHotels ? [] : cityHotels;
 
-  // Reset map selection whenever the filters change so stale indices don't highlight.
-  const selectCity = (c: string) => { setCity(c); setSelectedHotelIndex(null); };
-  const selectStyle = (s: TravelStyle) => { setStyle(s); setSelectedHotelIndex(null); };
+  const selectCity = (nextCity: string) => {
+    setCity(nextCity);
+    setSelectedHotelIndex(null);
+  };
 
-  const handleSelectHotel = (i: number) => {
-    setSelectedHotelIndex(i);
+  const selectStyle = (nextStyle: TravelStyle) => {
+    setStyle(nextStyle);
+    setSelectedHotelIndex(null);
+  };
+
+  // Marker -> card remains index-coupled by design. Keep the hotel-${index}
+  // target in HotelCard aligned with the exact array passed to HotelMap.
+  const handleSelectHotel = (index: number) => {
+    setSelectedHotelIndex(index);
+    if (breakpoint === "mobile") setMobileView("list");
     setTimeout(() => {
-      document.getElementById(`hotel-${i}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      document
+        .getElementById(`hotel-${index}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 0);
   };
 
-  const buildBookingUrl = (name: string, bookingUrl?: string) =>
-    bookingLink(name, city, checkIn, checkOut, bookingUrl);
+  const handleShowOnMap = (index: number) => {
+    setSelectedHotelIndex(index);
+    if (breakpoint === "mobile") setMobileView("map");
+  };
 
-  const buildAgodaUrl = (name: string, agodaUrl?: string) =>
-    agodaLink(name, city, agodaUrl);
+  const buildBookingUrl = (name: string, existingUrl?: string) =>
+    bookingLink(name, city, checkIn, checkOut, existingUrl);
 
-  // ── Filters (reused in sidebar and inline) ──
-  const filterPanel = (
-    <>
-      {/* Style filter */}
-      <div style={{ marginBottom: 20 }}>
-        {isDesktop && <p style={{ color: NAVY, fontWeight: 700, fontSize: "0.78rem", marginBottom: 10 }}>Travel Style</p>}
-        <div style={{ display: "flex", gap: 8, flexDirection: isDesktop ? "column" : "row" }}>
-          {STYLES.map((s) => (
-            <button
-              key={s}
-              onClick={() => selectStyle(s)}
-              style={{
-                flex: isDesktop ? undefined : 1,
-                padding: isDesktop ? "10px 14px" : "10px 0",
-                borderRadius: 12, border: "none", cursor: "pointer",
-                fontWeight: 700, fontSize: "0.78rem",
-                textAlign: isDesktop ? "left" : "center",
-                background: style === s ? STYLE_COLORS[s] : "#fff",
-                color: style === s ? (s === "comfort" ? NAVY : "#fff") : "#6B7280",
-                boxShadow: style === s ? `0 4px 16px ${STYLE_COLORS[s]}40` : "0 1px 4px rgba(11,19,64,0.06)",
-                transition: "all 0.2s",
-              }}
-            >
-              {STYLE_LABELS[s]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* City filter */}
-      {isDesktop ? (
-        <div>
-          <p style={{ color: NAVY, fontWeight: 700, fontSize: "0.78rem", marginBottom: 10 }}>City</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {CITIES.map((c) => (
-              <button
-                key={c}
-                onClick={() => selectCity(c)}
-                style={{
-                  padding: "9px 14px", borderRadius: 10, border: "none", cursor: "pointer",
-                  fontWeight: 600, fontSize: "0.78rem", textAlign: "left",
-                  background: city === c ? NAVY : "#fff",
-                  color: city === c ? "#fff" : "#6B7280",
-                  boxShadow: "0 1px 4px rgba(11,19,64,0.05)",
-                  transition: "all 0.15s",
-                }}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
-          {CITIES.map((c) => (
-            <button
-              key={c}
-              onClick={() => selectCity(c)}
-              style={{
-                whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 100, border: "none", cursor: "pointer",
-                fontWeight: 600, fontSize: "0.78rem", flexShrink: 0,
-                background: city === c ? NAVY : "#fff",
-                color: city === c ? "#fff" : "#6B7280",
-              }}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
-      )}
-    </>
-  );
+  const buildAgodaUrl = (name: string, existingUrl?: string) =>
+    agodaLink(name, city, existingUrl);
 
   return (
-    <div style={{ background: "#EEF2FA", minHeight: "100vh" }}>
-      {/* Header */}
-      <div style={{ background: `linear-gradient(160deg, ${NAVY} 0%, #1D2E6B 100%)`, padding: isTabletPlus ? "40px 32px 32px" : "52px 24px 32px" }}>
-        <p style={{ color: GOLD, fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.1em", marginBottom: 8 }}>ACCOMMODATIONS</p>
-        <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: isDesktop ? "2.8rem" : "2rem", fontWeight: 900, color: "#fff", lineHeight: 1.15 }}>
-          Where to Stay
-        </h1>
-        <p style={{ color: "rgba(255,255,255,0.55)", fontSize: isDesktop ? "1rem" : "0.85rem", lineHeight: 1.6, marginTop: 8 }}>
-          Curated picks across all budgets, with honest price ranges and local tips.
-        </p>
-
-        {/* Date pickers */}
-        <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
-          <div style={{ flex: 1 }}>
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.7rem", fontWeight: 600, marginBottom: 6 }}>CHECK IN</p>
-            <input
-              type="date"
-              value={checkIn}
-              min={todayStr()}
-              onChange={(e) => setCheckIn(e.target.value)}
-              style={{
-                width: "100%", padding: "10px 12px", borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.15)",
-                background: "rgba(255,255,255,0.1)", color: "#fff",
-                fontSize: "0.85rem", fontWeight: 600, outline: "none",
-                colorScheme: "dark",
-              }}
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.7rem", fontWeight: 600, marginBottom: 6 }}>CHECK OUT</p>
-            <input
-              type="date"
-              value={checkOut}
-              min={checkIn || todayStr()}
-              onChange={(e) => setCheckOut(e.target.value)}
-              style={{
-                width: "100%", padding: "10px 12px", borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.15)",
-                background: "rgba(255,255,255,0.1)", color: "#fff",
-                fontSize: "0.85rem", fontWeight: 600, outline: "none",
-                colorScheme: "dark",
-              }}
-            />
-          </div>
+    <main className="wr-hotels-screen">
+      <header className="wr-hotels-header">
+        <div className="wr-hotels-title">
+          <span className="wr-kicker">
+            <Hotel aria-hidden="true" size={14} />
+            Stay finder
+          </span>
+          <h1>Find a practical base for your route.</h1>
+          <p>
+            Compare listed stays by destination and planning tier, then continue
+            on a booking partner site for current details.
+          </p>
         </div>
+
+        <div className="wr-hotel-controls" aria-label="Hotel search controls">
+          <label className="wr-hotel-field wr-hotel-field--city">
+            <span>Destination</span>
+            <span className="wr-select-wrap">
+              <MapPin aria-hidden="true" size={15} />
+              <select
+                value={city}
+                onChange={(event) => selectCity(event.target.value)}
+              >
+                {CITIES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </span>
+          </label>
+
+          <fieldset className="wr-hotel-field wr-tier-field">
+            <legend>Planning tier</legend>
+            <div className="wr-tier-control">
+              {STYLES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={style === option}
+                  data-tier={option}
+                  onClick={() => selectStyle(option)}
+                >
+                  {STYLE_LABELS[option]}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          <label className="wr-hotel-field">
+            <span>Check in</span>
+            <span className="wr-date-wrap">
+              <CalendarDays aria-hidden="true" size={14} />
+              <input
+                type="date"
+                value={checkIn}
+                min={todayStr()}
+                onChange={(event) => setCheckIn(event.target.value)}
+              />
+            </span>
+          </label>
+
+          <label className="wr-hotel-field">
+            <span>Check out</span>
+            <span className="wr-date-wrap">
+              <CalendarDays aria-hidden="true" size={14} />
+              <input
+                type="date"
+                value={checkOut}
+                min={checkIn || todayStr()}
+                onChange={(event) => setCheckOut(event.target.value)}
+              />
+            </span>
+          </label>
+        </div>
+      </header>
+
+      <div className="wr-hotels-view-toggle" aria-label="Hotel view">
+        <button
+          type="button"
+          aria-pressed={mobileView === "list"}
+          onClick={() => setMobileView("list")}
+        >
+          <List aria-hidden="true" size={16} />
+          Results
+        </button>
+        <button
+          type="button"
+          aria-pressed={mobileView === "map"}
+          onClick={() => setMobileView("map")}
+        >
+          <MapIcon aria-hidden="true" size={16} />
+          Map
+        </button>
       </div>
 
-      {/* Body */}
-      {isDesktop ? (
-        /* Desktop: sidebar + grid */
-        <div style={{ display: "flex", gap: 28, padding: "32px 40px", alignItems: "flex-start" }}>
-          {/* Filter sidebar */}
-          <div style={{ width: 220, flexShrink: 0, position: "sticky", top: 92 }}>
-            <div style={{ background: "#fff", borderRadius: 20, padding: "20px", boxShadow: "0 4px 20px rgba(11,19,64,0.07)" }}>
-              {filterPanel}
+      <div className="wr-hotels-workspace" data-mobile-view={mobileView}>
+        <section className="wr-hotel-results-pane" aria-labelledby="hotel-results-title">
+          <div className="wr-hotel-results-heading">
+            <div>
+              <span className="wr-section-index">Stay list · {city}</span>
+              <h2 id="hotel-results-title">
+                {STYLE_LABELS[style]} stays
+              </h2>
             </div>
-          </div>
-
-          {/* Hotel cards grid */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {cityHotels.length > 0 && (
-              <HotelMap hotels={cityHotels} city={city} selectedIndex={selectedHotelIndex} onSelect={handleSelectHotel} />
+            {!loadingHotels && (
+              <span className="wr-result-count" aria-live="polite">
+                {cityHotels.length} listed
+              </span>
             )}
-            {loadingHotels && cityHotels.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "60px 0", color: "#6B7280", fontSize: "0.85rem" }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🏨</div>
-                Loading hotels from database...
-              </div>
-            ) : cityHotels.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "60px 0", color: "#9CA3AF" }}>
-                <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🔍</div>
-                <p style={{ fontWeight: 600 }}>No {STYLE_LABELS[style]} hotels listed for {city} yet.</p>
-                <p style={{ fontSize: "0.82rem", marginTop: 6 }}>Try a different city or style.</p>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 20 }}>
-                {cityHotels.map((hotel, i) => (
-                  <HotelCard key={`${hotel.name}-${i}`} index={i} selected={selectedHotelIndex === i} hotel={hotel} style={style} city={city} bookingUrl={buildBookingUrl(hotel.name, hotel.bookingUrl)} agodaUrl={buildAgodaUrl(hotel.name, hotel.agodaUrl)} />
-                ))}
-              </div>
-            )}
-            <TipCard />
-            <AffiliateDisclosure />
-          </div>
-        </div>
-      ) : (
-        /* Mobile/Tablet: stacked filters + grid */
-        <div style={{ padding: isTabletPlus ? "24px 32px" : "24px" }}>
-          {/* Style filter */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-            {STYLES.map((s) => (
-              <button
-                key={s}
-                onClick={() => selectStyle(s)}
-                style={{
-                  flex: 1, padding: "10px 0", borderRadius: 12, border: "none", cursor: "pointer",
-                  fontWeight: 700, fontSize: "0.78rem",
-                  background: style === s ? STYLE_COLORS[s] : "#fff",
-                  color: style === s ? (s === "comfort" ? NAVY : "#fff") : "#6B7280",
-                  boxShadow: style === s ? `0 4px 16px ${STYLE_COLORS[s]}40` : "0 1px 4px rgba(11,19,64,0.06)",
-                  transition: "all 0.2s",
-                }}
-              >
-                {STYLE_LABELS[s]}
-              </button>
-            ))}
           </div>
 
-          {/* City filter */}
-          <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 24, paddingBottom: 4, scrollbarWidth: "none" }}>
-            {CITIES.map((c) => (
-              <button
-                key={c}
-                onClick={() => selectCity(c)}
-                style={{
-                  whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 100, border: "none", cursor: "pointer",
-                  fontWeight: 600, fontSize: "0.78rem", flexShrink: 0,
-                  background: city === c ? NAVY : "#fff",
-                  color: city === c ? "#fff" : "#6B7280",
-                }}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-
-          {/* Hotel location map */}
-          {cityHotels.length > 0 && (
-            <HotelMap hotels={cityHotels} city={city} selectedIndex={selectedHotelIndex} onSelect={handleSelectHotel} />
-          )}
-
-          {/* Hotel cards */}
-          {loadingHotels && cityHotels.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "40px 0", color: "#6B7280", fontSize: "0.85rem" }}>
-              <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🏨</div>
-              Loading hotels from database...
-            </div>
+          {loadingHotels ? (
+            <HotelLoadingState city={city} />
           ) : cityHotels.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "40px 0", color: "#9CA3AF" }}>
-              <div style={{ fontSize: "2.5rem", marginBottom: 12 }}>🔍</div>
-              <p style={{ fontWeight: 600 }}>No {STYLE_LABELS[style]} hotels listed for {city} yet.</p>
-              <p style={{ fontSize: "0.82rem", marginTop: 6 }}>Try a different city or style.</p>
-            </div>
+            <HotelEmptyState city={city} style={style} />
           ) : (
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: isTabletPlus ? "repeat(2, 1fr)" : "1fr",
-              gap: 16,
-            }}>
-              {cityHotels.map((hotel, i) => (
-                <HotelCard key={`${hotel.name}-${i}`} index={i} selected={selectedHotelIndex === i} hotel={hotel} style={style} city={city} bookingUrl={buildBookingUrl(hotel.name, hotel.bookingUrl)} agodaUrl={buildAgodaUrl(hotel.name, hotel.agodaUrl)} />
+            <div className="wr-hotel-list">
+              {cityHotels.map((hotel, index) => (
+                <HotelCard
+                  key={`${hotel.name}-${index}`}
+                  hotel={hotel}
+                  index={index}
+                  selected={selectedHotelIndex === index}
+                  bookingUrl={buildBookingUrl(hotel.name, hotel.bookingUrl)}
+                  agodaUrl={buildAgodaUrl(hotel.name, hotel.agodaUrl)}
+                  onShowMap={() => handleShowOnMap(index)}
+                />
               ))}
             </div>
           )}
-          <TipCard />
+
           <AffiliateDisclosure />
-        </div>
-      )}
-    </div>
+        </section>
+
+        <aside className="wr-hotel-map-pane" aria-label={`Hotel map for ${city}`}>
+          <HotelMap
+            hotels={visibleHotels}
+            city={city}
+            style={style}
+            selectedIndex={selectedHotelIndex}
+            onSelect={handleSelectHotel}
+          />
+        </aside>
+      </div>
+    </main>
   );
 }
 
-function HotelMap({ hotels, city, selectedIndex, onSelect }: {
-  hotels: Array<{ name: string; priceUSD: number; area?: string; location?: [number, number] }>;
+function HotelMapFocus({ target }: { target: [number, number] | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!target) return;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      map.setView(target, 15);
+      return;
+    }
+    map.flyTo(target, 15, { duration: 0.55 });
+  }, [map, target]);
+
+  return null;
+}
+
+function HotelMap({
+  hotels,
+  city,
+  style,
+  selectedIndex,
+  onSelect,
+}: {
+  hotels: HotelResult[];
   city: string;
+  style: TravelStyle;
   selectedIndex: number | null;
-  onSelect: (i: number) => void;
+  onSelect: (index: number) => void;
 }) {
-  // Geocode only the hotels that don't already carry static coords (e.g. user-added),
-  // using Foursquare for accurate hotel positions, biased toward the selected city.
+  // Only missing coordinates are resolved. Existing static/Supabase coordinates
+  // retain priority and query keys continue to mirror the card indexes.
   const queries = hotels
-    .map((hotel, i) => ({ hotel, i }))
-    .filter(x => !x.hotel.location)
-    .map(x => ({ key: `hotel-${x.i}`, placeName: x.hotel.name, city }));
+    .map((hotel, index) => ({ hotel, index }))
+    .filter(({ hotel }) => !hotel.location)
+    .map(({ hotel, index }) => ({
+      key: `hotel-${index}`,
+      placeName: hotel.name,
+      city,
+    }));
 
-  const { coords: geocodedCoords, loading } = useFoursquareGeocoding(queries);
+  const { coords: geocodedCoords, loading } =
+    useFoursquareGeocoding(queries);
 
-  // Merge static coords + geocoded coords, preserving hotel order.
-  const hotelCoords = hotels.map((hotel, i) =>
-    hotel.location || geocodedCoords[`hotel-${i}`] || null
+  const hotelCoords = hotels.map(
+    (hotel, index) =>
+      hotel.location || geocodedCoords[`hotel-${index}`] || null,
   );
 
   const cityCoords = getCityCoords(city);
@@ -360,205 +367,246 @@ function HotelMap({ hotels, city, selectedIndex, onSelect }: {
 
   const category = CITY_CATEGORIES[city] ?? "city";
   const baseColor = MARKER_COLORS[category];
+  const selectedHotel =
+    selectedIndex !== null ? hotels[selectedIndex] ?? null : null;
+  const selectedCoords =
+    selectedIndex !== null ? hotelCoords[selectedIndex] ?? null : null;
+  const locatedCount = hotelCoords.filter(Boolean).length;
 
   return (
-    <div style={{
-      borderRadius: 16, overflow: "hidden", marginBottom: 20,
-      boxShadow: "0 4px 20px rgba(11,19,64,0.1)",
-      border: "1px solid rgba(11,19,64,0.06)",
-    }}>
+    <div className="wr-hotel-map-shell">
+      <div className="wr-map-context">
+        <span>{city}</span>
+        <strong>{STYLE_LABELS[style]} map</strong>
+      </div>
+
       {loading && (
-        <div style={{
-          background: "#C9A227", color: "#0B1340",
-          padding: "6px 14px", fontSize: "0.72rem", fontWeight: 700,
-          textAlign: "center",
-        }}>
-          📍 Locating hotels on map...
+        <div className="wr-map-geocoding-status" role="status" aria-live="polite">
+          <span className="is-loading" />
+          Locating listed stays…
         </div>
       )}
+
       <MapContainer
+        key={`${city}-${style}`}
         center={cityCoords}
         zoom={13}
-        style={{ height: 200, width: "100%" }}
-        zoomControl={false}
+        className="wr-leaflet-map"
+        zoomControl
         scrollWheelZoom={false}
-        attributionControl={false}
+        attributionControl
       >
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
-        {hotels.map((hotel, i) => {
-          const coords = hotelCoords[i];
+        <TileLayer
+          attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+        />
+        <HotelMapFocus target={selectedCoords} />
+
+        {hotels.map((hotel, index) => {
+          const coords = hotelCoords[index];
           if (!coords) return null;
-          const isSelected = selectedIndex === i;
+          const selected = selectedIndex === index;
           return (
             <Marker
-              key={`${hotel.name}-${i}`}
+              key={`${hotel.name}-${index}`}
               position={coords}
-              icon={createColorMarker(isSelected ? "#C9A227" : baseColor, isSelected ? 16 : 12)}
-              eventHandlers={{ click: () => onSelect(i) }}
+              icon={createColorMarker(
+                selected ? "#D4A64A" : baseColor,
+                selected ? 17 : 12,
+              )}
+              eventHandlers={{ click: () => onSelect(index) }}
             >
               <Popup>
-                <div style={{ fontFamily: "sans-serif" }}>
-                  <strong style={{ color: "#0B1340", fontSize: 13 }}>{hotel.name}</strong>
-                  {hotel.area && (
-                    <p style={{ color: "#9CA3AF", fontSize: 11, margin: "2px 0 0" }}>{hotel.area}</p>
-                  )}
-                  <p style={{ color: "#0D9488", fontWeight: 700, fontSize: 12, margin: "4px 0 0" }}>
-                    ${hotel.priceUSD}/night
-                  </p>
+                <div className="wr-map-popup">
+                  <span className="wr-popup-eyebrow">
+                    {STYLE_LABELS[hotel.type]} stay
+                  </span>
+                  <strong>{hotel.name}</strong>
+                  {hotel.area && <p>{hotel.area}</p>}
+                  {typeof hotel.priceUSD === "number" &&
+                    Number.isFinite(hotel.priceUSD) &&
+                    hotel.priceUSD > 0 && (
+                      <p className="wr-popup-price">
+                        From ${hotel.priceUSD} / night
+                      </p>
+                    )}
                 </div>
               </Popup>
             </Marker>
           );
         })}
       </MapContainer>
+
+      {!loading && hotels.length > 0 && locatedCount === 0 && (
+        <div className="wr-map-neutral-state" role="status">
+          <MapPin aria-hidden="true" size={18} />
+          <span>Map locations are not available for this selection yet.</span>
+        </div>
+      )}
+
+      {!loading && hotels.length === 0 && (
+        <div className="wr-map-neutral-state">
+          <MapPin aria-hidden="true" size={18} />
+          <span>The map is ready when matching stays are listed.</span>
+        </div>
+      )}
+
+      {selectedHotel && (
+        <div className="wr-selected-hotel-map-card" aria-live="polite">
+          <span>{STYLE_LABELS[selectedHotel.type]} stay</span>
+          <strong>{selectedHotel.name}</strong>
+          {selectedHotel.area && <small>{selectedHotel.area}</small>}
+        </div>
+      )}
     </div>
   );
 }
 
 function HotelCard({
   hotel,
-  style,
   index,
   selected,
   bookingUrl,
   agodaUrl,
+  onShowMap,
 }: {
-  hotel: { name: string; stars: number; priceUSD: number; type: TravelStyle; amenities: string[]; area: string; tip?: string; agodaUrl?: string };
-  style: TravelStyle;
+  hotel: HotelResult;
   index: number;
   selected: boolean;
-  city: string;
   bookingUrl: string;
   agodaUrl: string;
+  onShowMap: () => void;
 }) {
+  const hasPrice =
+    typeof hotel.priceUSD === "number" &&
+    Number.isFinite(hotel.priceUSD) &&
+    hotel.priceUSD > 0;
+  const amenities = hotel.amenities?.filter(Boolean) ?? [];
+
   return (
-    <div id={`hotel-${index}`} style={{
-      background: "#fff", borderRadius: 20,
-      boxShadow: selected ? "0 6px 24px rgba(201,162,39,0.25)" : "0 4px 20px rgba(11,19,64,0.07)",
-      border: selected ? "2px solid #C9A227" : "1px solid rgba(11,19,64,0.05)",
-      overflow: "hidden",
-      transition: "border 0.2s, box-shadow 0.2s",
-    }}>
-      <div style={{ height: 4, background: `linear-gradient(90deg, ${STYLE_COLORS[style]}, ${STYLE_COLORS[style]}80)` }} />
-      <div style={{ padding: "18px 20px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-          <div style={{ flex: 1, paddingRight: 12 }}>
-            <h3 style={{ color: NAVY, fontWeight: 800, fontSize: "1rem", marginBottom: 4, lineHeight: 1.3 }}>{hotel.name}</h3>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <MapPin size={11} color="#9CA3AF" />
-              <span style={{ color: "#9CA3AF", fontSize: "0.75rem" }}>{hotel.area}</span>
-            </div>
-          </div>
-          <div style={{ textAlign: "right", flexShrink: 0 }}>
-            <div style={{ color: NAVY, fontWeight: 800, fontSize: "1.1rem", fontFamily: "'Playfair Display', serif" }}>${hotel.priceUSD}</div>
-            <div style={{ color: "#9CA3AF", fontSize: "0.7rem" }}>per night</div>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 3, marginBottom: 12 }}>
-          {Array.from({ length: hotel.stars }).map((_, si) => (
-            <Star key={si} size={12} fill={GOLD} color={GOLD} />
-          ))}
-          {Array.from({ length: 5 - hotel.stars }).map((_, si) => (
-            <Star key={si} size={12} fill="none" color="#E5E7EB" />
-          ))}
-        </div>
-
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: hotel.tip ? 12 : 0 }}>
-          {hotel.amenities.map((a, ai) => (
-            <span key={`${a}-${ai}`} style={{
-              display: "flex", alignItems: "center", gap: 4,
-              background: "rgba(11,19,64,0.04)", color: "#4B5563",
-              borderRadius: 100, padding: "4px 10px",
-              fontSize: "0.72rem", fontWeight: 600,
-            }}>
-              {AMENITY_ICONS[a] || null}
-              {a}
+    <article
+      id={`hotel-${index}`}
+      className="wr-hotel-card"
+      data-selected={selected ? "true" : "false"}
+      data-tier={hotel.type}
+    >
+      <div className="wr-hotel-card-topline" />
+      <div className="wr-hotel-card-body">
+        <div className="wr-hotel-card-heading">
+          <div>
+            <span className="wr-tier-label">
+              {STYLE_LABELS[hotel.type]} stay
             </span>
-          ))}
+            <h3>{hotel.name}</h3>
+            {hotel.area && (
+              <p>
+                <MapPin aria-hidden="true" size={13} />
+                {hotel.area}
+              </p>
+            )}
+          </div>
+
+          {hasPrice && (
+            <div className="wr-hotel-price">
+              <small>Planning price</small>
+              <strong>${hotel.priceUSD}</strong>
+              <span>per night</span>
+            </div>
+          )}
         </div>
+
+        {amenities.length > 0 && (
+          <ul className="wr-amenity-list" aria-label="Listed amenities">
+            {amenities.map((amenity, amenityIndex) => (
+              <li key={`${amenity}-${amenityIndex}`}>
+                {AMENITY_ICONS[amenity] ?? null}
+                {amenity}
+              </li>
+            ))}
+          </ul>
+        )}
 
         {hotel.tip && (
-          <div style={{ background: "rgba(201,162,39,0.08)", borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 12 }}>
-            <span style={{ fontSize: "0.85rem" }}>💡</span>
-            <p style={{ color: "#92400E", fontSize: "0.76rem", lineHeight: 1.5, margin: 0 }}>
-              <strong>Tip:</strong> {hotel.tip}
+          <div className="wr-hotel-note">
+            <Sparkles aria-hidden="true" size={14} />
+            <p>
+              <strong>Local note</strong>
+              {hotel.tip}
             </p>
           </div>
         )}
 
-        {/* Booking.com button */}
-        <a
-          href={bookingUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: "block", textAlign: "center", textDecoration: "none",
-            width: "100%", marginTop: 14, boxSizing: "border-box",
-            background: `linear-gradient(135deg, ${GOLD}, #E8C547)`,
-            color: NAVY, border: "none", borderRadius: 12,
-            padding: "11px", fontWeight: 700, fontSize: "0.85rem",
-            cursor: "pointer",
-          }}
-        >
-          Check Availability →
-        </a>
-
-        {/* Agoda button — always shown */}
-        {AGODA_ENABLED && (
+        <div className="wr-hotel-actions">
+          <button type="button" className="wr-map-link" onClick={onShowMap}>
+            <MapIcon aria-hidden="true" size={14} />
+            Show on map
+          </button>
           <a
-            href={agodaUrl}
+            className="wr-booking-link"
+            href={bookingUrl}
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              display: "block", textAlign: "center", textDecoration: "none",
-              width: "100%", marginTop: 8, boxSizing: "border-box",
-              background: AGODA_RED,
-              color: "#fff", border: "none", borderRadius: 12,
-              padding: "11px", fontWeight: 700, fontSize: "0.85rem",
-              cursor: "pointer",
-            }}
           >
-            Check Agoda →
+            Booking.com
+            <ArrowRight aria-hidden="true" size={14} />
           </a>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Affiliate disclosure — shown once at the bottom of the hotel list.
-function AffiliateDisclosure() {
-  return (
-    <p style={{
-      color: "#9CA3AF",
-      fontSize: "0.72rem",
-      textAlign: "center",
-      lineHeight: 1.5,
-      margin: "24px 16px",
-    }}>
-      WanderRoute may earn a commission from bookings made through these links,
-      at no extra cost to you.
-    </p>
-  );
-}
-
-function TipCard() {
-  return (
-    <div style={{
-      background: `linear-gradient(135deg, ${NAVY}08, ${TEAL}08)`,
-      border: `1px solid ${TEAL}20`,
-      borderRadius: 16, padding: "16px 18px", marginTop: 24,
-    }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-        <span style={{ fontSize: "1.2rem" }}>🧭</span>
-        <div>
-          <p style={{ color: NAVY, fontWeight: 700, fontSize: "0.85rem", marginBottom: 4 }}>WanderRoute Booking Tip</p>
-          <p style={{ color: "#4B5563", fontSize: "0.78rem", lineHeight: 1.6, margin: 0 }}>
-            Always book directly with small guesthouses for better rates. For chain hotels, Booking.com usually beats the hotel's own website in Sri Lanka.
-          </p>
+          {AGODA_ENABLED && (
+            <a
+              className="wr-agoda-link"
+              href={agodaUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Agoda
+              <ArrowRight aria-hidden="true" size={14} />
+            </a>
+          )}
         </div>
       </div>
+    </article>
+  );
+}
+
+function HotelLoadingState({ city }: { city: string }) {
+  return (
+    <div className="wr-hotel-state" role="status" aria-live="polite">
+      <span className="wr-route-loader" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
+      <div>
+        <strong>Loading stays in {city}</strong>
+        <p>Preparing the list and map locations.</p>
+      </div>
     </div>
+  );
+}
+
+function HotelEmptyState({
+  city,
+  style,
+}: {
+  city: string;
+  style: TravelStyle;
+}) {
+  return (
+    <div className="wr-hotel-state wr-hotel-state--empty">
+      <Hotel aria-hidden="true" size={20} />
+      <div>
+        <strong>No {STYLE_LABELS[style].toLowerCase()} stays listed in {city}</strong>
+        <p>Try another planning tier or destination.</p>
+      </div>
+    </div>
+  );
+}
+
+function AffiliateDisclosure() {
+  return (
+    <p className="wr-affiliate-disclosure">
+      WanderRoute may earn a commission from bookings made through these links,
+      at no extra cost to you. Confirm current prices and details on the booking
+      site.
+    </p>
   );
 }

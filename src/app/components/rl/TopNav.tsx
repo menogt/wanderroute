@@ -1,16 +1,23 @@
-import { useState, useEffect } from "react";
-import { Compass, Lock, Home, Map, MapPin, Hotel, Zap, Bookmark } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  ArrowUpRight,
+  BedDouble,
+  Bookmark,
+  Compass,
+  LockKeyhole,
+  MapPinned,
+  Route,
+  WandSparkles,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { Screen } from "./types";
+import "../../../styles/core-ui.css";
 
-const NAVY = "#0B1340";
-const GOLD = "#C9A227";
-
-const NAV_LINKS: { key: Screen; label: string; icon: React.ReactNode }[] = [
-  { key: "home", label: "Home", icon: <Home size={14} /> },
-  { key: "routes", label: "Routes", icon: <Map size={14} /> },
-  { key: "planner", label: "Plan", icon: <Zap size={14} /> },
-  { key: "hotels", label: "Hotels", icon: <Hotel size={14} /> },
-  { key: "map", label: "Map", icon: <MapPin size={14} /> },
+const NAV_LINKS: Array<{ key: Screen; label: string; icon: LucideIcon }> = [
+  { key: "planner", label: "Plan", icon: WandSparkles },
+  { key: "map", label: "Explore", icon: MapPinned },
+  { key: "routes", label: "Routes", icon: Route },
+  { key: "hotels", label: "Hotels", icon: BedDouble },
 ];
 
 export function TopNav({
@@ -28,178 +35,93 @@ export function TopNav({
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 60);
+    handler();
     window.addEventListener("scroll", handler, { passive: true });
     return () => window.removeEventListener("scroll", handler);
   }, []);
 
   const isActive = (key: Screen) => {
-    if (key === "home") return screen === "home" || screen === "itinerary" || screen === "costs";
+    if (key === "planner") {
+      return ["planner", "itinerary", "costs", "share"].includes(screen);
+    }
     return screen === key;
   };
 
   return (
     <nav
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 200,
-        background: "#fff",
-        borderBottom: "1px solid rgba(11,19,64,0.08)",
-        boxShadow: scrolled ? "0 4px 20px rgba(11,19,64,0.10)" : "none",
-        transition: "box-shadow 0.3s ease",
-      }}
+      className={`wr-topnav${scrolled ? " is-scrolled" : ""}`}
+      aria-label="Primary navigation"
     >
-      <div
-        style={{
-          maxWidth: 1280,
-          margin: "0 auto",
-          padding: "0 32px",
-          height: 60,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        {/* Logo */}
+      <div className="wr-topnav__inner">
         <button
+          type="button"
+          className="wr-topnav__brand"
           onClick={() => navigate("home")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            flexShrink: 0,
-            marginRight: 16,
-          }}
+          aria-label="WanderRoute home"
         >
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              background: GOLD,
-              borderRadius: 8,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Compass size={16} color={NAVY} strokeWidth={2.5} />
-          </div>
-          <span
-            style={{
-              color: NAVY,
-              fontFamily: "'Playfair Display', serif",
-              fontWeight: 800,
-              fontSize: "1.15rem",
-            }}
-          >
-            Wander<span style={{ color: GOLD }}>Route</span>
+          <span className="wr-brand-mark" aria-hidden="true">
+            <Compass size={18} strokeWidth={2.2} />
+          </span>
+          <span className="wr-topnav__brand-word">
+            Wander<span>Route</span>
           </span>
         </button>
 
-        {/* Nav links */}
-        <div style={{ display: "flex", gap: 2, flex: 1 }}>
-          {NAV_LINKS.map(({ key, label, icon }) => {
+        <div className="wr-topnav__links">
+          {NAV_LINKS.map(({ key, label, icon: Icon }) => {
             const active = isActive(key);
             return (
               <button
+                type="button"
                 key={key}
+                className={`wr-topnav__link${active ? " is-active" : ""}`}
                 onClick={() => navigate(key)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 14px",
-                  background: "none",
-                  border: "none",
-                  borderBottom: active ? `2px solid ${GOLD}` : "2px solid transparent",
-                  cursor: "pointer",
-                  color: active ? NAVY : "#6B7280",
-                  fontWeight: active ? 700 : 500,
-                  fontSize: "0.88rem",
-                  transition: "all 0.2s",
-                  height: 60,
-                  borderRadius: 0,
-                }}
+                aria-current={active ? "page" : undefined}
               >
-                <span style={{ color: active ? GOLD : "#9CA3AF" }}>{icon}</span>
-                {label}
+                <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
+                <span>{label}</span>
               </button>
             );
           })}
         </div>
 
-        {/* My Trips (saved itineraries drawer) */}
-        {onOpenTrips && (
-          <button
-            onClick={onOpenTrips}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 14px",
-              background: "rgba(201,162,39,0.12)",
-              border: "1px solid rgba(201,162,39,0.3)",
-              borderRadius: 8,
-              cursor: "pointer",
-              color: NAVY,
-              fontSize: "0.8rem",
-              fontWeight: 700,
-              marginRight: 8,
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
-          >
-            <Bookmark size={13} color={GOLD} />
-            My Trips
-          </button>
-        )}
+        <div className="wr-topnav__actions">
+          {onOpenTrips && (
+            <button
+              type="button"
+              className="wr-topnav__saved"
+              onClick={onOpenTrips}
+              aria-label="Open Saved Trips"
+            >
+              <Bookmark size={15} strokeWidth={1.9} aria-hidden="true" />
+              <span className="wr-topnav__saved-full">Saved Trips</span>
+              <span className="wr-topnav__saved-short" aria-hidden="true">Saved</span>
+            </button>
+          )}
 
-        {/* Admin link */}
-        {showAdmin && (
-          <button
-            onClick={() => navigate("admin")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 5,
-              padding: "6px 12px",
-              background: screen === "admin" ? "rgba(11,19,64,0.08)" : "rgba(11,19,64,0.04)",
-              border: "1px solid rgba(11,19,64,0.08)",
-              borderRadius: 8,
-              cursor: "pointer",
-              color: "#6B7280",
-              fontSize: "0.76rem",
-              fontWeight: 600,
-              marginRight: 8,
-            }}
-          >
-            <Lock size={11} />
-            Admin
-          </button>
-        )}
+          {showAdmin && (
+            <button
+              type="button"
+              className={`wr-topnav__admin${screen === "admin" ? " is-active" : ""}`}
+              onClick={() => navigate("admin")}
+              aria-label="Open administration"
+              aria-current={screen === "admin" ? "page" : undefined}
+            >
+              <LockKeyhole size={14} strokeWidth={1.8} aria-hidden="true" />
+              <span>Admin</span>
+            </button>
+          )}
 
-        {/* CTA */}
-        <button
-          onClick={() => navigate("planner")}
-          style={{
-            background: `linear-gradient(135deg, ${GOLD}, #E8C547)`,
-            color: NAVY,
-            border: "none",
-            borderRadius: 10,
-            padding: "10px 20px",
-            fontWeight: 700,
-            fontSize: "0.88rem",
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-            boxShadow: "0 4px 12px rgba(201,162,39,0.25)",
-            flexShrink: 0,
-          }}
-        >
-          Plan My Trip →
-        </button>
+          <button
+            type="button"
+            className="wr-topnav__cta"
+            onClick={() => navigate("planner")}
+          >
+            <span className="wr-topnav__cta-full">Plan My Free Trip</span>
+            <span className="wr-topnav__cta-short" aria-hidden="true">Plan trip</span>
+            <ArrowUpRight size={15} strokeWidth={2} aria-hidden="true" />
+          </button>
+        </div>
       </div>
     </nav>
   );
