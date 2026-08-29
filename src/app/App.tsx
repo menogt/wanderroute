@@ -13,7 +13,7 @@ import { BottomNav } from "./components/rl/BottomNav";
 import { TopNav } from "./components/rl/TopNav";
 import { TripsDrawer } from "./components/rl/TripsDrawer";
 import { saveTrip, loadCurrentTrip } from "./lib/tripsDb";
-import { generateItineraryWithAI } from "./components/rl/claudeApi";
+import { generateItineraryWithAI } from "./components/rl/aiService";
 import { generateItinerary } from "./components/rl/data";
 import { useLiveRates } from "./components/rl/useLiveRates";
 import { useBreakpoint } from "./hooks/useBreakpoint";

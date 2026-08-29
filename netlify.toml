@@ -5,6 +5,14 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# Synchronous functions default to a 10 s timeout. A Groq call for a long
+# itinerary can exceed that, so request the 26 s maximum.
+# NOTE: setting this alone is often not enough — Netlify support must also
+# enable the extended timeout for the site (Pro plan). Until they do, the
+# effective limit stays 10 s and long trips fall back to the static itinerary.
+[functions."generate-itinerary"]
+  timeout = 26
+
 # Map client-facing API paths to Netlify Functions. Status 200 means rewrite,
 # so the URL visible to the browser does not change.
 [[redirects]]
