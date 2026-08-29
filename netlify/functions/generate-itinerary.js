@@ -446,6 +446,19 @@ export const handler = async (event) => {
     return json(502, { error: "AI itinerary response was incomplete.", details: aiErrors });
   }
 
+  // The AI must return exactly the requested number of days. validateAiItinerary
+  // only checks that `days` is a non-empty array, so a truncated response (e.g.
+  // 1 day for an 8-day trip) would otherwise pass every check and be saved and
+  // rendered as if complete. buildGeneratedItinerary copies totalDays straight
+  // from the inputs, so the mismatch would not even be visible in the payload.
+  // Fail loudly instead — the client falls back to the static itinerary.
+  if (parsed.days.length !== inputs.days) {
+    return json(502, {
+      error: "AI itinerary response was incomplete.",
+      details: [`Expected ${inputs.days} days but received ${parsed.days.length}.`],
+    });
+  }
+
   const itinerary = buildGeneratedItinerary(parsed, inputs);
   const itineraryErrors = validateGeneratedItinerary(itinerary);
   if (itineraryErrors.length > 0) {
