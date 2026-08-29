@@ -1,6 +1,12 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
-const REQUEST_TIMEOUT_MS = 30000;
+// llama-3.3-70b-versatile was retired by Groq and now returns 404 — every
+// request silently fell back to the static itinerary. gpt-oss-120b in JSON
+// mode was benchmarked as the only model that returns a COMPLETE 8-day trip
+// (8/8 days) within a sane latency budget (~9s).
+const MODEL = "openai/gpt-oss-120b";
+// Kept just under the 26 s Netlify ceiling so the function aborts itself and
+// returns a clean JSON error, rather than being hard-killed into a bare 502.
+const REQUEST_TIMEOUT_MS = 25000;
 
 const CURRENCY_SYMBOLS = {
   USD: "$",
@@ -134,6 +140,7 @@ IMPORTANT RULES:
 4. Include hidden costs tourists often miss (entry fees, tuk-tuk tips, etc.)
 5. Route must start from ${startCity} and flow logically across Sri Lanka
 6. Interests (${interests.join(", ")}) must shape which destinations and activities are included
+7. Keep each item's "detail" and "tip" fields concise (one short sentence each) — this keeps the response compact enough to complete for longer trips
 
 Respond ONLY with a valid JSON object. No markdown, no explanation, just raw JSON.
 
@@ -352,7 +359,20 @@ async function callGroq(apiKey, inputs) {
           },
         ],
         temperature: 0.7,
-        max_tokens: 4000,
+        // Raised from 4000 — longer trips (7-10+ days) need more room to finish
+        // the full JSON object. At 4000 the model was getting cut off mid-object
+        // on longer itineraries, producing truncated (and therefore unparsable) JSON.
+        // Groq free tier caps TPM (prompt + completion) at 8000. Prompt is ~1200
+        // tokens with realPlaces, so 8000 here is rejected outright with a 413.
+        // 6000 measured safe: 1216 prompt + 4029 completion = 5245 total.
+        max_tokens: 6000,
+        // gpt-oss emits reasoning tokens that count against the completion
+        // budget; "low" keeps them from crowding out the itinerary JSON.
+        reasoning_effort: "low",
+        // Native JSON mode — cut latency 13.1s -> 9.1s and removes the
+        // markdown-fence failure mode entirely. The prompt says "JSON", which
+        // this parameter requires.
+        response_format: { type: "json_object" },
       }),
     });
 

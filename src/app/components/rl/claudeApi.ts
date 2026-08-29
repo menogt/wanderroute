@@ -1,6 +1,16 @@
-// Direct Groq API integration — calls Groq from the browser using
-// VITE_GROQ_API_KEY so AI generation works in local dev and on Netlify
-// without requiring the /api/generate-itinerary Netlify function.
+// ⚠️ DEPRECATED — DO NOT WIRE THIS BACK INTO THE APP. ⚠️
+//
+// This module calls Groq directly from the browser using VITE_GROQ_API_KEY.
+// Any VITE_* variable is inlined into the production JS bundle at build time,
+// so using this path publishes the Groq secret key to every visitor — it was
+// found in plain text in the deployed bundle and had to be rotated.
+//
+// The supported path is ./aiService, which POSTs to /api/generate-itinerary
+// and keeps the key server-side in netlify/functions/generate-itinerary.js
+// (read from process.env.GROQ_API_KEY, never exposed to the client).
+//
+// Kept only for reference. It is not imported anywhere and is tree-shaken out
+// of the bundle.
 
 import type { GeneratedItinerary, TripInputs } from "./types";
 import { fetchPlacesForPrompt } from "../../lib/itineraryPlaces";
