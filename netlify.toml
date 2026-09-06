@@ -17,6 +17,11 @@
   to = "/.netlify/functions/generate-itinerary"
   status = 200
 
+[[redirects]]
+  from = "/api/quote-request"
+  to = "/.netlify/functions/quote-request"
+  status = 200
+
 # SPA fallback - let the client router handle all other routes.
 [[redirects]]
   from = "/*"

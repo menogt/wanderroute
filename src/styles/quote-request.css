@@ -1,0 +1,311 @@
+/* Verified-driver quote request — the one commercial surface in the product.
+   Uses the ocean panel treatment so it reads as a different kind of action
+   from the neutral itinerary cards above it. */
+
+.wr-quote-panel {
+  margin-top: 28px;
+  padding: 26px 24px;
+  color: var(--wr-ivory);
+  background: var(--wr-ocean);
+  border: 1px solid rgba(7, 26, 45, 0.18);
+  border-radius: 10px;
+  box-shadow: var(--wr-shadow);
+}
+
+.wr-quote-head h2 {
+  margin: 8px 0 6px;
+  font-size: 1.32rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--wr-ivory);
+}
+
+.wr-quote-head p {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(255, 249, 239, 0.72);
+}
+
+.wr-quote-eyebrow {
+  color: var(--wr-gold);
+}
+
+.wr-quote-promises {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 22px 0;
+  padding: 18px 0 0;
+  list-style: none;
+  border-top: 1px solid rgba(255, 249, 239, 0.14);
+}
+
+.wr-quote-promises li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.wr-quote-promises svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--wr-gold);
+}
+
+.wr-quote-promises span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: rgba(255, 249, 239, 0.62);
+}
+
+.wr-quote-promises strong {
+  font-size: 0.83rem;
+  font-weight: 800;
+  color: var(--wr-ivory);
+}
+
+.wr-quote-cta {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 0.87rem;
+}
+
+.wr-quote-cta:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
+/* ---------- form ---------- */
+
+.wr-quote-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wr-quote-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.wr-quote-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wr-quote-field > span {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 249, 239, 0.55);
+}
+
+.wr-quote-field > span small {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: rgba(255, 249, 239, 0.38);
+}
+
+.wr-quote-field input,
+.wr-quote-field textarea {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  color: var(--wr-ivory);
+  background: rgba(255, 249, 239, 0.07);
+  border: 1px solid rgba(255, 249, 239, 0.18);
+  border-radius: 6px;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.wr-quote-field textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+
+.wr-quote-field input::placeholder,
+.wr-quote-field textarea::placeholder {
+  color: rgba(255, 249, 239, 0.32);
+}
+
+.wr-quote-field input:focus,
+.wr-quote-field textarea:focus {
+  outline: none;
+  background: rgba(255, 249, 239, 0.11);
+  border-color: var(--wr-gold);
+  box-shadow: 0 0 0 3px rgba(212, 166, 74, 0.16);
+}
+
+/* Native date/number controls default to a dark glyph on a dark field. */
+.wr-quote-field input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.wr-quote-field-narrow {
+  max-width: 160px;
+}
+
+.wr-quote-field-wide {
+  grid-column: 1 / -1;
+}
+
+.wr-quote-route-recap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 14px;
+  background: rgba(255, 249, 239, 0.05);
+  border-left: 2px solid var(--wr-gold);
+  border-radius: 4px;
+}
+
+.wr-quote-route-recap span {
+  font-size: 0.63rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 249, 239, 0.45);
+}
+
+.wr-quote-route-recap strong {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--wr-ivory);
+}
+
+.wr-quote-route-recap small {
+  font-size: 0.75rem;
+  text-transform: capitalize;
+  color: rgba(255, 249, 239, 0.55);
+}
+
+.wr-quote-error {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #F0A6A8;
+}
+
+.wr-quote-smallprint {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  text-align: center;
+  color: rgba(255, 249, 239, 0.42);
+}
+
+.wr-quote-spin {
+  animation: wr-quote-spin 900ms linear infinite;
+}
+
+@keyframes wr-quote-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- confirmed state ---------- */
+
+.wr-quote-done {
+  text-align: center;
+}
+
+.wr-quote-done-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 12px;
+  color: var(--wr-midnight);
+  background: var(--wr-gold);
+  border-radius: 50%;
+}
+
+.wr-quote-done h2 {
+  margin: 0 0 8px;
+  font-size: 1.24rem;
+  font-weight: 800;
+  color: var(--wr-ivory);
+}
+
+.wr-quote-done > p {
+  margin: 0 auto 16px;
+  max-width: 54ch;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(255, 249, 239, 0.72);
+}
+
+.wr-quote-expect {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0 0 16px;
+  padding: 16px 20px;
+  text-align: left;
+  list-style: none;
+  background: rgba(255, 249, 239, 0.05);
+  border-radius: 6px;
+}
+
+.wr-quote-expect li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(255, 249, 239, 0.74);
+}
+
+.wr-quote-expect li::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  background: var(--wr-gold);
+  border-radius: 50%;
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 900px) {
+  .wr-quote-promises {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 620px) {
+  .wr-quote-panel {
+    padding: 22px 18px;
+  }
+
+  .wr-quote-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wr-quote-field-narrow {
+    max-width: none;
+  }
+
+  .wr-quote-head h2 {
+    font-size: 1.16rem;
+  }
+}

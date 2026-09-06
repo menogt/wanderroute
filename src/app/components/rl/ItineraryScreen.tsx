@@ -25,6 +25,7 @@ import { createColorMarker, createNumberMarker } from "./leafletSetup";
 import { useFoursquareGeocoding } from "../../hooks/useFoursquareGeocoding";
 import { extractPlaceName } from "./placeExtractor";
 import { fetchRoadRoute } from "../../lib/osrmRoute";
+import { QuoteRequestPanel } from "./QuoteRequestPanel";
 import "../../../styles/itinerary-atlas.css";
 
 const CATEGORY_META: Record<DayItem["category"], { label: string; color: string; icon: typeof BusFront }> = {
@@ -536,6 +537,8 @@ export function ItineraryScreen({
               <Share2 size={17} aria-hidden="true" /> Share this trip
             </button>
           </div>
+
+          <QuoteRequestPanel itinerary={itinerary} />
         </section>
 
         {(!isMobile || mobilePane === "map") && (
