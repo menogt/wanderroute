@@ -94,7 +94,7 @@ const STYLES: Array<{
 const STEPS = [
   { short: "Budget", title: "Set your real trip budget" },
   { short: "Length", title: "Choose your trip length" },
-  { short: "Start", title: "Choose where the route begins" },
+  { short: "Cities", title: "Choose where you want to go" },
   { short: "Interests", title: "Tell us what draws you here" },
   { short: "Style", title: "Set your travel style" },
 ];

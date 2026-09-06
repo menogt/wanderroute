@@ -57,6 +57,20 @@ function destinationName(day: DayPlan | undefined) {
   return day.city.split("→").pop()?.trim() || day.city;
 }
 
+// A stay can span several days, which would render as identical day tabs
+// ("Galle", "Galle"). Number each day after the first so they read distinctly.
+function dayTabLabels(days: DayPlan[]): string[] {
+  let runCity = "";
+  let position = 0;
+
+  return days.map((day) => {
+    const name = destinationName(day);
+    position = name === runCity ? position + 1 : 1;
+    runCity = name;
+    return position > 1 ? `${name} · ${position}` : name;
+  });
+}
+
 function RouteMap({
   cities,
   days,
@@ -373,6 +387,7 @@ export function ItineraryScreen({
 }) {
   const sym = CURRENCY_SYMBOLS[itinerary.currency] ?? itinerary.currency;
   const days = itinerary.days ?? [];
+  const tabLabels = dayTabLabels(days);
   const [selectedDay, setSelectedDay] = useState(days[0]?.day ?? 1);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
@@ -470,7 +485,7 @@ export function ItineraryScreen({
               <span>{days.length} planned day{days.length === 1 ? "" : "s"}</span>
             </div>
             <div className="wr-day-navigation" role="tablist" aria-label="Itinerary days">
-              {days.map((day) => (
+              {days.map((day, dayIndex) => (
                 <button
                   id={`day-tab-${day.day}`}
                   key={day.day}
@@ -481,7 +496,7 @@ export function ItineraryScreen({
                   onClick={() => selectDay(day.day)}
                 >
                   <span>Day {String(day.day).padStart(2, "0")}</span>
-                  <strong>{destinationName(day)}</strong>
+                  <strong>{tabLabels[dayIndex]}</strong>
                 </button>
               ))}
             </div>
