@@ -7,6 +7,22 @@ import {
   loadCurrentTrip as localLoadCurrent,
 } from "../components/rl/tripStorage";
 import { getDeviceId } from "./placesDb";
+import { citiesFromLegacyInputs } from "./cityPlan";
+
+// Trips saved before the multi-city selector stored a single `startCity` and
+// may carry an empty `cities` array. Backfill it on the way in so old trips
+// render instead of blowing up on an empty route.
+function migrateTrip(trip: GeneratedItinerary): GeneratedItinerary {
+  if (Array.isArray(trip?.cities) && trip.cities.length > 0) return trip;
+
+  return {
+    ...trip,
+    cities: citiesFromLegacyInputs(
+      trip as unknown as { cities?: unknown; startCity?: unknown },
+      trip?.totalDays ?? 7
+    ),
+  };
+}
 
 // Save to localStorage instantly, then sync to Supabase
 export async function saveTrip(itinerary: GeneratedItinerary): Promise<void> {
@@ -42,7 +58,7 @@ export async function saveTrip(itinerary: GeneratedItinerary): Promise<void> {
 
 // Load trips — returns local immediately, merges with Supabase
 export async function loadTrips(): Promise<GeneratedItinerary[]> {
-  const local = localGet();
+  const local = localGet().map(migrateTrip);
   if (!supabase) return local;
 
   try {
@@ -55,7 +71,7 @@ export async function loadTrips(): Promise<GeneratedItinerary[]> {
 
     if (error || !data) return local;
 
-    const remote = data.map(r => r.itinerary_json as GeneratedItinerary);
+    const remote = data.map(r => migrateTrip(r.itinerary_json as GeneratedItinerary));
     const map = new Map<string, GeneratedItinerary>();
     [...local, ...remote].forEach(t => map.set(t.id, t));
 
@@ -83,5 +99,6 @@ export async function deleteTrip(id: string): Promise<void> {
 }
 
 export function loadCurrentTrip() {
-  return localLoadCurrent();
+  const trip = localLoadCurrent();
+  return trip ? migrateTrip(trip) : trip;
 }

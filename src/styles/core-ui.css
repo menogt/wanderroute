@@ -720,6 +720,13 @@
 
 .wr-quick__options { margin-top: 1.3rem !important; }
 .wr-quick__options > div { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+/* Resolved route under the city chips — canonical order, not click order. */
+.wr-quick__route-note {
+  color: #556064;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  margin: 0.55rem 0 0;
+}
 .wr-quick__options button,
 .wr-quick__style button {
   align-items: center;
@@ -1464,6 +1471,17 @@
 }
 
 .wr-city-grid button > svg:first-child { color: var(--wr-tea-local); }
+
+/* Unselected cities show a faint add affordance; selected ones show a remove X. */
+.wr-city-grid__add { opacity: 0.28; }
+
+/* Resolved route under the city grid — canonical order, not click order. */
+.wr-planner__route-note {
+  color: #556064;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin: 0.7rem 0 0;
+}
 .wr-city-grid button > span { display: flex; flex-direction: column; gap: 0.18rem; }
 .wr-city-grid strong { font-size: 0.82rem; }
 .wr-city-grid small { color: #778081; font-size: 0.62rem; }

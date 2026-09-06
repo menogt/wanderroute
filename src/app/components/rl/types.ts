@@ -26,7 +26,7 @@ export type TripInputs = {
   currency: Currency;
   days: number;
   people: number;
-  startCity: string;
+  cities: string[];
   interests: Interest[];
   travelStyle: TravelStyle;
 };

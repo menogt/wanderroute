@@ -14,7 +14,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 };
 
 function buildPrompt(inputs: TripInputs, placesText = ""): string {
-  const { budget, currency, days, people, startCity, interests, travelStyle } = inputs;
+  const { budget, currency, days, people, cities, interests, travelStyle } = inputs;
   const sym = CURRENCY_SYMBOLS[currency] ?? currency;
 
   // Inject the real Supabase places so the AI builds the trip around hotels /
@@ -29,7 +29,7 @@ TRIP DETAILS:
 - Budget: ${sym}${budget} ${currency} total (for ALL ${people} people, ALL ${days} days)
 - Duration: ${days} days
 - Travellers: ${people} person(s)
-- Starting city: ${startCity}
+- Cities to visit, in this exact order: ${cities.join(" → ")}
 - Interests: ${interests.join(", ")}
 - Travel style: ${travelStyle} (budget=hostels/buses/street food, comfort=boutique hotels/mix dining, luxury=resorts/private transfers)${realPlacesBlock}
 
@@ -38,7 +38,7 @@ IMPORTANT RULES:
 2. Budget style: ~$30-55/person/day USD. Comfort: ~$85-170/person/day. Luxury: ~$250-500/person/day
 3. Every day must include accommodation, meals, transport, and activities
 4. Include hidden costs tourists often miss (entry fees, tuk-tuk tips, etc.)
-5. Route must start from ${startCity} and flow logically across Sri Lanka
+5. Visit the listed cities in the given order, allocating days proportionally across them; the trip starts and ends near Bandaranaike airport
 6. Interests (${interests.join(", ")}) must shape which destinations and activities are included
 7. Keep each item's "detail" and "tip" fields concise (one short sentence each) — this keeps the response compact enough to complete for longer trips
 
@@ -103,7 +103,7 @@ export async function generateItineraryWithAI(
   // fails (offline, no creds), we ground on general knowledge instead.
   let placesText = "";
   try {
-    const result = await fetchPlacesForPrompt(inputs.startCity, inputs.days, inputs.travelStyle);
+    const result = await fetchPlacesForPrompt(inputs.cities, inputs.travelStyle);
     placesText = result.placesText;
   } catch (err) {
     console.warn("Could not fetch real places, AI will use general knowledge:", err);

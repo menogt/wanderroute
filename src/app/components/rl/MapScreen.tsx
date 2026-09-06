@@ -185,7 +185,7 @@ export function MapScreen({
   const selectedZoom = selection?.kind === "city" ? 10 : 14;
 
   const selectCityAndPlan = (city: string) => {
-    // Preserve this order: PlannerScreen reads the city override set first.
+    // Preserve this order: PlannerScreen seeds its city list from this on mount.
     onCitySelect(city);
     navigate("planner");
   };
@@ -404,7 +404,7 @@ export function MapScreen({
                           type="button"
                           onClick={() => selectCityAndPlan(city)}
                         >
-                          Plan from {city}
+                          Add {city} to trip
                           <ArrowRight aria-hidden="true" size={13} />
                         </button>
                       </div>
@@ -526,7 +526,7 @@ export function MapScreen({
                       className="wr-inline-cta"
                       onClick={() => selectCityAndPlan(selection.city)}
                     >
-                      Plan from here
+                      Add to my trip
                       <ArrowRight aria-hidden="true" size={14} />
                     </button>
                   </>

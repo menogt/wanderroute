@@ -25,6 +25,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import hillCountryImage from "../../../assets/wanderroute-hill-country.jpg";
 import { CURRENCY_SYMBOLS, POPULAR_ROUTES, generateItinerary } from "./data";
+import { SELECTABLE_CITIES, resolveCities } from "../../lib/cityPlan";
 import type { Interest, Screen, TravelStyle, TripInputs } from "./types";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
 import "../../../styles/core-ui.css";
@@ -33,7 +34,6 @@ const ADMIN_TAP_THRESHOLD = 5;
 const ADMIN_TAP_WINDOW_MS = 2500;
 
 const QUICK_DAYS = [5, 7, 10, 14];
-const QUICK_STARTS = ["Colombo", "Kandy", "Negombo", "Galle", "Sigiriya", "Ella"];
 const QUICK_INTERESTS: Array<{ key: Interest; label: string; icon: LucideIcon }> = [
   { key: "beaches", label: "Beaches", icon: Waves },
   { key: "culture", label: "Culture", icon: Landmark },
@@ -71,7 +71,7 @@ export function HomeScreen({
   const [budget, setBudget] = useState(800);
   const [days, setDays] = useState(7);
   const [people, setPeople] = useState(2);
-  const [startCity, setStartCity] = useState("Colombo");
+  const [cities, setCities] = useState<string[]>([]);
   const [interests, setInterests] = useState<Interest[]>(["beaches", "culture"]);
   const [travelStyle, setTravelStyle] = useState<TravelStyle>("comfort");
 
@@ -80,15 +80,24 @@ export function HomeScreen({
     currency: "USD",
     days,
     people,
-    startCity,
+    cities,
     interests,
     travelStyle,
   };
 
   const preview = useMemo(
     () => generateItinerary(quickInputs),
-    [budget, days, people, startCity, interests, travelStyle]
+    [budget, days, people, cities, interests, travelStyle]
   );
+  // What the user actually gets: canonical order, capped to what the trip length
+  // supports. Never their click order.
+  const resolvedCities = resolveCities(cities, days);
+
+  const toggleCity = (city: string) =>
+    setCities((current) =>
+      current.includes(city) ? current.filter((item) => item !== city) : [...current, city]
+    );
+
   const previewDay = preview.days[0];
   const breakdownTotal = Object.values(preview.costBreakdown).reduce((sum, value) => sum + value, 0);
   const currencySymbol = CURRENCY_SYMBOLS[preview.currency];
@@ -246,13 +255,6 @@ export function HomeScreen({
               </select>
             </label>
 
-            <label>
-              <span>Start in</span>
-              <select value={startCity} onChange={(event) => setStartCity(event.target.value)}>
-                {QUICK_STARTS.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </label>
-
             <fieldset className="wr-quick__people">
               <legend>Travellers</legend>
               <div>
@@ -272,6 +274,34 @@ export function HomeScreen({
               </div>
             </fieldset>
           </div>
+
+          <fieldset className="wr-quick__options">
+            <legend>Where do you want to go?</legend>
+            <div>
+              {SELECTABLE_CITIES.map((city) => {
+                const selected = cities.includes(city);
+                return (
+                  <button
+                    type="button"
+                    key={city}
+                    className={selected ? "is-selected" : ""}
+                    onClick={() => toggleCity(city)}
+                    aria-pressed={selected}
+                  >
+                    <MapPinned size={15} strokeWidth={1.8} aria-hidden="true" />
+                    {city}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="wr-quick__route-note">
+              {cities.length === 0
+                ? "We'll pick a route for you"
+                : resolvedCities.cities.join(" \u2192 ")}
+              {resolvedCities.dropped.length > 0 &&
+                ` \u00b7 ${resolvedCities.dropped.join(", ")} dropped \u2014 too many stops for ${days} days`}
+            </p>
+          </fieldset>
 
           <fieldset className="wr-quick__options">
             <legend>What should shape the trip?</legend>

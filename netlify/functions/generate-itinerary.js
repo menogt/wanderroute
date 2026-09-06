@@ -53,7 +53,7 @@ function validateInputs(body) {
     "currency",
     "days",
     "people",
-    "startCity",
+    "cities",
     "interests",
     "travelStyle",
   ];
@@ -73,8 +73,14 @@ function validateInputs(body) {
   if (body.people !== undefined && (!Number.isInteger(body.people) || body.people < 1 || body.people > 30)) {
     errors.push("people must be an integer between 1 and 30.");
   }
-  if (body.startCity !== undefined && (!isNonEmptyString(body.startCity) || body.startCity.length > 80)) {
-    errors.push("startCity must be a non-empty string under 80 characters.");
+  if (body.cities !== undefined) {
+    if (!Array.isArray(body.cities) || body.cities.length > 6) {
+      errors.push("cities must be an array of at most 6 entries.");
+    } else if (
+      body.cities.some((city) => !isNonEmptyString(city) || city.length > 80)
+    ) {
+      errors.push("each city must be a non-empty string under 80 characters.");
+    }
   }
   if (body.interests !== undefined) {
     if (!Array.isArray(body.interests) || body.interests.length === 0) {
@@ -102,7 +108,7 @@ function sanitizeInputs(body) {
     currency: body.currency,
     days: body.days,
     people: body.people,
-    startCity: body.startCity.trim(),
+    cities: body.cities.map((city) => city.trim()),
     interests: body.interests.map((interest) => interest.trim()),
     travelStyle: body.travelStyle,
     realPlaces: typeof body.realPlaces === "string" ? body.realPlaces : "",
@@ -110,7 +116,7 @@ function sanitizeInputs(body) {
 }
 
 function buildPrompt(inputs) {
-  const { budget, currency, days, people, startCity, interests, travelStyle } = inputs;
+  const { budget, currency, days, people, cities, interests, travelStyle } = inputs;
   const sym = CURRENCY_SYMBOLS[currency];
 
   const realPlacesBlock = inputs.realPlaces && inputs.realPlaces.trim()
@@ -123,7 +129,7 @@ TRIP DETAILS:
 - Budget: ${sym}${budget} ${currency} total (for ALL ${people} people, ALL ${days} days)
 - Duration: ${days} days
 - Travellers: ${people} person(s)
-- Starting city: ${startCity}
+- Cities to visit, in this exact order: ${cities.join(" → ")}
 - Interests: ${interests.join(", ")}
 - Travel style: ${travelStyle} (budget=hostels/buses/street food, comfort=boutique hotels/mix dining, luxury=resorts/private transfers)${realPlacesBlock}
 
@@ -132,8 +138,9 @@ IMPORTANT RULES:
 2. Budget style: ~$30-55/person/day USD. Comfort: ~$85-170/person/day. Luxury: ~$250-500/person/day
 3. Every day must include accommodation, meals, transport, and activities
 4. Include hidden costs tourists often miss (entry fees, tuk-tuk tips, etc.)
-5. Route must start from ${startCity} and flow logically across Sri Lanka
+5. Visit the listed cities in the given order, allocating days proportionally across them; the trip starts and ends near Bandaranaike airport
 6. Interests (${interests.join(", ")}) must shape which destinations and activities are included
+7. Keep each item's "detail" and "tip" fields concise (one short sentence each) — this keeps the response compact enough to complete for longer trips
 
 Respond ONLY with a valid JSON object. No markdown, no explanation, just raw JSON.
 

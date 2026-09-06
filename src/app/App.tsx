@@ -59,7 +59,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [lastInputs, setLastInputs] = useState<TripInputs | null>(null);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
-  const [startCityOverride, setStartCityOverride] = useState<string | null>(null);
+  const [cityToAdd, setCityToAdd] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const { rates } = useLiveRates();
@@ -134,7 +134,7 @@ export default function App() {
     <>
       {screen === "home" && <HomeScreen navigate={navigate} onGenerate={handleGenerate} />}
       {screen === "planner" && (
-        <PlannerScreen onGenerate={handleGenerate} navigate={navigate} initialStartCity={startCityOverride} />
+        <PlannerScreen onGenerate={handleGenerate} navigate={navigate} initialCity={cityToAdd} />
       )}
       {screen === "itinerary" && itinerary && (
         <ItineraryScreen key={itinerary.id} itinerary={itinerary} navigate={navigate} />
@@ -145,7 +145,7 @@ export default function App() {
       {screen === "share" && itinerary && <ShareScreen itinerary={itinerary} navigate={navigate} />}
       {screen === "admin" && <AdminScreen navigate={navigate} />}
       {screen === "map" && (
-        <MapScreen navigate={navigate} onCitySelect={(city) => setStartCityOverride(city)} />
+        <MapScreen navigate={navigate} onCitySelect={(city) => setCityToAdd(city)} />
       )}
       {(screen === "itinerary" || screen === "costs" || screen === "share") && !itinerary && (
         <HomeScreen navigate={navigate} onGenerate={handleGenerate} />

@@ -2,10 +2,13 @@ import type {
   TripInputs,
   GeneratedItinerary,
   DayPlan,
+  DayItem,
   CostBreakdown,
   Currency,
   TravelStyle,
 } from "./types";
+import { distributeDays, resolveCities } from "../../lib/cityPlan";
+import { MUST_SEE } from "../../lib/curatedPlaces";
 
 // ─── Currency Rates vs USD ───────────────────────────────────────────────────
 export const CURRENCY_RATES: Record<Currency, number> = {
@@ -215,212 +218,261 @@ export const HOTELS_BY_CITY: Record<string, Array<{
   ],
 };
 
-// ─── Route Day Plans (base, budget, per person in USD) ──────────────────────
+// ─── Generic Fallback Route Builder ───────────────────────────
+//
+// Used when the AI call fails. The old fixed templates only worked for the four
+// cities they hardcoded; this builds a day plan for any ordered city list while
+// keeping the same DayPlan shape, cost model and item categories.
 
-function buildClassicRoute(days: number, style: TravelStyle, people: number): DayPlan[] {
-  const m = STYLE_M[style];
-  const hotelNames: Record<TravelStyle, Record<string, string>> = {
-    budget: { Colombo: "Clock Inn Colombo", Kandy: "McLeod Inn", Ella: "Ella Guesthouse", Mirissa: "Mirissa Hostel" },
-    comfort: { Colombo: "Havelock Place Bungalow", Kandy: "Hotel Topaz Kandy", Ella: "Zion View Ella", Mirissa: "Paradise Beach Club" },
-    luxury: { Colombo: "Cinnamon Grand Colombo", Kandy: "Amaya Hills Kandy", Ella: "98 Acres Resort & Spa", Mirissa: "Anantara Peace Haven" },
+// Base per-person USD before the style multiplier, taken from the day patterns
+// the classic template used.
+const BASE_HOTEL_USD = 14;
+const BASE_FOOD_USD = 10;
+const BASE_TRANSPORT_ARRIVAL_USD = 15;
+const BASE_TRANSPORT_USD = 6;
+const BASE_ACTIVITY_USD = 10;
+
+const CITY_FLAGS: Record<string, string> = {
+  Colombo: "🌆",
+  Negombo: "🐟",
+  Kandy: "🏺",
+  Ella: "🏔️",
+  Mirissa: "🏖️",
+  Galle: "🏰",
+  Sigiriya: "🗿",
+  Dambulla: "🛕",
+  "Nuwara Eliya": "🍃",
+  Trincomalee: "🌊",
+  Hikkaduwa: "🏄",
+  "Arugam Bay": "🏄",
+  Anuradhapura: "🏛️",
+  Polonnaruwa: "🏛️",
+  "Tissamaharama/Yala": "🐘",
+  Bentota: "🌴",
+};
+
+const GRADIENTS = [
+  "linear-gradient(135deg, #0B1340, #1D3A6B)",
+  "linear-gradient(135deg, #1D2456, #0D4A2A)",
+  "linear-gradient(135deg, #0D3A2A, #1a5a1a)",
+  "linear-gradient(135deg, #1a3a0D, #2d6b1a)",
+  "linear-gradient(135deg, #0B2d50, #0D5A4A)",
+  "linear-gradient(135deg, #2d0B40, #3a1a6b)",
+];
+
+const CITY_TIPS: Record<string, string> = {
+  Colombo: "Use the PickMe app (Sri Lanka's Uber) for tuk-tuks — 30–40% cheaper than street hailing.",
+  Negombo: "The fish market is at its best just after sunrise, before the day's catch is sold off.",
+  Kandy: "Buy Peradeniya Botanical Gardens tickets at the main gate in LKR — hotel bookings carry a markup.",
+  Ella: "Time the Nine Arch Bridge for a train crossing — check the updated schedule at the station.",
+  Mirissa: "Whale watching costs $25–65. Book operators that keep 100m from the animals.",
+  Galle: "Walk the fort ramparts at sunrise — completely empty before the day-trippers arrive, and free.",
+  Sigiriya: "Sigiriya entry is $30/person. Start the climb at 7am to beat both the heat and the queues.",
+  Dambulla: "The cave temple climb takes 20 minutes. Shoulders and knees must be covered.",
+  "Nuwara Eliya": "Nights get genuinely cold here — the one place in Sri Lanka you will want a jacket.",
+  Trincomalee: "Nilaveli and Uppuveli beaches are calmest May–September, the opposite of the south coast.",
+  Hikkaduwa: "Snorkel gear rents for about $3 on the beach — skip the hotel packages.",
+  "Arugam Bay": "Surf season runs April–October. Outside it, the town largely shuts down.",
+};
+
+const DEFAULT_TIP =
+  "Agree tuk-tuk fares before getting in — $1–2/km is fair anywhere on the island.";
+
+/**
+ * A real hotel from our database where we have one for this city and style,
+ * otherwise the same style multiplier applied to the budget baseline.
+ */
+function pickHotel(city: string, style: TravelStyle): { name: string; cost: number } {
+  const match = (HOTELS_BY_CITY[city] || []).find((hotel) => hotel.type === style);
+  if (match) return { name: match.name, cost: match.priceUSD };
+
+  const label = style.charAt(0).toUpperCase() + style.slice(1);
+  return {
+    name: `${label} stay in ${city}`,
+    cost: Math.round(BASE_HOTEL_USD * STYLE_M[style].hotel),
   };
-
-  const hotelCosts: Record<TravelStyle, Record<string, number>> = {
-    budget: { Colombo: 18, Kandy: 14, Ella: 15, Mirissa: 10 },
-    comfort: { Colombo: 55, Kandy: 30, Ella: 40, Mirissa: 45 },
-    luxury: { Colombo: 160, Kandy: 120, Ella: 130, Mirissa: 280 },
-  };
-
-  const allDays: DayPlan[] = [
-    {
-      day: 1, city: "Colombo", flag: "🌆", heroGradient: "linear-gradient(135deg, #0B1340, #1D3A6B)",
-      accommodation: hotelNames[style]["Colombo"],
-      accommodationCostPerNight: hotelCosts[style]["Colombo"],
-      localTip: "Use the PickMe app (Sri Lanka's Uber) for tuk-tuks — 30–40% cheaper than street hailing.",
-      dailyCostPerPerson: Math.round((hotelCosts[style]["Colombo"] / people) + 10 * m.food + 15 * m.transport + 8 * m.activity),
-      items: [
-        { time: "10:00", icon: "🚕", label: "Airport → Hotel Transfer", detail: "PickMe taxi from BIA", cost: Math.round(15 * m.transport), category: "transport", tip: "Agree price before getting in any non-app taxi. Should be ~LKR 4,000 / $12" },
-        { time: "12:00", icon: "🍛", label: "Lunch at Upali's", detail: "Authentic rice & curry buffet", cost: Math.round(4 * m.food), category: "meal", tip: "Try the dhal curry — locals swear by it" },
-        { time: "14:00", icon: "🌊", label: "Galle Face Green", detail: "Oceanfront promenade, kite watching", cost: 0, category: "activity" },
-        { time: "16:00", icon: "🕌", label: "Pettah Market & Mosques", detail: "Chaotic, colorful bazaar district", cost: Math.round(3 * m.transport), category: "activity", isHidden: true, tip: "Hidden gem: the Jami Ul-Alfar Mosque interior is stunning and free" },
-        { time: "19:00", icon: "🍽️", label: "Dinner – Ministry of Crab", detail: "Iconic Colombo seafood restaurant", cost: Math.round(18 * m.food), category: "meal", tip: style === "budget" ? "Skip Ministry of Crab — try Upali's again or Nuga Gama for authentic local food under $5" : "Book online — walk-ins wait 2h+" },
-        { time: "22:00", icon: "🏨", label: hotelNames[style]["Colombo"], detail: `${style.charAt(0).toUpperCase() + style.slice(1)} accommodation`, cost: Math.round(hotelCosts[style]["Colombo"] / people), category: "accommodation" },
-      ],
-    },
-    {
-      day: 2, city: "Colombo → Kandy", flag: "🚂", heroGradient: "linear-gradient(135deg, #1D2456, #0D4A2A)",
-      accommodation: hotelNames[style]["Kandy"],
-      accommodationCostPerNight: hotelCosts[style]["Kandy"],
-      localTip: "The 2nd class train seat is comfortable and costs only $2 — don't overpay for private 'observation' coaches pitched to tourists.",
-      dailyCostPerPerson: Math.round((hotelCosts[style]["Kandy"] / people) + 9 * m.food + 6 * m.transport + 12 * m.activity),
-      items: [
-        { time: "07:30", icon: "🍳", label: "Breakfast at hotel", detail: "Hoppers & coconut sambol", cost: Math.round(3 * m.food), category: "meal" },
-        { time: "09:00", icon: "🚂", label: "Train: Colombo Fort → Kandy", detail: "2.5h scenic rail journey", cost: Math.round(3 * m.transport), category: "transport", tip: "Book seats at Fort station the day before. 2nd class is $2, 1st class reserved is $5" },
-        { time: "12:00", icon: "🏛️", label: "Temple of the Tooth Relic", detail: "Sacred Buddhist UNESCO site", cost: Math.round(6 * m.activity), category: "activity", tip: "Entry LKR 2,000 (~$6). Visit during puja ceremony at 6:30am, 9:30am, or 6:30pm for free drumming" },
-        { time: "15:00", icon: "🌿", label: "Kandy Lake & Upper Lakeside", detail: "Easy walk around the historic lake", cost: 0, category: "activity" },
-        { time: "18:00", icon: "🎭", label: "Kandyan Cultural Dance Show", detail: "1hr traditional dance & drumming", cost: Math.round(6 * m.activity), category: "activity", tip: "Buy tickets at the door — cheaper than hotel concierge bookings" },
-        { time: "20:00", icon: "🍽️", label: "Dinner – The Empire Café", detail: "Rooftop restaurant, Kandy lake view", cost: Math.round(8 * m.food), category: "meal" },
-        { time: "22:00", icon: "🏨", label: hotelNames[style]["Kandy"], detail: "Check-in", cost: Math.round(hotelCosts[style]["Kandy"] / people), category: "accommodation" },
-      ],
-    },
-    {
-      day: 3, city: "Kandy", flag: "🌺", heroGradient: "linear-gradient(135deg, #0D3A2A, #1a5a1a)",
-      accommodation: hotelNames[style]["Kandy"],
-      accommodationCostPerNight: hotelCosts[style]["Kandy"],
-      localTip: "Peradeniya Botanical Gardens entry is often quoted at tourist price. Buy LKR tickets at the main gate — don't go through hotel.",
-      dailyCostPerPerson: Math.round((hotelCosts[style]["Kandy"] / people) + 9 * m.food + 6 * m.transport + 10 * m.activity),
-      items: [
-        { time: "08:00", icon: "🌳", label: "Peradeniya Botanical Gardens", detail: "147-acre colonial-era garden, 4,000 species", cost: Math.round(5 * m.activity), category: "activity", tip: "Giant Javan fig tree is 100+ years old. Go early to beat tour groups." },
-        { time: "11:00", icon: "🌶️", label: "Spice Garden Tour", detail: "Free tour, learn about cinnamon & spices", cost: 0, category: "activity", isHidden: true, tip: "They will try to sell you products — politely decline if you don't want them" },
-        { time: "13:00", icon: "🍛", label: "Lunch – local rice & curry shop", detail: "Off the main tourist strip", cost: Math.round(2.5 * m.food), category: "meal", tip: "Look for packed local places — full rice & curry plate under LKR 350 / $1.10" },
-        { time: "15:00", icon: "🛍️", label: "Kandy City Centre & Gem Museum", detail: "Sapphire, moonstone shopping district", cost: Math.round(2 * m.transport), category: "activity", tip: "Never buy gems from street touts. Only from licensed shops with certificates." },
-        { time: "17:00", icon: "🏔️", label: "Bahiravokanda Buddha Statue Hike", detail: "30min climb, panoramic Kandy views", cost: 0, category: "activity", isHidden: true },
-        { time: "20:00", icon: "🍽️", label: "Dinner – Slightly Chilled", detail: "Rooftop cocktails + wood-fired pizza", cost: Math.round(9 * m.food), category: "meal" },
-        { time: "22:00", icon: "🏨", label: hotelNames[style]["Kandy"], detail: "Last night in Kandy", cost: Math.round(hotelCosts[style]["Kandy"] / people), category: "accommodation" },
-      ],
-    },
-    {
-      day: 4, city: "Kandy → Ella", flag: "🚂", heroGradient: "linear-gradient(135deg, #1a3a0D, #2d6b1a)",
-      accommodation: hotelNames[style]["Ella"],
-      accommodationCostPerNight: hotelCosts[style]["Ella"],
-      localTip: "The Kandy–Ella train (6–7 hours) is considered one of the world's most scenic train rides. Book seats WEEKS in advance at Kandy station or online at Exprail.lk.",
-      dailyCostPerPerson: Math.round((hotelCosts[style]["Ella"] / people) + 10 * m.food + 6 * m.transport + 5 * m.activity),
-      items: [
-        { time: "06:30", icon: "☕", label: "Early breakfast, pack snacks", detail: "Train snacks are overpriced", cost: Math.round(3 * m.food), category: "meal", tip: "Pack local pastries from the night market for the train journey — saves $8+" },
-        { time: "08:47", icon: "🚂", label: "Train: Kandy → Ella", detail: "6.5hr through tea country (scenic!)", cost: Math.round(5 * m.transport), category: "transport", tip: "Sit on the RIGHT side of the train facing Ella for the best views. 2nd class is perfectly comfortable at $3." },
-        { time: "15:30", icon: "🛤️", label: "Nine Arch Bridge walk", detail: "15min tuk-tuk + 20min walk from station", cost: Math.round(3 * m.transport + 2 * m.activity), category: "activity", tip: "Time your visit for a train crossing (10:47am, 1:03pm, 3:47pm) — check updated schedule at station" },
-        { time: "18:00", icon: "🌅", label: "Ella sunset viewpoint", detail: "Watch sunset over Ella Gap", cost: 0, category: "activity", isHidden: true, tip: "Hidden spot: walk 10min past the Nine Arch bridge turnoff for a private view" },
-        { time: "20:00", icon: "🍽️", label: "Dinner – Chill in Ella", detail: "Budget-friendly wood-fire pizza in Ella town", cost: Math.round(7 * m.food), category: "meal" },
-        { time: "22:00", icon: "🏨", label: hotelNames[style]["Ella"], detail: "Mountain hideaway check-in", cost: Math.round(hotelCosts[style]["Ella"] / people), category: "accommodation" },
-      ],
-    },
-    {
-      day: 5, city: "Ella", flag: "🏔️", heroGradient: "linear-gradient(135deg, #0D3A1a, #1a6b2d)",
-      accommodation: hotelNames[style]["Ella"],
-      accommodationCostPerNight: hotelCosts[style]["Ella"],
-      localTip: "Start Little Adam's Peak hike BEFORE 7am to beat tour groups and catch cloud-free summit views.",
-      dailyCostPerPerson: Math.round((hotelCosts[style]["Ella"] / people) + 10 * m.food + 4 * m.transport + 12 * m.activity),
-      items: [
-        { time: "05:30", icon: "🥾", label: "Little Adam's Peak Sunrise Hike", detail: "1.5hr moderate trail, panoramic views", cost: 0, category: "activity", tip: "Completely free — ignore anyone asking for entry fees, there are none" },
-        { time: "09:00", icon: "🍳", label: "Breakfast at Dream Café", detail: "Famous egg hoppers & views", cost: Math.round(4 * m.food), category: "meal" },
-        { time: "11:00", icon: "🫖", label: "Tea Factory Tour", detail: "See how Ceylon tea is processed", cost: Math.round(3 * m.activity), category: "activity", isHidden: true, tip: "Uva Halpewatte Tea Factory does free tours — just show up" },
-        { time: "14:00", icon: "💧", label: "Ravana Falls & Waterfall Swim", detail: "Sacred 25m waterfall, swimming pool below", cost: Math.round(2 * m.activity), category: "activity" },
-        { time: "17:00", icon: "🪂", label: "Ella Rock Hike (Optional)", detail: "3hr advanced trail, 1,041m summit", cost: 0, category: "activity", isHidden: true, tip: "Go with a guide ($8) — trail is poorly marked. Worth it for the payoff views." },
-        { time: "20:00", icon: "🍽️", label: "Dinner – Ella's Best Restaurant", detail: "Sri Lankan kottu & devilled prawns", cost: Math.round(8 * m.food), category: "meal" },
-        { time: "22:00", icon: "🏨", label: hotelNames[style]["Ella"], detail: "Last night in the hills", cost: Math.round(hotelCosts[style]["Ella"] / people), category: "accommodation" },
-      ],
-    },
-    {
-      day: 6, city: "Ella → Mirissa", flag: "🌊", heroGradient: "linear-gradient(135deg, #0B1a40, #0D3A5A)",
-      accommodation: hotelNames[style]["Mirissa"],
-      accommodationCostPerNight: hotelCosts[style]["Mirissa"],
-      localTip: "The bus from Ella to Mirissa takes 3.5–4 hours and costs ~$3. Cheaper than a private van ($35) — and locals use it.",
-      dailyCostPerPerson: Math.round((hotelCosts[style]["Mirissa"] / people) + 11 * m.food + 10 * m.transport + 8 * m.activity),
-      items: [
-        { time: "08:00", icon: "🍛", label: "Checkout breakfast", detail: "Last hoppers in the hills", cost: Math.round(3 * m.food), category: "meal" },
-        { time: "09:30", icon: "🚌", label: "Bus: Ella → Mirissa", detail: "Via Wellawaya, 3.5–4 hours", cost: Math.round(4 * m.transport), category: "transport", tip: "Take the 9:30am bus from Ella bus stand. Sit on left side — best views going south. Don't take minivans offered at the train station." },
-        { time: "14:00", icon: "🏖️", label: "Check-in & Beach", detail: "First taste of Mirissa beach", cost: Math.round(hotelCosts[style]["Mirissa"] / people), category: "accommodation", tip: "Mirissa beach gets crowded mid-afternoon. The eastern end near the coconut tree is quieter." },
-        { time: "17:00", icon: "🥥", label: "Sunset cocktails at Secret Beach Bar", detail: "Hidden bar, locals' favourite", cost: Math.round(7 * m.food), category: "meal", isHidden: true },
-        { time: "20:00", icon: "🦞", label: "Dinner – Dewmini Roti Shop", detail: "Famous roti spot, under $3/person", cost: Math.round(3 * m.food), category: "meal", tip: style === "budget" ? "Dewmini's is a Mirissa legend — full meal under LKR 800. Cash only." : "Still worth a visit even on a comfort budget — best roti in Sri Lanka" },
-      ],
-    },
-    {
-      day: 7, city: "Mirissa", flag: "🐋", heroGradient: "linear-gradient(135deg, #0B2A50, #0D5A6B)",
-      accommodation: hotelNames[style]["Mirissa"],
-      accommodationCostPerNight: hotelCosts[style]["Mirissa"],
-      localTip: "Whale watching season: November – April. Blue whales are seen ~80% of trips. Book with Raja & the Whales — ethical, no crowding boats.",
-      dailyCostPerPerson: Math.round((hotelCosts[style]["Mirissa"] / people) + 12 * m.food + 5 * m.transport + 15 * m.activity),
-      items: [
-        { time: "06:00", icon: "🐋", label: "Whale Watching Boat Tour", detail: "3-4hr ocean expedition", cost: Math.round(40 * m.activity), category: "activity", tip: "Seasickness? Take a pill the night before. Best boats: Raja & the Whales ($40/pp), Mirissa Water Sports ($35). Avoid cheapest operators — they overcrowd." },
-        { time: "11:00", icon: "🏊", label: "Parrot Rock Snorkeling", detail: "15min walk from main beach, free entry", cost: 0, category: "activity", isHidden: true, tip: "Parrot Rock at the east end of Mirissa beach is a hidden snorkel spot — no crowds" },
-        { time: "14:00", icon: "🍜", label: "Beachside rice & curry lunch", detail: "Under the coconut palms", cost: Math.round(5 * m.food), category: "meal" },
-        { time: "17:00", icon: "🌅", label: "Coconut Tree Hill Sunset", detail: "Mirissa's iconic Instagram viewpoint", cost: 0, category: "activity" },
-        { time: "20:00", icon: "🍽️", label: "Farewell seafood dinner", detail: "Grilled catch of the day, Mirissa Harbour", cost: Math.round(15 * m.food), category: "meal", tip: "Negotiate price of fish per kilo before agreeing — normal is ~LKR 1,200/kilo" },
-        { time: "22:00", icon: "🏨", label: hotelNames[style]["Mirissa"], detail: "Last night in paradise", cost: Math.round(hotelCosts[style]["Mirissa"] / people), category: "accommodation" },
-      ],
-    },
-  ];
-
-  if (days <= 7) return allDays;
-  if (days === 8) return [...allDays.slice(0, 5), {
-    ...allDays[5],
-    day: 6,
-    items: [{ time: "09:00", icon: "🏊", label: "Free morning at beach", detail: "Swim, read, relax in Ella", cost: 0, category: "activity" }, ...allDays[5].items.slice(2)],
-  }, { ...allDays[5], day: 7, city: "Ella → Mirissa" }, { ...allDays[6], day: 8 }];
-  return [...allDays, {
-    ...allDays[6],
-    day: days,
-    city: "Mirissa",
-    items: [{ time: "09:00", icon: "🏄", label: "Surf lesson at Mirissa", detail: "1.5hr beginner lesson", cost: Math.round(20 * m.activity), category: "activity" }, ...allDays[6].items.slice(1)],
-  }];
 }
 
-function buildSouthCoastRoute(days: number, style: TravelStyle, people: number): DayPlan[] {
-  const m = STYLE_M[style];
-  const hotelCosts: Record<TravelStyle, Record<string, number>> = {
-    budget: { Colombo: 18, Galle: 12, Unawatuna: 14, Mirissa: 10 },
-    comfort: { Colombo: 55, Galle: 35, Unawatuna: 50, Mirissa: 45 },
-    luxury: { Colombo: 160, Galle: 145, Unawatuna: 130, Mirissa: 280 },
-  };
-  const hotelNames: Record<TravelStyle, Record<string, string>> = {
-    budget: { Colombo: "Clock Inn Colombo", Galle: "Galle Fort Hostel", Unawatuna: "Unawatuna Budget Inn", Mirissa: "Mirissa Hostel" },
-    comfort: { Colombo: "Havelock Place Bungalow", Galle: "New Old Dutch House", Unawatuna: "Secret Garden Villa", Mirissa: "Paradise Beach Club" },
-    luxury: { Colombo: "Cinnamon Grand Colombo", Galle: "Fortaleza at Fort Printers", Unawatuna: "Thambapanni Retreat", Mirissa: "Anantara Peace Haven" },
-  };
-
-  return [
-    {
-      day: 1, city: "Colombo", flag: "🌆", heroGradient: "linear-gradient(135deg, #0B1340, #1D3A6B)",
-      accommodation: hotelNames[style]["Colombo"], accommodationCostPerNight: hotelCosts[style]["Colombo"],
-      localTip: "Colombo's Uber-equivalent is PickMe — always cheaper than hailing a tuk-tuk on the street.",
-      dailyCostPerPerson: Math.round(hotelCosts[style]["Colombo"] / people + 10 * m.food + 12 * m.transport + 5 * m.activity),
-      items: [
-        { time: "10:00", icon: "🚕", label: "Airport arrival & transfer", detail: "PickMe to hotel", cost: Math.round(15 * m.transport), category: "transport", tip: "App taxi from BIA is ~LKR 3,500–4,000. Avoid tours desks at the airport." },
-        { time: "13:00", icon: "🍛", label: "Lunch – Barefoot Garden Café", detail: "Arty Colombo 3 institution", cost: Math.round(5 * m.food), category: "meal" },
-        { time: "15:00", icon: "🌊", label: "Galle Face Green walk", detail: "Ocean promenade, local life", cost: 0, category: "activity" },
-        { time: "17:00", icon: "🏛️", label: "National Museum of Colombo", detail: "Sri Lanka history & artefacts", cost: Math.round(2 * m.activity), category: "activity" },
-        { time: "20:00", icon: "🍽️", label: "Dinner – Nuga Gama", detail: "Village-style authentic Sri Lankan", cost: Math.round(12 * m.food), category: "meal" },
-        { time: "22:00", icon: "🏨", label: hotelNames[style]["Colombo"], detail: "Night in Colombo", cost: Math.round(hotelCosts[style]["Colombo"] / people), category: "accommodation" },
-      ],
-    },
-    {
-      day: 2, city: "Colombo → Galle", flag: "🏰", heroGradient: "linear-gradient(135deg, #2d0B40, #3a1a6b)",
-      accommodation: hotelNames[style]["Galle"], accommodationCostPerNight: hotelCosts[style]["Galle"],
-      localTip: "Galle Fort's streets are best explored on foot at sunrise — completely empty and magical before the day-trippers arrive.",
-      dailyCostPerPerson: Math.round(hotelCosts[style]["Galle"] / people + 11 * m.food + 8 * m.transport + 10 * m.activity),
-      items: [
-        { time: "09:00", icon: "🚌", label: "Express bus: Colombo → Galle", detail: "2.5hr Southern Expressway", cost: Math.round(4 * m.transport), category: "transport", tip: "Take the AC express bus from Saunders Place ($1.50) — not the slow coastal highway bus" },
-        { time: "12:00", icon: "🏰", label: "Galle Dutch Fort walk", detail: "16th-century UNESCO fort walls", cost: 0, category: "activity", tip: "The fort ramparts walk (45min) gives stunning ocean views. Completely free." },
-        { time: "14:00", icon: "🍽️", label: "Lunch inside the Fort", detail: "Pedlar & Prince for local food", cost: Math.round(8 * m.food), category: "meal" },
-        { time: "16:00", icon: "🔭", label: "Galle Lighthouse & Ramparts", detail: "Sunset from the fort walls", cost: 0, category: "activity", isHidden: true },
-        { time: "18:00", icon: "🛍️", label: "Fort boutiques & galleries", detail: "Laksala, Paradise Road, gem shops", cost: 0, category: "activity" },
-        { time: "20:00", icon: "🍽️", label: "Dinner – Fortaleza Restaurant", detail: "Colonial-era fine dining", cost: Math.round(20 * m.food), category: "meal" },
-        { time: "22:00", icon: "🏨", label: hotelNames[style]["Galle"], detail: "Sleep inside the fort walls", cost: Math.round(hotelCosts[style]["Galle"] / people), category: "accommodation" },
-      ],
-    },
-    {
-      day: Math.min(3, days - 1), city: "Galle → Unawatuna → Mirissa", flag: "🏖️", heroGradient: "linear-gradient(135deg, #0B2d50, #0D5A4A)",
-      accommodation: hotelNames[style]["Mirissa"], accommodationCostPerNight: hotelCosts[style]["Mirissa"],
-      localTip: "Unawatuna beach is 3km from Galle Fort — share a tuk-tuk with other travelers ($1 each). Don't take hotel-arranged transfers.",
-      dailyCostPerPerson: Math.round(hotelCosts[style]["Mirissa"] / people + 12 * m.food + 8 * m.transport + 12 * m.activity),
-      items: [
-        { time: "09:00", icon: "🤿", label: "Unawatuna Beach & Snorkeling", detail: "Clear lagoon, reef fish, sea turtles", cost: Math.round(8 * m.activity), category: "activity", tip: "Rent snorkel gear ($3) independently — don't book expensive packages at hotel" },
-        { time: "13:00", icon: "🍜", label: "Lunch – Thambapanni beach cafe", detail: "Fresh coconut & beach snacks", cost: Math.round(5 * m.food), category: "meal" },
-        { time: "15:00", icon: "🚌", label: "Bus: Unawatuna → Mirissa", detail: "45min coastal highway", cost: Math.round(2 * m.transport), category: "transport", tip: "Local bus costs only $0.50 — same journey as $25 taxi. Just flag down the Matara bus." },
-        { time: "17:00", icon: "🌅", label: "Mirissa Coconut Tree Hill", detail: "Famous sunset viewpoint", cost: 0, category: "activity" },
-        { time: "20:00", icon: "🦐", label: "Dinner – Mirissa seafood", detail: "Grilled prawns & catch of day", cost: Math.round(12 * m.food), category: "meal" },
-        { time: "22:00", icon: "🏨", label: hotelNames[style]["Mirissa"], detail: "Beach paradise check-in", cost: Math.round(hotelCosts[style]["Mirissa"] / people), category: "accommodation" },
-      ],
-    },
-  ];
+/** Curated landmarks for a city, or a generic exploration item if we have none. */
+function activitiesFor(city: string): string[] {
+  const seen = MUST_SEE[city];
+  if (seen && seen.length > 0) return seen;
+  return [`Explore ${city}`, `${city} local market`];
 }
 
-// ─── Route Template Selector ─────────────────────────────────────────────────
-function selectRoute(startCity: string, days: number) {
-  if (["Kandy"].includes(startCity)) return "hill_country";
-  if (["Negombo"].includes(startCity)) return "north_east";
-  if (["Galle", "Mirissa", "Unawatuna"].includes(startCity)) return "south_coast";
-  return "classic";
+function buildGenericRoute(
+  cities: string[],
+  days: number,
+  style: TravelStyle,
+  people: number
+): DayPlan[] {
+  const m = STYLE_M[style];
+  const spread = distributeDays(cities.length, days);
+  const plans: DayPlan[] = [];
+
+  let dayNumber = 0;
+
+  cities.forEach((city, cityIndex) => {
+    const nights = spread[cityIndex] ?? 0;
+    const hotel = pickHotel(city, style);
+    const landmarks = activitiesFor(city);
+    const previousCity = cityIndex > 0 ? cities[cityIndex - 1] : null;
+
+    for (let nightIndex = 0; nightIndex < nights; nightIndex += 1) {
+      dayNumber += 1;
+      const isTripStart = dayNumber === 1;
+      const isCityArrival = nightIndex === 0;
+
+      const transportBase = isTripStart
+        ? BASE_TRANSPORT_ARRIVAL_USD
+        : BASE_TRANSPORT_USD;
+
+      const items: DayItem[] = [];
+
+      if (isTripStart) {
+        items.push({
+          time: "10:00",
+          icon: "🚕",
+          label: "Airport → Hotel Transfer",
+          detail: `PickMe taxi from BIA to ${city}`,
+          cost: Math.round(BASE_TRANSPORT_ARRIVAL_USD * m.transport),
+          category: "transport",
+          tip: "Agree the price before getting into any non-app taxi.",
+        });
+      } else if (isCityArrival && previousCity) {
+        items.push({
+          time: "09:00",
+          icon: "🚌",
+          label: `${previousCity} → ${city}`,
+          detail: "Road or rail transfer between stops",
+          cost: Math.round(BASE_TRANSPORT_USD * m.transport),
+          category: "transport",
+          tip: "Local buses and 2nd class rail cost a fraction of a private transfer.",
+        });
+      } else {
+        items.push({
+          time: "07:30",
+          icon: "🍳",
+          label: "Breakfast at hotel",
+          detail: "Hoppers & coconut sambol",
+          cost: Math.round(3 * m.food),
+          category: "meal",
+        });
+      }
+
+      // Rotate through the city's landmarks so a multi-night stay does not
+      // repeat the same stop every day.
+      const first = landmarks[(nightIndex * 2) % landmarks.length];
+      const second = landmarks[(nightIndex * 2 + 1) % landmarks.length];
+
+      items.push({
+        time: "11:00",
+        icon: "🗺️",
+        label: first,
+        detail: `Main sight in ${city}`,
+        cost: Math.round(BASE_ACTIVITY_USD * m.activity),
+        category: "activity",
+      });
+
+      items.push({
+        time: "13:00",
+        icon: "🍛",
+        label: "Lunch – local rice & curry",
+        detail: "Off the main tourist strip",
+        cost: Math.round(4 * m.food),
+        category: "meal",
+        tip: "Look for packed local places — a full plate runs about $1.10.",
+      });
+
+      if (second && second !== first) {
+        items.push({
+          time: "16:00",
+          icon: "📍",
+          label: second,
+          detail: `Second stop in ${city}`,
+          cost: Math.round(4 * m.activity),
+          category: "activity",
+          isHidden: true,
+        });
+      }
+
+      items.push({
+        time: "20:00",
+        icon: "🍽️",
+        label: `Dinner in ${city}`,
+        detail: style === "budget" ? "Street food & local kade" : "Sit-down local restaurant",
+        cost: Math.round((style === "budget" ? 6 : 12) * m.food),
+        category: "meal",
+      });
+
+      items.push({
+        time: "22:00",
+        icon: "🏨",
+        label: hotel.name,
+        detail: isCityArrival ? "Check-in" : `Night ${nightIndex + 1} in ${city}`,
+        cost: Math.round(hotel.cost / people),
+        category: "accommodation",
+      });
+
+      plans.push({
+        day: dayNumber,
+        city: isCityArrival && previousCity ? `${previousCity} → ${city}` : city,
+        flag: CITY_FLAGS[city] || "📍",
+        heroGradient: GRADIENTS[(dayNumber - 1) % GRADIENTS.length],
+        accommodation: hotel.name,
+        accommodationCostPerNight: hotel.cost,
+        localTip: CITY_TIPS[city] || DEFAULT_TIP,
+        dailyCostPerPerson: Math.round(
+          hotel.cost / people +
+            BASE_FOOD_USD * m.food +
+            transportBase * m.transport +
+            BASE_ACTIVITY_USD * m.activity
+        ),
+        items,
+      });
+    }
+  });
+
+  return plans;
+}
+
+// ─── Route Template Matching ──────────────────────────────────
+// The itinerary still carries a routeKey for styling and copy. Match the chosen
+// cities against the existing templates by overlap; "custom" when none fits.
+function closestRouteKey(cities: string[]): string {
+  const chosen = new Set(cities.map((city) => city.toLowerCase()));
+
+  let bestKey = "custom";
+  let bestOverlap = 0;
+
+  for (const route of POPULAR_ROUTES) {
+    const overlap = route.cities.filter((city) => chosen.has(city.toLowerCase())).length;
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      bestKey = route.key;
+    }
+  }
+
+  // A single shared city is a coincidence, not a match.
+  return bestOverlap >= 2 ? bestKey : "custom";
+}
+
+// Names a route that matches none of the templates.
+function buildRouteName(cities: string[]): string {
+  if (cities.length === 0) return "Your Sri Lanka Route";
+  if (cities.length === 1) return `${cities[0]} Escape`;
+  return `${cities[0]} to ${cities[cities.length - 1]}`;
+}
+
+// One curated landmark per city, so a custom route still has real highlights.
+function buildHighlights(cities: string[]): string[] {
+  const picks: string[] = [];
+  for (const city of cities) {
+    const landmark = (MUST_SEE[city] || [])[0];
+    if (landmark) picks.push(landmark);
+    if (picks.length === 3) break;
+  }
+  return picks;
 }
 
 // ─── Main Generator ──────────────────────────────────────────────────────────
@@ -428,17 +480,16 @@ export function generateItinerary(
   inputs: TripInputs,
   rates: Record<Currency, number> = CURRENCY_RATES
 ): GeneratedItinerary {
-  const { budget, currency, days, people, startCity, travelStyle } = inputs;
+  const { budget, currency, days, people, travelStyle } = inputs;
   const rate = rates[currency] ?? CURRENCY_RATES[currency];
-  const routeKey = selectRoute(startCity, days);
-  const route = POPULAR_ROUTES.find((r) => r.key === routeKey) || POPULAR_ROUTES[0];
 
-  let dayPlans: DayPlan[];
-  if (routeKey === "south_coast") {
-    dayPlans = buildSouthCoastRoute(days, travelStyle, people);
-  } else {
-    dayPlans = buildClassicRoute(days, travelStyle, people);
-  }
+  // Ordering and auto-selection happen here too, so a caller passing raw input
+  // (or a legacy trip with no cities) still gets a coherent route.
+  const { cities } = resolveCities(inputs.cities, days);
+  const routeKey = closestRouteKey(cities);
+  const route = POPULAR_ROUTES.find((r) => r.key === routeKey) || null;
+
+  let dayPlans: DayPlan[] = buildGenericRoute(cities, days, travelStyle, people);
 
   // Clamp to requested days
   dayPlans = dayPlans.slice(0, days);
@@ -480,10 +531,12 @@ export function generateItinerary(
 
   return {
     id: `rl-${Date.now()}`,
-    routeName: route.name,
-    routeSlogan: route.description,
+    routeName: route ? route.name : buildRouteName(cities),
+    routeSlogan: route
+      ? route.description
+      : "A route built around the cities you chose, ordered to minimise backtracking.",
     routeKey,
-    cities: route.cities,
+    cities,
     totalDays: days,
     totalPeople: people,
     currency,
@@ -511,6 +564,6 @@ export function generateItinerary(
       "⚠️ Whale watching costs vary: $25–65/person. Book ethical operators only.",
       "⚠️ Hotel prices surge 2–3x during Christmas/New Year (Dec 20 – Jan 5).",
     ],
-    highlights: route.highlights,
+    highlights: route ? route.highlights : buildHighlights(cities),
   };
 }

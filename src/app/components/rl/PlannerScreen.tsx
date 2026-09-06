@@ -23,9 +23,11 @@ import {
   UtensilsCrossed,
   WalletCards,
   Waves,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Currency, Interest, Screen, TravelStyle, TripInputs } from "./types";
+import { SELECTABLE_CITIES, resolveCities } from "../../lib/cityPlan";
 import { CURRENCY_SYMBOLS } from "./data";
 import { useLiveRates } from "./useLiveRates";
 import "../../../styles/core-ui.css";
@@ -34,14 +36,19 @@ const CURRENCIES: Currency[] = ["USD", "EUR", "GBP", "AUD", "LKR"];
 const USD_BUDGET_PRESETS = [400, 800, 1500, 2500, 4000, 8000];
 const DAY_OPTIONS = [4, 5, 6, 7, 8, 9, 10, 12, 14];
 
-const START_CITIES: Array<{ name: string; icon: LucideIcon; note?: string }> = [
-  { name: "Colombo", icon: Building2, note: "Main airport gateway" },
-  { name: "Kandy", icon: Trees },
-  { name: "Negombo", icon: Fish, note: "Close to BIA airport" },
-  { name: "Galle", icon: Castle },
-  { name: "Sigiriya", icon: Landmark },
-  { name: "Ella", icon: Mountain },
-];
+const CITY_ICONS: Record<string, LucideIcon> = {
+  Colombo: Building2,
+  Kandy: Trees,
+  Negombo: Fish,
+  Galle: Castle,
+  Sigiriya: Landmark,
+  Ella: Mountain,
+};
+
+const CITY_NOTES: Record<string, string> = {
+  Colombo: "Main airport gateway",
+  Negombo: "Close to BIA airport",
+};
 
 const INTERESTS: Array<{ key: Interest; label: string; icon: LucideIcon }> = [
   { key: "beaches", label: "Beaches", icon: Waves },
@@ -95,18 +102,18 @@ const STEPS = [
 export function PlannerScreen({
   onGenerate,
   navigate,
-  initialStartCity,
+  initialCity,
 }: {
   onGenerate: (inputs: TripInputs) => void;
   navigate: (s: Screen) => void;
-  initialStartCity?: string | null;
+  initialCity?: string | null;
 }) {
   const [step, setStep] = useState(0);
   const [budget, setBudget] = useState(800);
   const [currency, setCurrency] = useState<Currency>("USD");
   const [days, setDays] = useState(7);
   const [people, setPeople] = useState(2);
-  const [startCity, setStartCity] = useState(initialStartCity ?? "Colombo");
+  const [cities, setCities] = useState<string[]>(initialCity ? [initialCity] : []);
   const [interests, setInterests] = useState<Interest[]>(["beaches", "culture"]);
   const [travelStyle, setTravelStyle] = useState<TravelStyle>("comfort");
   const [generating, setGenerating] = useState(false);
@@ -133,7 +140,7 @@ export function PlannerScreen({
 
   const canNext = () => {
     if (step === 0) return budget > 0;
-    if (step === 2) return Boolean(startCity);
+    if (step === 2) return true;
     if (step === 3) return interests.length > 0;
     return true;
   };
@@ -143,7 +150,7 @@ export function PlannerScreen({
     currency,
     days,
     people,
-    startCity,
+    cities,
     interests,
     travelStyle,
   };
@@ -174,11 +181,19 @@ export function PlannerScreen({
     setStep(step - 1);
   };
 
+  // Canonical order, capped to the trip length — never click order.
+  const resolvedCities = resolveCities(cities, days);
+
+  const toggleCity = (city: string) =>
+    setCities((current) =>
+      current.includes(city) ? current.filter((item) => item !== city) : [...current, city]
+    );
+
   const summary = [
     { label: "Budget", value: budget > 0 ? `${sym}${budget.toLocaleString()} ${currency}` : "—" },
     { label: "Duration", value: `${days} days` },
     { label: "Travellers", value: `${people} ${people === 1 ? "person" : "people"}` },
-    { label: "Starting point", value: startCity },
+    { label: "Route", value: cities.length === 0 ? "We'll pick for you" : resolvedCities.cities.join(" → ") },
     { label: "Travel style", value: travelStyle },
   ];
 
@@ -355,31 +370,46 @@ export function PlannerScreen({
             {step === 2 && (
               <div className="wr-planner__step" key="start">
                 <p className="wr-planner__lead">
-                  Your first stop anchors the route. Most international arrivals begin near Colombo or Negombo.
+                  Add the places you want to see, or add nothing and let us choose. We always
+                  order the route geographically and start near the airport.
                 </p>
                 <fieldset className="wr-fieldset">
-                  <legend>Starting city</legend>
+                  <legend>Cities — choose up to six, or none</legend>
                   <div className="wr-city-grid">
-                    {START_CITIES.map(({ name, icon: Icon, note }) => {
-                      const selected = startCity === name;
+                    {SELECTABLE_CITIES.map((name) => {
+                      const selected = cities.includes(name);
+                      const Icon = CITY_ICONS[name] ?? MapPin;
                       return (
                         <button
                           type="button"
                           key={name}
                           className={selected ? "is-selected" : ""}
-                          onClick={() => setStartCity(name)}
+                          onClick={() => toggleCity(name)}
                           aria-pressed={selected}
                         >
                           <Icon size={21} strokeWidth={1.7} aria-hidden="true" />
                           <span>
                             <strong>{name}</strong>
-                            {note && <small>{note}</small>}
+                            {CITY_NOTES[name] && <small>{CITY_NOTES[name]}</small>}
                           </span>
-                          {selected && <Check size={15} strokeWidth={2.5} aria-hidden="true" />}
+                          {selected
+                            ? <X size={15} strokeWidth={2.5} aria-hidden="true" />
+                            : <Check size={15} strokeWidth={2.5} aria-hidden="true" className="wr-city-grid__add" />}
                         </button>
                       );
                     })}
                   </div>
+                  <p className="wr-planner__route-note">
+                    {cities.length === 0
+                      ? "We'll pick a route for you"
+                      : resolvedCities.cities.join(" → ")}
+                  </p>
+                  {resolvedCities.dropped.length > 0 && (
+                    <p className="wr-field-error" role="status">
+                      {resolvedCities.dropped.join(", ")} won't fit in {days} days and{" "}
+                      {resolvedCities.dropped.length === 1 ? "was" : "were"} left out.
+                    </p>
+                  )}
                 </fieldset>
               </div>
             )}
@@ -489,7 +519,11 @@ export function PlannerScreen({
             <Route size={31} strokeWidth={1.25} />
           </div>
           <p className="wr-kicker">Your route brief</p>
-          <h2>{startCity} is the first pin.</h2>
+          <h2>
+            {cities.length === 0
+              ? "We'll choose your stops."
+              : `${resolvedCities.cities[0]} is the first pin.`}
+          </h2>
           <p className="wr-planner__summary-intro">
             We will build outward from here, balancing travel time with the budget you set.
           </p>

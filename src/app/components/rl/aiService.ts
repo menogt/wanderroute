@@ -46,11 +46,7 @@ export async function generateItineraryWithAI(
   // (the server-side function can't reach Supabase with the browser client).
   let placesText = "";
   try {
-    const result = await fetchPlacesForPrompt(
-      inputs.startCity,
-      inputs.days,
-      inputs.travelStyle
-    );
+    const result = await fetchPlacesForPrompt(inputs.cities, inputs.travelStyle);
     placesText = result.placesText;
   } catch (err) {
     console.warn("Could not fetch real places, AI will use general knowledge:", err);
