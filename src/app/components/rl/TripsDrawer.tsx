@@ -4,7 +4,6 @@ import {
   CalendarDays,
   Check,
   Clock3,
-  Compass,
   MapPin,
   Trash2,
   Users,
@@ -148,7 +147,7 @@ export function TripsDrawer({
       >
         <header className="wr-trips__header">
           <div className="wr-trips__brandline">
-            <span className="wr-brand-mark" aria-hidden="true"><Compass size={17} /></span>
+            <span className="wr-brand-mark" aria-hidden="true"><img src="/logo-mark.png" alt="" /></span>
             <span>WanderRoute atlas</span>
           </div>
           <button

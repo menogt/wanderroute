@@ -67,7 +67,7 @@
 
 :where(.wr-home, .wr-topnav, .wr-trips) .wr-brand-mark {
   align-items: center;
-  background: var(--wr-gold-local);
+  background: var(--wr-midnight-local);
   border: 1px solid rgba(7, 26, 45, 0.15);
   border-radius: 6px;
   color: var(--wr-midnight-local);
@@ -75,7 +75,16 @@
   flex: 0 0 auto;
   height: 34px;
   justify-content: center;
+  overflow: hidden;
   width: 34px;
+}
+
+/* The brand tile is the logo artwork itself, so it fills the chip. */
+:where(.wr-home, .wr-topnav, .wr-trips) .wr-brand-mark img {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
 }
 
 :where(.wr-home, .wr-planner) .wr-button {

@@ -3,7 +3,6 @@ import {
   ArrowUpRight,
   BedDouble,
   Bookmark,
-  Compass,
   LockKeyhole,
   MapPinned,
   Route,
@@ -60,7 +59,7 @@ export function TopNav({
           aria-label="WanderRoute home"
         >
           <span className="wr-brand-mark" aria-hidden="true">
-            <Compass size={18} strokeWidth={2.2} />
+            <img src="/logo-mark.png" alt="" />
           </span>
           <span className="wr-topnav__brand-word">
             Wander<span>Route</span>

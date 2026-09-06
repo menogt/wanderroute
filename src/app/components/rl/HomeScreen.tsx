@@ -160,7 +160,7 @@ export function HomeScreen({
             onClick={handleLogoTap}
             aria-label="WanderRoute"
           >
-            <span className="wr-brand-mark" aria-hidden="true"><Compass size={17} /></span>
+            <span className="wr-brand-mark" aria-hidden="true"><img src="/logo-mark.png" alt="" /></span>
             <span>Wander<strong>Route</strong></span>
           </button>
           <button type="button" onClick={() => navigate("routes")}>Routes</button>
