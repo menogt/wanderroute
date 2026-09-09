@@ -26,6 +26,7 @@ import { useFoursquareGeocoding } from "../../hooks/useFoursquareGeocoding";
 import { extractPlaceName } from "./placeExtractor";
 import { fetchRoadRoute } from "../../lib/osrmRoute";
 import { QuoteRequestPanel } from "./QuoteRequestPanel";
+import { SeasonBanner } from "./SeasonBanner";
 import "../../../styles/itinerary-atlas.css";
 
 const CATEGORY_META: Record<DayItem["category"], { label: string; color: string; icon: typeof BusFront }> = {
@@ -465,6 +466,8 @@ export function ItineraryScreen({
         </div>
         {pdfError && <p className="wr-pdf-error" role="alert">{pdfError}</p>}
       </header>
+
+      <SeasonBanner cities={itinerary.cities ?? []} month={itinerary.travelMonth} />
 
       {isMobile && (
         <div className="wr-itinerary-view-switch" aria-label="Itinerary view">

@@ -26,6 +26,7 @@ import type { LucideIcon } from "lucide-react";
 import hillCountryImage from "../../../assets/wanderroute-hill-country.jpg";
 import { CURRENCY_SYMBOLS, POPULAR_ROUTES, generateItinerary } from "./data";
 import { SELECTABLE_CITIES, resolveCities } from "../../lib/cityPlan";
+import { MONTH_NAMES } from "../../lib/seasonData";
 import type { Interest, Screen, TravelStyle, TripInputs } from "./types";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
 import "../../../styles/core-ui.css";
@@ -63,7 +64,7 @@ export function HomeScreen({
   onGenerate,
 }: {
   navigate: (s: Screen) => void;
-  onGenerate?: (inputs: TripInputs) => void;
+  onGenerate?: (inputs: TripInputs, travelMonth?: number | null) => void;
 }) {
   const bp = useBreakpoint();
   const [tapCount, setTapCount] = useState(0);
@@ -74,6 +75,8 @@ export function HomeScreen({
   const [cities, setCities] = useState<string[]>([]);
   const [interests, setInterests] = useState<Interest[]>(["beaches", "culture"]);
   const [travelStyle, setTravelStyle] = useState<TravelStyle>("comfort");
+  // Optional, 1-12. Kept out of TripInputs so it never reaches generation.
+  const [travelMonth, setTravelMonth] = useState<number | null>(null);
 
   const quickInputs: TripInputs = {
     budget,
@@ -137,7 +140,7 @@ export function HomeScreen({
     event.preventDefault();
     if (interests.length === 0 || budget <= 0) return;
     if (onGenerate) {
-      onGenerate(quickInputs);
+      onGenerate(quickInputs, travelMonth);
       return;
     }
     navigate("planner");
@@ -252,6 +255,19 @@ export function HomeScreen({
               <span>Duration</span>
               <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
                 {QUICK_DAYS.map((item) => <option key={item} value={item}>{item} days</option>)}
+              </select>
+            </label>
+
+            <label>
+              <span>When are you travelling? (optional)</span>
+              <select
+                value={travelMonth ?? ""}
+                onChange={(event) => setTravelMonth(event.target.value ? Number(event.target.value) : null)}
+              >
+                <option value="">Not sure yet</option>
+                {MONTH_NAMES.map((name, index) => (
+                  <option key={name} value={index + 1}>{name}</option>
+                ))}
               </select>
             </label>
 

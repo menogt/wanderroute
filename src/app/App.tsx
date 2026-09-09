@@ -58,6 +58,7 @@ export default function App() {
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const [error, setError] = useState<string | null>(null);
   const [lastInputs, setLastInputs] = useState<TripInputs | null>(null);
+  const [lastMonth, setLastMonth] = useState<number | null>(null);
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [cityToAdd, setCityToAdd] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -87,8 +88,13 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleGenerate = async (inputs: TripInputs) => {
+  const handleGenerate = async (inputs: TripInputs, travelMonth: number | null = null) => {
     setLastInputs(inputs);
+    setLastMonth(travelMonth);
+    // The month never enters `inputs`, so it never reaches the AI or the
+    // serverless functions. It is attached to the finished itinerary only.
+    const withMonth = (trip: GeneratedItinerary): GeneratedItinerary =>
+      travelMonth ? { ...trip, travelMonth } : trip;
     setIsLoading(true);
     setLoadingMsg(LOADING_MESSAGES[0]);
     setError(null);
@@ -101,7 +107,7 @@ export default function App() {
     }, 2200);
 
     try {
-      const generated = await generateItineraryWithAI(inputs);
+      const generated = withMonth(await generateItineraryWithAI(inputs));
       setItinerary(generated);
       saveTrip(generated);
       setScreen("itinerary");
@@ -109,7 +115,7 @@ export default function App() {
     } catch (generationError) {
       console.warn("AI enhancements unavailable; using standard itinerary:", generationError);
       try {
-        const fallback = generateItinerary(inputs, rates);
+        const fallback = withMonth(generateItinerary(inputs, rates));
         setItinerary(fallback);
         saveTrip(fallback);
         setFallbackNotice("A practical standard itinerary was created while enhanced planning is unavailable.");
@@ -175,7 +181,7 @@ export default function App() {
           <AlertCircle size={19} aria-hidden="true" />
           <span>{error}</span>
           {lastInputs && (
-            <button type="button" className="wr-toast-action" onClick={() => handleGenerate(lastInputs)}>
+            <button type="button" className="wr-toast-action" onClick={() => handleGenerate(lastInputs, lastMonth)}>
               <RefreshCw size={14} aria-hidden="true" /> Try again
             </button>
           )}

@@ -98,4 +98,9 @@ export type GeneratedItinerary = {
   globalTips: string[];
   warnings: string[];
   highlights: string[];
+  /**
+   * Month of travel, 1-12. Optional and client-side only: collected in the
+   * planning form, attached after generation, never sent to the AI.
+   */
+  travelMonth?: number;
 };

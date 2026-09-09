@@ -28,6 +28,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { Currency, Interest, Screen, TravelStyle, TripInputs } from "./types";
 import { SELECTABLE_CITIES, resolveCities } from "../../lib/cityPlan";
+import { MONTH_NAMES } from "../../lib/seasonData";
 import { CURRENCY_SYMBOLS } from "./data";
 import { useLiveRates } from "./useLiveRates";
 import "../../../styles/core-ui.css";
@@ -104,11 +105,13 @@ export function PlannerScreen({
   navigate,
   initialCity,
 }: {
-  onGenerate: (inputs: TripInputs) => void;
+  onGenerate: (inputs: TripInputs, travelMonth?: number | null) => void;
   navigate: (s: Screen) => void;
   initialCity?: string | null;
 }) {
   const [step, setStep] = useState(0);
+  // Optional, 1-12. Kept out of TripInputs so it never reaches generation.
+  const [travelMonth, setTravelMonth] = useState<number | null>(null);
   const [budget, setBudget] = useState(800);
   const [currency, setCurrency] = useState<Currency>("USD");
   const [days, setDays] = useState(7);
@@ -158,7 +161,7 @@ export function PlannerScreen({
   const handleGenerate = () => {
     setGenerating(true);
     setTimeout(() => {
-      onGenerate(tripInputs);
+      onGenerate(tripInputs, travelMonth);
       setGenerating(false);
     }, 1600);
   };
@@ -363,6 +366,22 @@ export function PlannerScreen({
                       <Plus size={18} aria-hidden="true" />
                     </button>
                   </div>
+                </fieldset>
+
+                <fieldset className="wr-fieldset wr-season-field">
+                  <legend>When are you travelling? (optional)</legend>
+                  <select
+                    className="wr-season-select"
+                    aria-label="Month of travel (optional)"
+                    value={travelMonth ?? ""}
+                    onChange={(event) => setTravelMonth(event.target.value ? Number(event.target.value) : null)}
+                  >
+                    <option value="">Not sure yet</option>
+                    {MONTH_NAMES.map((name, index) => (
+                      <option key={name} value={index + 1}>{name}</option>
+                    ))}
+                  </select>
+                  <p className="wr-season-field__hint">We'll flag any coast that's in monsoon season for your dates.</p>
                 </fieldset>
               </div>
             )}
