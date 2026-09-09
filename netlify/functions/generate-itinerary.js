@@ -365,6 +365,12 @@ async function callGroq(apiKey, inputs) {
 
     const responseText = await response.text();
     if (!response.ok) {
+      console.error("Groq API error", {
+        status: response.status,
+        statusText: response.statusText,
+        model: MODEL,
+        body: responseText.slice(0, 2000),
+      });
       return {
         ok: false,
         status: response.status,
@@ -385,8 +391,15 @@ async function callGroq(apiKey, inputs) {
     };
   } catch (error) {
     if (error?.name === "AbortError") {
+      console.error("Groq request timed out", { timeoutMs: REQUEST_TIMEOUT_MS, model: MODEL });
       return { ok: false, status: 504, message: "Groq request timed out." };
     }
+    console.error("Groq request failed", {
+      name: error?.name,
+      message: error?.message,
+      cause: error?.cause?.message ?? error?.cause,
+      model: MODEL,
+    });
     return { ok: false, status: 502, message: "Groq request failed." };
   } finally {
     clearTimeout(timeout);
