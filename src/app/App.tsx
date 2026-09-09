@@ -13,6 +13,7 @@ import { BottomNav } from "./components/rl/BottomNav";
 import { TopNav } from "./components/rl/TopNav";
 import { TripsDrawer } from "./components/rl/TripsDrawer";
 import { saveTrip, loadCurrentTrip } from "./lib/tripsDb";
+import { resolveCities } from "./lib/cityPlan";
 import { generateItineraryWithAI } from "./components/rl/claudeApi";
 import { generateItinerary } from "./components/rl/data";
 import { useLiveRates } from "./components/rl/useLiveRates";
@@ -88,13 +89,22 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const handleGenerate = async (inputs: TripInputs, travelMonth: number | null = null) => {
+  const handleGenerate = async (rawInputs: TripInputs, travelMonth: number | null = null) => {
+    // Honour the route the form showed: canonical geographic order, capped to
+    // what the trip length supports, over-long picks dropped. Before this, the
+    // raw tap order went to the AI and the map drew whatever it sent back.
+    const { cities: routeCities } = resolveCities(rawInputs.cities, rawInputs.days);
+    const inputs: TripInputs = { ...rawInputs, cities: routeCities };
     setLastInputs(inputs);
     setLastMonth(travelMonth);
-    // The month never enters `inputs`, so it never reaches the AI or the
-    // serverless functions. It is attached to the finished itinerary only.
-    const withMonth = (trip: GeneratedItinerary): GeneratedItinerary =>
-      travelMonth ? { ...trip, travelMonth } : trip;
+    // Pin the itinerary's city list to the resolved route so the route map and
+    // day tabs always match, whatever the model echoes back. The month never
+    // enters `inputs`, so it never reaches the AI or the serverless functions.
+    const withMonth = (trip: GeneratedItinerary): GeneratedItinerary => ({
+      ...trip,
+      cities: routeCities,
+      ...(travelMonth ? { travelMonth } : {}),
+    });
     setIsLoading(true);
     setLoadingMsg(LOADING_MESSAGES[0]);
     setError(null);

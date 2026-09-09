@@ -73,7 +73,9 @@ export function orderCities(cities: string[]): string[] {
         (known) => known.toLowerCase() === city.trim().toLowerCase()
       );
       return {
-        city: city.trim(),
+        // Use the canonical spelling when we know the city, so coordinate and
+        // category lookups downstream always hit ("kandy" -> "Kandy").
+        city: index === -1 ? city.trim() : CANONICAL_CITY_ORDER[index],
         rank: index === -1 ? CANONICAL_CITY_ORDER.length + fallbackIndex : index,
       };
     })
