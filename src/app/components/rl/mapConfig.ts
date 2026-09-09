@@ -23,6 +23,15 @@ export const CITY_COORDS: Record<string, [number, number]> = {
 export const SRI_LANKA_CENTER: [number, number] = [7.8731, 80.7718];
 export const SRI_LANKA_ZOOM = 7;
 
+// Shared basemap for every map. Esri World Topo needs no API key, is free
+// with attribution, and its soft terrain shading suits the ivory/navy palette.
+// (CARTO's basemaps now watermark tiles with "API KEY REQUIRED".)
+export const TILE_LAYER = {
+  url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+  attribution: "Tiles &copy; Esri &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS",
+  maxZoom: 18,
+};
+
 // Normalize city name to coords (handles spaces and case differences)
 export function getCityCoords(city: string): [number, number] | null {
   return CITY_COORDS[city] ?? null;

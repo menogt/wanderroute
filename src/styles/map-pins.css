@@ -1,0 +1,183 @@
+/* Branded map pins shared by every Leaflet map. See mapPins.ts. */
+
+.leaflet-marker-icon.wr-pin-wrap {
+  background: none;
+  border: 0;
+  overflow: visible;
+}
+
+.wr-pin {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.wr-pin__body {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  color: #fff;
+  background: var(--pin);
+  border: 2px solid #fff;
+  box-shadow: 0 3px 10px rgba(7, 26, 45, 0.35);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.wr-pin__body svg {
+  width: 55%;
+  height: 55%;
+}
+
+.wr-pin__halo {
+  position: absolute;
+  display: none;
+  border-radius: 50%;
+  background: rgba(212, 166, 74, 0.32);
+  pointer-events: none;
+}
+
+/* Teardrop: a rotated square with one sharp corner pointing at the coordinate. */
+.wr-pin--drop .wr-pin__body {
+  left: calc(50% - var(--pin-size) / 2);
+  top: calc(100% - var(--pin-size) * 1.207 - 1px);
+  width: var(--pin-size);
+  height: var(--pin-size);
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  transform-origin: 50% 50%;
+}
+
+.wr-pin--drop .wr-pin__body svg {
+  transform: rotate(45deg);
+}
+
+.wr-pin--drop .wr-pin__halo {
+  width: calc(var(--pin-size) * 1.55);
+  height: calc(var(--pin-size) * 1.55);
+  left: calc(50% - var(--pin-size) * 0.775);
+  top: calc(100% - var(--pin-size) * 0.707 - var(--pin-size) * 1.275);
+}
+
+/* Numbered stop and dot: plain circles centred on the coordinate. */
+.wr-pin--stop .wr-pin__body,
+.wr-pin--dot .wr-pin__body {
+  inset: 0;
+  border-radius: 50%;
+}
+
+.wr-pin--stop .wr-pin__body {
+  font-family: var(--wr-serif, Georgia, serif);
+  font-size: calc(var(--pin-size) * 0.42);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  border-width: 2.5px;
+}
+
+.wr-pin--dot .wr-pin__body {
+  border-width: 2px;
+  box-shadow: 0 2px 6px rgba(7, 26, 45, 0.3);
+}
+
+.wr-pin--stop .wr-pin__halo,
+.wr-pin--dot .wr-pin__halo,
+.wr-pin--hotel .wr-pin__halo {
+  width: calc(var(--pin-size) * 1.7);
+  height: calc(var(--pin-size) * 1.7);
+  left: calc(50% - var(--pin-size) * 0.85);
+  top: calc(50% - var(--pin-size) * 0.85);
+}
+
+/* Hotel: rounded square anchored at its bottom edge. */
+.wr-pin--hotel .wr-pin__body {
+  inset: 0;
+  border-radius: 7px;
+}
+
+.wr-pin--hotel .wr-pin__halo {
+  top: calc(50% - var(--pin-size) * 0.85);
+}
+
+/* Hover and selection. */
+.wr-pin:hover .wr-pin__body {
+  box-shadow: 0 6px 16px rgba(7, 26, 45, 0.4);
+}
+
+.wr-pin--drop:hover .wr-pin__body {
+  transform: rotate(-45deg) scale(1.12);
+}
+
+.wr-pin--stop:hover .wr-pin__body,
+.wr-pin--dot:hover .wr-pin__body,
+.wr-pin--hotel:hover .wr-pin__body {
+  transform: scale(1.12);
+}
+
+.wr-pin-wrap.is-selected {
+  z-index: 1000 !important;
+}
+
+.wr-pin-wrap.is-selected .wr-pin__body {
+  border-color: #d4a64a;
+  box-shadow: 0 0 0 2px rgba(255, 249, 239, 0.9), 0 8px 20px rgba(7, 26, 45, 0.4);
+}
+
+.wr-pin-wrap.is-selected .wr-pin__halo {
+  display: block;
+  animation: wr-pin-pulse 2.2s ease-out infinite;
+}
+
+@keyframes wr-pin-pulse {
+  0% { transform: scale(0.55); opacity: 0.9; }
+  70% { transform: scale(1.15); opacity: 0; }
+  100% { transform: scale(1.15); opacity: 0; }
+}
+
+/* Permanent name labels next to pins. */
+.leaflet-tooltip.wr-pin-label {
+  padding: 3px 8px;
+  color: #071a2d;
+  background: rgba(255, 249, 239, 0.94);
+  border: 1px solid rgba(7, 26, 45, 0.18);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(7, 26, 45, 0.18);
+  font-family: var(--wr-sans, system-ui, sans-serif);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.leaflet-tooltip.wr-pin-label::before {
+  display: none;
+}
+
+.leaflet-tooltip.wr-pin-label.is-active {
+  color: #fff9ef;
+  background: #071a2d;
+  border-color: #d4a64a;
+}
+
+/* Route lines: a soft navy underlay gives the gold line depth on pale tiles;
+   the dashed fallback marches while the road route is still loading. */
+.wr-route-line--pending {
+  animation: wr-route-march 1.4s linear infinite;
+}
+
+@keyframes wr-route-march {
+  to { stroke-dashoffset: -30; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wr-pin-wrap.is-selected .wr-pin__halo,
+  .wr-route-line--pending {
+    animation: none;
+  }
+  .wr-pin-wrap.is-selected .wr-pin__halo {
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+}

@@ -30,9 +30,10 @@ import { useBreakpoint } from "../../hooks/useBreakpoint";
 import {
   CITY_CATEGORIES,
   MARKER_COLORS,
+  TILE_LAYER,
   getCityCoords,
 } from "./mapConfig";
-import { createColorMarker } from "./leafletSetup";
+import { createHotelPin } from "./mapPins";
 import { useFoursquareGeocoding } from "../../hooks/useFoursquareGeocoding";
 import type { Screen, TravelStyle } from "./types";
 import "../../../styles/map-hotels.css";
@@ -397,8 +398,9 @@ function HotelMap({
         attributionControl
       >
         <TileLayer
-          attribution="&copy; OpenStreetMap contributors &copy; CARTO"
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          attribution={TILE_LAYER.attribution}
+          url={TILE_LAYER.url}
+          maxZoom={TILE_LAYER.maxZoom}
         />
         <HotelMapFocus target={selectedCoords} />
 
@@ -410,10 +412,8 @@ function HotelMap({
             <Marker
               key={`${hotel.name}-${index}`}
               position={coords}
-              icon={createColorMarker(
-                selected ? "#D4A64A" : baseColor,
-                selected ? 17 : 12,
-              )}
+              icon={createHotelPin(hotel.type, { selected, color: baseColor })}
+              zIndexOffset={selected ? 1000 : 0}
               eventHandlers={{ click: () => onSelect(index) }}
             >
               <Popup>

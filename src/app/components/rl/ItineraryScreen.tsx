@@ -15,13 +15,19 @@ import {
   Users,
   WalletCards,
 } from "lucide-react";
-import { MapContainer, Marker, Polyline, Popup, TileLayer, useMap } from "react-leaflet";
+import { MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from "react-leaflet";
 import type { DayItem, DayPlan, GeneratedItinerary, Screen } from "./types";
 import { CURRENCY_SYMBOLS } from "./data";
 import { downloadItineraryPDF } from "./generatePDF";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
-import { getCityCoords, MARKER_COLORS } from "./mapConfig";
-import { createColorMarker, createNumberMarker } from "./leafletSetup";
+import { getCityCoords, TILE_LAYER } from "./mapConfig";
+import {
+  ROUTE_UNDERLAY,
+  categoryForCity,
+  createCategoryPin,
+  createStayPin,
+  createStopPin,
+} from "./mapPins";
 import { useFoursquareGeocoding } from "../../hooks/useFoursquareGeocoding";
 import { extractPlaceName } from "./placeExtractor";
 import { fetchRoadRoute } from "../../lib/osrmRoute";
@@ -137,31 +143,41 @@ function RouteMap({
         attributionControl
       >
         <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-          attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+          url={TILE_LAYER.url}
+          attribution={TILE_LAYER.attribution}
+          maxZoom={TILE_LAYER.maxZoom}
         />
         <FitBounds positions={positions} />
+        <Polyline positions={roadRoute || positions} pathOptions={ROUTE_UNDERLAY} />
         <Polyline
           positions={roadRoute || positions}
           pathOptions={roadRoute
-            ? { color: "#D4A64A", weight: 4, opacity: 0.94 }
-            : { color: "#D4A64A", weight: 3, dashArray: "8 7", opacity: 0.88 }}
+            ? { color: "#D4A64A", weight: 4, opacity: 0.94, lineCap: "round", lineJoin: "round" }
+            : { color: "#D4A64A", weight: 3, dashArray: "8 7", opacity: 0.88, className: routeSettled ? "" : "wr-route-line--pending" }}
         />
         {cities.map((city, index) => {
           const coords = getCityCoords(city);
           if (!coords) return null;
           const active = city === activeCity;
-          const color = active
-            ? "#D4A64A"
-            : index === 0
-              ? MARKER_COLORS.ancient
-              : index === cities.length - 1
-                ? MARKER_COLORS.beach
-                : MARKER_COLORS.city;
+          const isFirst = index === 0;
+          const isLast = index === cities.length - 1;
           const daysHere = cityDays[city] || [];
 
           return (
-            <Marker key={`${city}-${index}`} position={coords} icon={createColorMarker(color, active ? 19 : 14)}>
+            <Marker
+              key={`${city}-${index}`}
+              position={coords}
+              icon={createCategoryPin(categoryForCity(city), {
+                selected: active,
+                size: active ? 34 : 30,
+                icon: isFirst ? "arrival" : isLast ? "flag" : undefined,
+                color: active ? "#D4A64A" : undefined,
+              })}
+              zIndexOffset={active ? 1000 : 0}
+            >
+              <Tooltip permanent direction="right" className={`wr-pin-label${active ? " is-active" : ""}`}>
+                {city}
+              </Tooltip>
               <Popup>
                 <div className="wr-map-popup">
                   <strong>{city}</strong>
@@ -257,22 +273,29 @@ function DayActivityMap({ day, city, sym }: { day: DayPlan; city: string; sym: s
             attributionControl
           >
             <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-              attribution="&copy; OpenStreetMap contributors &copy; CARTO"
+              url={TILE_LAYER.url}
+              attribution={TILE_LAYER.attribution}
+              maxZoom={TILE_LAYER.maxZoom}
             />
             {locatedItems.length >= 2 && (
-              <Polyline
-                positions={walkRoute || locatedItems.map((entry) => entry.coords)}
-                pathOptions={walkRoute
-                  ? { color: "#D4A64A", weight: 3, opacity: 0.85 }
-                  : { color: "#D4A64A", weight: 2, dashArray: "5 5", opacity: 0.76 }}
-              />
+              <>
+                <Polyline
+                  positions={walkRoute || locatedItems.map((entry) => entry.coords)}
+                  pathOptions={{ ...ROUTE_UNDERLAY, weight: 7 }}
+                />
+                <Polyline
+                  positions={walkRoute || locatedItems.map((entry) => entry.coords)}
+                  pathOptions={walkRoute
+                    ? { color: "#D4A64A", weight: 3, opacity: 0.85, lineCap: "round", lineJoin: "round" }
+                    : { color: "#D4A64A", weight: 2, dashArray: "5 5", opacity: 0.76 }}
+                />
+              </>
             )}
             {locatedItems.map((located, index) => (
               <Marker
                 key={`${located.index}-${located.item.label}`}
                 position={located.coords}
-                icon={createNumberMarker(index + 1, CATEGORY_META[located.item.category].color)}
+                icon={createStopPin(index + 1, CATEGORY_META[located.item.category].color)}
               >
                 <Popup>
                   <div className="wr-map-popup">
@@ -285,7 +308,7 @@ function DayActivityMap({ day, city, sym }: { day: DayPlan; city: string; sym: s
               </Marker>
             ))}
             {hotelCoords && (
-              <Marker position={hotelCoords} icon={createColorMarker("#D4A64A", 17)}>
+              <Marker position={hotelCoords} icon={createStayPin()} zIndexOffset={500}>
                 <Popup>
                   <div className="wr-map-popup">
                     <strong>{day.accommodation}</strong>

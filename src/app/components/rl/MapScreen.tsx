@@ -4,7 +4,9 @@ import {
   Marker,
   Popup,
   TileLayer,
+  Tooltip,
   useMap,
+  useMapEvents,
 } from "react-leaflet";
 import {
   ArrowRight,
@@ -22,8 +24,12 @@ import {
   MARKER_COLORS,
   SRI_LANKA_CENTER,
   SRI_LANKA_ZOOM,
+  TILE_LAYER,
 } from "./mapConfig";
-import { createColorMarker, createHotelMarker } from "./leafletSetup";
+import { createCategoryPin, createHotelPin, createPlacePin } from "./mapPins";
+
+// City name labels appear once the map is zoomed in enough for them not to overlap.
+const LABEL_ZOOM = 8;
 import { HOTELS_BY_CITY } from "./data";
 import { usePlaceDiscovery } from "../../hooks/usePlaceDiscovery";
 import type {
@@ -112,6 +118,13 @@ function MapFocus({
   return null;
 }
 
+function ZoomWatcher({ onZoom }: { onZoom: (zoom: number) => void }) {
+  const map = useMapEvents({
+    zoomend: () => onZoom(map.getZoom()),
+  });
+  return null;
+}
+
 export function MapScreen({
   navigate,
   onCitySelect,
@@ -183,6 +196,8 @@ export function MapScreen({
   }, [selection]);
 
   const selectedZoom = selection?.kind === "city" ? 10 : 14;
+  const [zoomLevel, setZoomLevel] = useState(SRI_LANKA_ZOOM);
+  const showLabels = zoomLevel >= LABEL_ZOOM;
 
   const selectCityAndPlan = (city: string) => {
     // Preserve this order: PlannerScreen seeds its city list from this on mount.
@@ -370,25 +385,36 @@ export function MapScreen({
               attributionControl
             >
               <TileLayer
-                attribution="&copy; OpenStreetMap contributors"
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution={TILE_LAYER.attribution}
+                url={TILE_LAYER.url}
+                maxZoom={TILE_LAYER.maxZoom}
               />
               <MapFocus target={selectedTarget} zoom={selectedZoom} />
+              <ZoomWatcher onZoom={setZoomLevel} />
 
               {visibleCities.map(([city, location]) => {
                 const category = CITY_CATEGORIES[city] ?? "city";
-                const color = MARKER_COLORS[category];
                 const selected = selection?.kind === "city" && selection.city === city;
                 const hotelCount = (HOTELS_BY_CITY[city] || []).length;
                 return (
                   <Marker
                     key={city}
                     position={location}
-                    icon={createColorMarker(color, selected ? 18 : 14)}
+                    icon={createCategoryPin(category, { selected, size: selected ? 34 : 30 })}
+                    zIndexOffset={selected ? 1000 : 0}
                     eventHandlers={{
                       click: () => setSelection({ kind: "city", city, location }),
                     }}
                   >
+                    {(showLabels || selected) && (
+                      <Tooltip
+                        permanent
+                        direction="right"
+                        className={`wr-pin-label${selected ? " is-active" : ""}`}
+                      >
+                        {city}
+                      </Tooltip>
+                    )}
                     <Popup>
                       <div className="wr-map-popup">
                         <span className="wr-popup-eyebrow">
@@ -423,10 +449,12 @@ export function MapScreen({
                     <Marker
                       key={`${hotel.city}-${hotel.name}-${index}`}
                       position={hotel.location}
-                      icon={createHotelMarker(
+                      icon={createHotelPin(
                         hotel.type as "budget" | "comfort" | "luxury",
+                        { selected },
                       )}
-                      opacity={selected ? 1 : 0.9}
+                      zIndexOffset={selected ? 1000 : 0}
+                      opacity={selected ? 1 : 0.92}
                       eventHandlers={{ click: () => setSelection({ kind: "hotel", hotel }) }}
                     >
                       <Popup>
@@ -458,13 +486,11 @@ export function MapScreen({
                   <Marker
                     key={place.fsqId}
                     position={place.location}
-                    icon={createColorMarker(
-                      DISCOVERY_META[discoveryCategory].color,
-                      selection?.kind === "place" &&
-                        selection.place.fsqId === place.fsqId
-                        ? 14
-                        : 10,
-                    )}
+                    icon={createPlacePin(DISCOVERY_META[discoveryCategory].color, {
+                      selected:
+                        selection?.kind === "place" &&
+                        selection.place.fsqId === place.fsqId,
+                    })}
                     eventHandlers={{ click: () => setSelection({ kind: "place", place }) }}
                   >
                     <Popup>

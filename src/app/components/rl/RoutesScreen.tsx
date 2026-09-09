@@ -1,8 +1,8 @@
 import { ArrowRight, Clock3, MapPinned } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Polyline } from "react-leaflet";
 import { POPULAR_ROUTES } from "./data";
-import { getCityCoords, MARKER_COLORS } from "./mapConfig";
-import { createColorMarker } from "./leafletSetup";
+import { getCityCoords, TILE_LAYER } from "./mapConfig";
+import { ROUTE_UNDERLAY, categoryForCity, createCategoryPin } from "./mapPins";
 import type { Screen } from "./types";
 import "../../../styles/secondary-screens.css";
 
@@ -31,9 +31,11 @@ function MiniRouteMap({ cities, routeName }: { cities: string[]; routeName: stri
         attributionControl={true}
       >
         <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="&copy; OpenStreetMap contributors"
+          url={TILE_LAYER.url}
+          attribution={TILE_LAYER.attribution}
+          maxZoom={TILE_LAYER.maxZoom}
         />
+        <Polyline positions={positions} pathOptions={{ ...ROUTE_UNDERLAY, weight: 6 }} />
         <Polyline
           positions={positions}
           pathOptions={{ color: "#D4A64A", weight: 2.5, dashArray: "6 5", opacity: 0.95 }}
@@ -41,12 +43,15 @@ function MiniRouteMap({ cities, routeName }: { cities: string[]; routeName: stri
         {cities.map((city, index) => {
           const coords = getCityCoords(city);
           if (!coords) return null;
-          const color = index === 0
-            ? MARKER_COLORS.ancient
-            : index === cities.length - 1
-              ? MARKER_COLORS.beach
-              : MARKER_COLORS.city;
-          return <Marker key={city} position={coords} icon={createColorMarker(color, 10)} />;
+          const icon = index === 0 ? "arrival" : index === cities.length - 1 ? "flag" : undefined;
+          return (
+            <Marker
+              key={city}
+              position={coords}
+              icon={createCategoryPin(categoryForCity(city), { size: 20, icon })}
+              interactive={false}
+            />
+          );
         })}
       </MapContainer>
     </div>
