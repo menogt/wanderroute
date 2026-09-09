@@ -6,7 +6,7 @@ import type { GeneratedItinerary, TripInputs } from "./types";
 import { fetchPlacesForPrompt } from "../../lib/itineraryPlaces";
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
+const MODEL = "openai/gpt-oss-120b";
 const TIMEOUT_MS = 30000;
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -36,11 +36,13 @@ TRIP DETAILS:
 IMPORTANT RULES:
 1. Costs must be realistic Sri Lanka 2024/2025 prices in ${currency}
 2. Budget style: ~$30-55/person/day USD. Comfort: ~$85-170/person/day. Luxury: ~$250-500/person/day
-3. Every day must include accommodation, meals, transport, and activities
+3. Every day must include accommodation, meals, transport, and activities, with at least 4 entries in its "items" array
 4. Include hidden costs tourists often miss (entry fees, tuk-tuk tips, etc.)
 5. Visit the listed cities in the given order, allocating days proportionally across them; the trip starts and ends near Bandaranaike airport
 6. Interests (${interests.join(", ")}) must shape which destinations and activities are included
 7. Keep each item's "detail" and "tip" fields concise (one short sentence each) — this keeps the response compact enough to complete for longer trips
+8. The "days" array MUST contain exactly ${days} entries, numbered "day": 1 through ${days}. Never merge, skip, or drop a day
+9. Every item's "category" MUST be exactly one of "transport", "activity", "meal", "accommodation". Use "meal" for any food, "accommodation" for check-in or stays, "transport" for any travel, and "activity" for everything else
 
 Respond ONLY with a valid JSON object. No markdown, no explanation, just raw JSON.
 
@@ -93,6 +95,20 @@ function stripFences(text: string): string {
   return text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
 }
 
+const VALID_CATEGORIES = new Set(["transport", "activity", "meal", "accommodation"]);
+
+// The UI looks up icon/colour by category with no fallback, so an unexpected
+// value from the model would crash the itinerary screen. Map synonyms onto the
+// four supported categories and default anything else to "activity".
+function normalizeCategory(value: unknown): GeneratedItinerary["days"][number]["items"][number]["category"] {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (VALID_CATEGORIES.has(raw)) return raw as "transport" | "activity" | "meal" | "accommodation";
+  if (/(meal|food|dining|restaurant|breakfast|lunch|dinner|snack|cafe|drink)/.test(raw)) return "meal";
+  if (/(accommodation|hotel|stay|lodg|check-?in|check-?out|resort|guesthouse|hostel|villa)/.test(raw)) return "accommodation";
+  if (/(transport|transfer|travel|train|bus|taxi|tuk|flight|drive|car|ferry|boat ride|commute)/.test(raw)) return "transport";
+  return "activity";
+}
+
 export async function generateItineraryWithAI(
   inputs: TripInputs
 ): Promise<GeneratedItinerary> {
@@ -131,11 +147,16 @@ export async function generateItineraryWithAI(
           },
           { role: "user", content: buildPrompt(inputs, placesText) },
         ],
-        temperature: 0.7,
+        // Lower temperature keeps the model closer to the required schema.
+        temperature: 0.4,
         // Raised from 4000 — longer trips (7-10+ days) need more room to finish
         // the full JSON object. At 4000 the model was getting cut off mid-object
         // on longer itineraries, producing truncated (and therefore unparsable) JSON.
         max_tokens: 8000,
+        reasoning_effort: "low",
+        // Groq validates the output is a single JSON object, so we never get
+        // markdown fences, prose, or syntax slips from the model.
+        response_format: { type: "json_object" },
       }),
     });
 
@@ -174,6 +195,10 @@ export async function generateItineraryWithAI(
     throw new Error("AI returned malformed JSON.");
   }
 
+  if (!Array.isArray(parsed.days) || parsed.days.length !== inputs.days) {
+    throw new Error(`AI returned ${Array.isArray(parsed.days) ? parsed.days.length : 0} days for a ${inputs.days}-day trip.`);
+  }
+
   const remaining = inputs.budget - (parsed.estimatedTotalCost ?? 0);
   const budgetStatus: GeneratedItinerary["budgetStatus"] =
     remaining > inputs.budget * 0.2 ? "great"
@@ -196,7 +221,13 @@ export async function generateItineraryWithAI(
     remainingBudget: remaining,
     budgetStatus: parsed.budgetStatus ?? budgetStatus,
     travelStyle: inputs.travelStyle,
-    days: parsed.days,
+    days: parsed.days.map((day: any) => ({
+      ...day,
+      items: (Array.isArray(day.items) ? day.items : []).map((item: any) => ({
+        ...item,
+        category: normalizeCategory(item.category),
+      })),
+    })),
     costBreakdown: parsed.costBreakdown,
     globalTips: parsed.globalTips ?? [],
     warnings: parsed.warnings ?? [],

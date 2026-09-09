@@ -1,5 +1,5 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "llama-3.3-70b-versatile";
+const MODEL = "openai/gpt-oss-120b";
 const REQUEST_TIMEOUT_MS = 30000;
 
 const CURRENCY_SYMBOLS = {
@@ -136,11 +136,13 @@ TRIP DETAILS:
 IMPORTANT RULES:
 1. Costs must be realistic Sri Lanka 2024/2025 prices in ${currency}
 2. Budget style: ~$30-55/person/day USD. Comfort: ~$85-170/person/day. Luxury: ~$250-500/person/day
-3. Every day must include accommodation, meals, transport, and activities
+3. Every day must include accommodation, meals, transport, and activities, with at least 4 entries in its "items" array
 4. Include hidden costs tourists often miss (entry fees, tuk-tuk tips, etc.)
 5. Visit the listed cities in the given order, allocating days proportionally across them; the trip starts and ends near Bandaranaike airport
 6. Interests (${interests.join(", ")}) must shape which destinations and activities are included
 7. Keep each item's "detail" and "tip" fields concise (one short sentence each) — this keeps the response compact enough to complete for longer trips
+8. The "days" array MUST contain exactly ${days} entries, numbered "day": 1 through ${days}. Never merge, skip, or drop a day
+9. Every item's "category" MUST be exactly one of "transport", "activity", "meal", "accommodation". Use "meal" for any food, "accommodation" for check-in or stays, "transport" for any travel, and "activity" for everything else
 
 Respond ONLY with a valid JSON object. No markdown, no explanation, just raw JSON.
 
@@ -215,9 +217,11 @@ function validateDayItem(item, path) {
   if (!isNonEmptyString(item.time)) errors.push(`${path}.time must be a non-empty string.`);
   if (!isNonEmptyString(item.icon)) errors.push(`${path}.icon must be a non-empty string.`);
   if (!isNonEmptyString(item.label)) errors.push(`${path}.label must be a non-empty string.`);
-  if (!isNonEmptyString(item.detail)) errors.push(`${path}.detail must be a non-empty string.`);
+  // detail may be empty: the UI renders it conditionally, and models occasionally omit it.
+  if (typeof item.detail !== "string") errors.push(`${path}.detail must be a string.`);
   if (!isFiniteNumber(item.cost)) errors.push(`${path}.cost must be a number.`);
-  if (!VALID_CATEGORIES.has(item.category)) errors.push(`${path}.category is invalid.`);
+  // Unknown category values are normalised later rather than rejected.
+  if (!isNonEmptyString(item.category)) errors.push(`${path}.category must be a non-empty string.`);
   return errors;
 }
 
@@ -286,6 +290,18 @@ function validateAiItinerary(parsed) {
   return errors;
 }
 
+// The UI looks up icon/colour by category with no fallback, so an unexpected
+// value from the model would crash the itinerary screen. Map synonyms onto the
+// four supported categories and default anything else to "activity".
+function normalizeCategory(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (VALID_CATEGORIES.has(raw)) return raw;
+  if (/(meal|food|dining|restaurant|breakfast|lunch|dinner|snack|cafe|drink)/.test(raw)) return "meal";
+  if (/(accommodation|hotel|stay|lodg|check-?in|check-?out|resort|guesthouse|hostel|villa)/.test(raw)) return "accommodation";
+  if (/(transport|transfer|travel|train|bus|taxi|tuk|flight|drive|car|ferry|boat ride|commute)/.test(raw)) return "transport";
+  return "activity";
+}
+
 function buildGeneratedItinerary(parsed, inputs) {
   const remaining = inputs.budget - parsed.estimatedTotalCost;
   const budgetStatus =
@@ -312,7 +328,10 @@ function buildGeneratedItinerary(parsed, inputs) {
     remainingBudget: remaining,
     budgetStatus,
     travelStyle: inputs.travelStyle,
-    days: parsed.days,
+    days: parsed.days.map((day) => ({
+      ...day,
+      items: day.items.map((item) => ({ ...item, category: normalizeCategory(item.category) })),
+    })),
     costBreakdown: parsed.costBreakdown,
     globalTips: parsed.globalTips,
     warnings: parsed.warnings,
@@ -358,8 +377,13 @@ async function callGroq(apiKey, inputs) {
             content: buildPrompt(inputs),
           },
         ],
-        temperature: 0.7,
-        max_tokens: 4000,
+        // Lower temperature keeps the model closer to the required schema.
+        temperature: 0.4,
+        max_tokens: 8000,
+        reasoning_effort: "low",
+        // Groq validates the output is a single JSON object, so we never get
+        // markdown fences, prose, or syntax slips from the model.
+        response_format: { type: "json_object" },
       }),
     });
 
@@ -444,6 +468,10 @@ export const handler = async (event) => {
   const aiErrors = validateAiItinerary(parsed);
   if (aiErrors.length > 0) {
     return json(502, { error: "AI itinerary response was incomplete.", details: aiErrors });
+  }
+  if (parsed.days.length !== inputs.days) {
+    console.error("Groq returned wrong day count", { requested: inputs.days, returned: parsed.days.length, model: MODEL });
+    return json(502, { error: `AI returned ${parsed.days.length} days for a ${inputs.days}-day trip.` });
   }
 
   const itinerary = buildGeneratedItinerary(parsed, inputs);
