@@ -32,6 +32,8 @@ export type TripInputs = {
 };
 
 export type DayItem = {
+  /** Present on Planning V2 items; filled deterministically for legacy snapshots on load. */
+  id?: string;
   time: string;
   icon: string;
   label: string;
