@@ -1,6 +1,26 @@
 import type { GeneratedItinerary, TripInputs } from "./types";
 import { fetchPlacesForPrompt } from "../../lib/itineraryPlaces";
 
+type GenerationErrorCode =
+  | "INVALID_INPUT"
+  | "SERVER_CONFIGURATION"
+  | "GROQ_API_ERROR"
+  | "GROQ_TIMEOUT"
+  | "MODEL_OUTPUT_INVALID"
+  | "NETWORK_ERROR"
+  | "INVALID_SERVER_RESPONSE";
+
+export class GenerationError extends Error {
+  constructor(
+    public readonly code: GenerationErrorCode,
+    message: string,
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = "GenerationError";
+  }
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -39,6 +59,18 @@ function getErrorMessage(payload: unknown, status: number): string {
   return `AI itinerary endpoint failed with status ${status}.`;
 }
 
+function getErrorCode(payload: unknown, status: number): GenerationErrorCode {
+  if (isObject(payload) && typeof payload.code === "string") {
+    const code = payload.code;
+    if (
+      code === "INVALID_INPUT" || code === "SERVER_CONFIGURATION" ||
+      code === "GROQ_API_ERROR" || code === "GROQ_TIMEOUT" ||
+      code === "MODEL_OUTPUT_INVALID"
+    ) return code;
+  }
+  return status === 400 ? "INVALID_INPUT" : "INVALID_SERVER_RESPONSE";
+}
+
 export async function generateItineraryWithAI(
   inputs: TripInputs
 ): Promise<GeneratedItinerary> {
@@ -52,13 +84,27 @@ export async function generateItineraryWithAI(
     console.warn("Could not fetch real places, AI will use general knowledge:", err);
   }
 
-  const response = await fetch("/api/generate-itinerary", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ ...inputs, realPlaces: placesText }),
-  });
+  // Contract: only TripInputs and the optional grounded place list cross the
+  // browser/server boundary. The Groq credential remains on the server.
+  let response: Response;
+  try {
+    response = await fetch("/api/generate-itinerary", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        budget: inputs.budget,
+        currency: inputs.currency,
+        days: inputs.days,
+        people: inputs.people,
+        cities: inputs.cities,
+        interests: inputs.interests,
+        travelStyle: inputs.travelStyle,
+        realPlaces: placesText,
+      }),
+    });
+  } catch {
+    throw new GenerationError("NETWORK_ERROR", "Could not reach the itinerary service.");
+  }
 
   let payload: unknown;
   try {
@@ -68,12 +114,16 @@ export async function generateItineraryWithAI(
   }
 
   if (!response.ok) {
-    throw new Error(getErrorMessage(payload, response.status));
+    throw new GenerationError(
+      getErrorCode(payload, response.status),
+      getErrorMessage(payload, response.status),
+      response.status,
+    );
   }
 
   const itinerary = isObject(payload) ? payload.itinerary : null;
   if (!isGeneratedItinerary(itinerary)) {
-    throw new Error("AI itinerary endpoint returned an invalid itinerary.");
+    throw new GenerationError("INVALID_SERVER_RESPONSE", "AI itinerary endpoint returned an invalid itinerary.");
   }
 
   return itinerary;

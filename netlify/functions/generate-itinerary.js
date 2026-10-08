@@ -1,11 +1,15 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const MODEL = "openai/gpt-oss-120b";
 const REQUEST_TIMEOUT_MS = 30000;
+// resolveCities() can legitimately auto-select seven stops for 8-11 days and
+// nine stops for longer trips. User-picked routes remain capped at six there.
+const MAX_PLANNER_CITIES = 9;
+const MAX_PLACES_TEXT_LENGTH = 30000;
 
 const CURRENCY_SYMBOLS = {
   USD: "$",
-  EUR: "EUR",
-  GBP: "GBP",
+  EUR: "€",
+  GBP: "£",
   AUD: "A$",
   LKR: "LKR",
 };
@@ -74,8 +78,10 @@ function validateInputs(body) {
     errors.push("people must be an integer between 1 and 30.");
   }
   if (body.cities !== undefined) {
-    if (!Array.isArray(body.cities) || body.cities.length > 6) {
-      errors.push("cities must be an array of at most 6 entries.");
+    if (!Array.isArray(body.cities) || body.cities.length === 0 || body.cities.length > MAX_PLANNER_CITIES) {
+      errors.push(`cities must be an array of 1 to ${MAX_PLANNER_CITIES} entries.`);
+    } else if (Number.isInteger(body.days) && body.cities.length > body.days) {
+      errors.push("cities cannot outnumber trip days.");
     } else if (
       body.cities.some((city) => !isNonEmptyString(city) || city.length > 80)
     ) {
@@ -95,8 +101,9 @@ function validateInputs(body) {
     errors.push("travelStyle must be budget, comfort, or luxury.");
   }
   // realPlaces is optional — only validate type if present
-  if (body.realPlaces !== undefined && typeof body.realPlaces !== "string") {
-    errors.push("realPlaces must be a string.");
+  if (body.realPlaces !== undefined &&
+      (typeof body.realPlaces !== "string" || body.realPlaces.length > MAX_PLACES_TEXT_LENGTH)) {
+    errors.push(`realPlaces must be a string under ${MAX_PLACES_TEXT_LENGTH} characters.`);
   }
 
   return errors;
@@ -326,7 +333,7 @@ function buildGeneratedItinerary(parsed, inputs) {
     estimatedTotalCost: parsed.estimatedTotalCost,
     inputBudget: inputs.budget,
     remainingBudget: remaining,
-    budgetStatus,
+    budgetStatus: parsed.budgetStatus ?? budgetStatus,
     travelStyle: inputs.travelStyle,
     days: parsed.days.map((day) => ({
       ...day,
@@ -393,11 +400,11 @@ async function callGroq(apiKey, inputs) {
         status: response.status,
         statusText: response.statusText,
         model: MODEL,
-        body: responseText.slice(0, 2000),
       });
       return {
         ok: false,
         status: response.status,
+        code: "GROQ_API_ERROR",
         message: `Groq request failed with status ${response.status}.`,
       };
     }
@@ -416,15 +423,13 @@ async function callGroq(apiKey, inputs) {
   } catch (error) {
     if (error?.name === "AbortError") {
       console.error("Groq request timed out", { timeoutMs: REQUEST_TIMEOUT_MS, model: MODEL });
-      return { ok: false, status: 504, message: "Groq request timed out." };
+      return { ok: false, status: 504, code: "GROQ_TIMEOUT", message: "Groq request timed out." };
     }
     console.error("Groq request failed", {
       name: error?.name,
-      message: error?.message,
-      cause: error?.cause?.message ?? error?.cause,
       model: MODEL,
     });
-    return { ok: false, status: 502, message: "Groq request failed." };
+    return { ok: false, status: 502, code: "GROQ_API_ERROR", message: "Groq request failed." };
   } finally {
     clearTimeout(timeout);
   }
@@ -432,52 +437,52 @@ async function callGroq(apiKey, inputs) {
 
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") {
-    return json(405, { error: "Method not allowed. Use POST." });
+    return json(405, { code: "INVALID_INPUT", error: "Method not allowed. Use POST." });
   }
 
   let body;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return json(400, { error: "Invalid JSON request body." });
+    return json(400, { code: "INVALID_INPUT", error: "Invalid JSON request body." });
   }
 
   const inputErrors = validateInputs(body);
   if (inputErrors.length > 0) {
-    return json(400, { error: "Invalid trip input.", details: inputErrors });
+    return json(400, { code: "INVALID_INPUT", error: "Invalid trip input.", details: inputErrors });
   }
 
   const apiKey = process.env.GROQ_API_KEY?.trim();
   if (!apiKey) {
-    return json(500, { error: "Groq API key is not configured." });
+    return json(500, { code: "SERVER_CONFIGURATION", error: "Groq API key is not configured." });
   }
 
   const inputs = sanitizeInputs(body);
   const groqResult = await callGroq(apiKey, inputs);
   if (!groqResult.ok) {
-    return json(groqResult.status || 502, { error: groqResult.message });
+    return json(groqResult.status || 502, { code: groqResult.code, error: groqResult.message });
   }
 
   let parsed;
   try {
     parsed = parseAiJson(groqResult.content);
   } catch (error) {
-    return json(502, { error: error.message });
+    return json(502, { code: "MODEL_OUTPUT_INVALID", error: error.message });
   }
 
   const aiErrors = validateAiItinerary(parsed);
   if (aiErrors.length > 0) {
-    return json(502, { error: "AI itinerary response was incomplete.", details: aiErrors });
+    return json(502, { code: "MODEL_OUTPUT_INVALID", error: "AI itinerary response was incomplete.", details: aiErrors });
   }
   if (parsed.days.length !== inputs.days) {
     console.error("Groq returned wrong day count", { requested: inputs.days, returned: parsed.days.length, model: MODEL });
-    return json(502, { error: `AI returned ${parsed.days.length} days for a ${inputs.days}-day trip.` });
+    return json(502, { code: "MODEL_OUTPUT_INVALID", error: `AI returned ${parsed.days.length} days for a ${inputs.days}-day trip.` });
   }
 
   const itinerary = buildGeneratedItinerary(parsed, inputs);
   const itineraryErrors = validateGeneratedItinerary(itinerary);
   if (itineraryErrors.length > 0) {
-    return json(502, { error: "Generated itinerary failed validation.", details: itineraryErrors });
+    return json(502, { code: "MODEL_OUTPUT_INVALID", error: "Generated itinerary failed validation.", details: itineraryErrors });
   }
 
   return json(200, { itinerary });
