@@ -1,14 +1,9 @@
-import { supabase } from "./supabase";
-import { getDeviceId } from "./placesDb";
 import type { GeneratedItinerary } from "../components/rl/types";
 
-// A traveller asking for a real, fixed, all-in price from a verified local
-// driver for the route they just generated. This is the only conversion event
-// in the product that indicates commercial intent, so it is stored twice:
-// once in Supabase (source of truth) and once in localStorage (so a request is
-// never silently lost if Supabase is unreachable).
-
+// Supabase is the source of truth. A browser copy is only a retry aid and is
+// never evidence that WanderRoute received a request.
 const PENDING_KEY = "wanderroute_pending_quote_requests";
+const RECEIPTS_KEY = "wanderroute_quote_receipts_v2";
 
 export type QuoteRequestInput = {
   fullName: string;
@@ -19,20 +14,34 @@ export type QuoteRequestInput = {
   note?: string;
 };
 
-export type QuoteRequestResult = {
-  ok: boolean;
-  storedRemotely: boolean;
+export type QuoteRequestResult =
+  | { status: "RECEIVED" | "RECEIVED_NOTIFICATION_FAILED"; requestId: string }
+  | { status: "LOCAL_BACKUP_ONLY" | "NOT_RECEIVED" };
+
+type StoreError = { code?: string; message?: string; details?: string };
+type QuoteRow = ReturnType<typeof buildRow>;
+
+export type QuoteSubmissionDependencies = {
+  insert: (row: QuoteRow) => Promise<{ error: StoreError | null }>;
+  notify: (requestId: string) => Promise<boolean>;
+  backup: (row: QuoteRow) => boolean;
+  deviceId: () => string | null;
 };
 
-function buildRow(input: QuoteRequestInput, itinerary: GeneratedItinerary) {
+function buildRow(
+  input: QuoteRequestInput,
+  itinerary: GeneratedItinerary,
+  requestId: string,
+  deviceId: string | null,
+) {
   return {
+    id: requestId,
     full_name: input.fullName.trim(),
     email: input.email.trim().toLowerCase(),
     whatsapp: input.whatsapp?.trim() || null,
     start_date: input.startDate || null,
     travellers: input.travellers ?? itinerary.totalPeople ?? null,
     note: input.note?.trim() || null,
-
     trip_id: itinerary.id,
     route_name: itinerary.routeName,
     cities: itinerary.cities ?? [],
@@ -41,95 +50,126 @@ function buildRow(input: QuoteRequestInput, itinerary: GeneratedItinerary) {
     estimated_total: itinerary.estimatedTotalCost,
     currency: itinerary.currency,
     itinerary_json: itinerary as unknown as object,
-
-    device_id: getDeviceId(),
-    user_agent:
-      typeof navigator === "undefined" ? null : navigator.userAgent.slice(0, 300),
+    device_id: deviceId,
+    user_agent: typeof navigator === "undefined" ? null : navigator.userAgent.slice(0, 300),
   };
 }
 
-function stashLocally(row: ReturnType<typeof buildRow>) {
+function stashLocally(row: QuoteRow): boolean {
   try {
     const raw = localStorage.getItem(PENDING_KEY);
-    const list = raw ? (JSON.parse(raw) as unknown[]) : [];
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(parsed) ? parsed : [];
     list.push({ ...row, stashed_at: new Date().toISOString() });
     localStorage.setItem(PENDING_KEY, JSON.stringify(list.slice(-20)));
+    return true;
   } catch {
-    // localStorage full or unavailable — nothing more we can do client-side.
+    return false;
   }
 }
 
-// Fire-and-forget notification so you learn about a request in minutes rather
-// than whenever you next open the Supabase dashboard. Never blocks the user.
-function notify(row: ReturnType<typeof buildRow>) {
+async function notify(requestId: string): Promise<boolean> {
   try {
-    void fetch("/api/quote-request", {
+    const response = await fetch("/api/quote-request", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        fullName: row.full_name,
-        email: row.email,
-        whatsapp: row.whatsapp,
-        startDate: row.start_date,
-        travellers: row.travellers,
-        note: row.note,
-        routeName: row.route_name,
-        cities: row.cities,
-        totalDays: row.total_days,
-        travelStyle: row.travel_style,
-        estimatedTotal: row.estimated_total,
-        currency: row.currency,
-      }),
-    }).catch(() => undefined);
+      body: JSON.stringify({ requestId }),
+    });
+    if (!response.ok) return false;
+    const payload: unknown = await response.json();
+    return !!payload && typeof payload === "object" && "emailed" in payload && payload.emailed === true;
   } catch {
-    // Ignore — notification is a convenience, not part of the contract.
+    return false;
   }
+}
+
+function isExistingRequest(error: StoreError | null): boolean {
+  return error?.code === "23505" &&
+    /quote_requests_pkey/.test(`${error.message ?? ""} ${error.details ?? ""}`);
+}
+
+// Exported with dependencies so failure ordering can be tested without a live
+// Supabase project or a real notification endpoint.
+export async function submitQuoteRequestWithDependencies(
+  input: QuoteRequestInput,
+  itinerary: GeneratedItinerary,
+  requestId: string,
+  deps: QuoteSubmissionDependencies,
+): Promise<QuoteRequestResult> {
+  let deviceId: string | null = null;
+  try { deviceId = deps.deviceId(); } catch { /* Browser storage may be disabled. */ }
+  const row = buildRow(input, itinerary, requestId, deviceId);
+
+  let storageError: StoreError | null = null;
+  try {
+    const result = await deps.insert(row);
+    storageError = result.error;
+  } catch {
+    storageError = { code: "NETWORK_ERROR" };
+  }
+
+  if (storageError && !isExistingRequest(storageError)) {
+    console.warn("Quote request storage failed", { requestId, category: storageError.code ?? "UNKNOWN" });
+    let backedUp = false;
+    try { backedUp = deps.backup(row); } catch { /* Browser storage may be disabled. */ }
+    return { status: backedUp ? "LOCAL_BACKUP_ONLY" : "NOT_RECEIVED" };
+  }
+
+  let emailed = false;
+  try { emailed = await deps.notify(requestId); } catch { /* Receipt remains valid. */ }
+  if (!emailed) {
+    console.warn("Quote request notification failed", { requestId });
+    return { status: "RECEIVED_NOTIFICATION_FAILED", requestId };
+  }
+  return { status: "RECEIVED", requestId };
 }
 
 export async function submitQuoteRequest(
   input: QuoteRequestInput,
   itinerary: GeneratedItinerary,
+  requestId: string,
 ): Promise<QuoteRequestResult> {
-  const row = buildRow(input, itinerary);
-
-  notify(row);
-
-  if (!supabase) {
-    stashLocally(row);
-    return { ok: true, storedRemotely: false };
-  }
-
-  const { error } = await supabase.from("quote_requests").insert(row);
-
-  if (error) {
-    console.warn("Quote request not synced (kept locally):", error.message);
-    stashLocally(row);
-    return { ok: true, storedRemotely: false };
-  }
-
-  return { ok: true, storedRemotely: true };
+  const [{ supabase }, { getDeviceId }] = await Promise.all([
+    import("./supabase"),
+    import("./placesDb"),
+  ]);
+  return submitQuoteRequestWithDependencies(input, itinerary, requestId, {
+    insert: async (row) => supabase
+      ? supabase.from("quote_requests").insert(row)
+      : { error: { code: "SUPABASE_UNAVAILABLE" } },
+    notify,
+    backup: stashLocally,
+    deviceId: getDeviceId,
+  });
 }
 
-// Remembers that this device already asked, so the panel can show a calmer
-// "we're on it" state instead of inviting a duplicate submission.
-const REQUESTED_KEY = "wanderroute_quote_requested_trips";
+export function wasQuoteReceived(result: QuoteRequestResult): result is Extract<QuoteRequestResult, { requestId: string }> {
+  return result.status === "RECEIVED" || result.status === "RECEIVED_NOTIFICATION_FAILED";
+}
 
-export function markRequested(tripId: string) {
+// Only the new receipt marker is trusted. Legacy trip-only markers could have
+// been written when a request existed solely in localStorage.
+export function markRequested(tripId: string, requestId: string): void {
   try {
-    const raw = localStorage.getItem(REQUESTED_KEY);
-    const ids = raw ? (JSON.parse(raw) as string[]) : [];
-    if (!ids.includes(tripId)) ids.push(tripId);
-    localStorage.setItem(REQUESTED_KEY, JSON.stringify(ids.slice(-40)));
+    const raw = localStorage.getItem(RECEIPTS_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    const receipts: Array<{ tripId: string; requestId: string }> = Array.isArray(parsed) ? parsed : [];
+    const next = receipts.filter((receipt) => receipt.tripId !== tripId);
+    next.push({ tripId, requestId });
+    localStorage.setItem(RECEIPTS_KEY, JSON.stringify(next.slice(-40)));
   } catch {
-    // Non-critical.
+    // The current panel still shows the confirmed receipt; a future visit may retry.
   }
 }
 
 export function hasRequested(tripId: string): boolean {
   try {
-    const raw = localStorage.getItem(REQUESTED_KEY);
+    const raw = localStorage.getItem(RECEIPTS_KEY);
     if (!raw) return false;
-    return (JSON.parse(raw) as string[]).includes(tripId);
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.some((receipt) =>
+      receipt?.tripId === tripId && typeof receipt?.requestId === "string",
+    );
   } catch {
     return false;
   }

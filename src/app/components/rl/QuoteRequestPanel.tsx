@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   BadgeCheck,
   CarFront,
@@ -12,12 +12,12 @@ import {
   submitQuoteRequest,
   markRequested,
   hasRequested,
+  wasQuoteReceived,
 } from "../../lib/quoteRequests";
 import "../../../styles/quote-request.css";
 
-// Turns a generated plan into a commercial lead: the traveller asks a verified,
-// SLTDA-licensed driver to price this exact route as one fixed all-in figure.
-// No payment is taken here — this is a free quote request, by design.
+// Lets a traveller ask WanderRoute to review this route for a possible quote.
+// No payment is taken here.
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -25,6 +25,8 @@ type Status = "idle" | "form" | "sending" | "done" | "error";
 
 export function QuoteRequestPanel({ itinerary }: { itinerary: GeneratedItinerary }) {
   const alreadyAsked = hasRequested(itinerary.id);
+  const sendingRef = useRef(false);
+  const submissionRef = useRef<{ fingerprint: string; requestId: string } | null>(null);
 
   const [status, setStatus] = useState<Status>(alreadyAsked ? "done" : "idle");
   const [fullName, setFullName] = useState("");
@@ -42,30 +44,37 @@ export function QuoteRequestPanel({ itinerary }: { itinerary: GeneratedItinerary
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (sendingRef.current) return;
 
     if (!fullName.trim()) return setFieldError("Please add your name.");
     if (!EMAIL_RE.test(email.trim())) return setFieldError("Please check your email address.");
+
+    const input = {
+      fullName, email, whatsapp, startDate,
+      travellers: Number(travellers) || itinerary.totalPeople,
+      note,
+    };
+    const fingerprint = JSON.stringify(input);
+    if (submissionRef.current?.fingerprint !== fingerprint) {
+      submissionRef.current = { fingerprint, requestId: crypto.randomUUID() };
+    }
+    sendingRef.current = true;
 
     setFieldError(null);
     setStatus("sending");
 
     try {
-      await submitQuoteRequest(
-        {
-          fullName,
-          email,
-          whatsapp,
-          startDate,
-          travellers: Number(travellers) || itinerary.totalPeople,
-          note,
-        },
-        itinerary,
-      );
-      markRequested(itinerary.id);
-      setStatus("done");
-    } catch (submitError) {
-      console.warn("Quote request failed:", submitError);
+      const result = await submitQuoteRequest(input, itinerary, submissionRef.current.requestId);
+      if (wasQuoteReceived(result)) {
+        markRequested(itinerary.id, result.requestId);
+        setStatus("done");
+      } else {
+        setStatus("error");
+      }
+    } catch {
       setStatus("error");
+    } finally {
+      sendingRef.current = false;
     }
   }
 
@@ -75,16 +84,15 @@ export function QuoteRequestPanel({ itinerary }: { itinerary: GeneratedItinerary
         <div className="wr-quote-done-mark" aria-hidden="true">
           <CheckCircle2 size={26} />
         </div>
-        <h2>Your route is with a driver</h2>
+        <h2>We&rsquo;ve received your quote request</h2>
         <p>
-          A licensed driver is pricing <strong>{routeLabel}</strong> right now. You&rsquo;ll
-          receive one fixed all-in figure within 24 hours.
+          Your request for <strong>{routeLabel}</strong> is saved. We&rsquo;ll review
+          it and contact you about the next steps.
         </p>
         <ul className="wr-quote-expect">
-          <li>The all-in daily rate for your whole route</li>
-          <li>What&rsquo;s included — fuel, driver&rsquo;s accommodation, tolls, parking</li>
-          <li>What isn&rsquo;t — your meals, entry tickets, tips</li>
-          <li>The driver&rsquo;s name and SLTDA licence number</li>
+          <li>Any available quote will explain the route price</li>
+          <li>It will state what is included and excluded</li>
+          <li>You can review driver details before deciding</li>
         </ul>
         <p className="wr-quote-smallprint">
           No payment has been taken and you&rsquo;re under no obligation.
@@ -97,14 +105,14 @@ export function QuoteRequestPanel({ itinerary }: { itinerary: GeneratedItinerary
     <section className="wr-quote-panel" aria-labelledby="quote-panel-heading">
       <div className="wr-quote-head">
         <span className="wr-eyebrow wr-quote-eyebrow">
-          <CarFront size={13} aria-hidden="true" /> Book it for real
+          <CarFront size={13} aria-hidden="true" /> Request a quote
         </span>
         <h2 id="quote-panel-heading">
-          Get this trip confirmed by a verified local driver
+          Request a quote for this trip
         </h2>
         <p>
-          We send your exact route to an SLTDA-licensed driver-guide, who prices it as
-          one fixed figure for the whole trip. Free, and no obligation.
+          Send us your route to review for a possible quote from a local
+          driver-guide. Free, and no obligation.
         </p>
       </div>
 
@@ -112,22 +120,22 @@ export function QuoteRequestPanel({ itinerary }: { itinerary: GeneratedItinerary
         <li>
           <BadgeCheck size={17} aria-hidden="true" />
           <span>
-            <strong>One all-in price</strong>
-            Fuel, driver&rsquo;s accommodation, tolls and parking included — nothing added later.
+            <strong>Clear price details</strong>
+            Review what a quote includes before making a decision.
           </span>
         </li>
         <li>
           <ShieldCheck size={17} aria-hidden="true" />
           <span>
-            <strong>Licence shown, not claimed</strong>
-            You get the driver&rsquo;s name and SLTDA licence number before you decide.
+            <strong>Driver details</strong>
+            Ask for the driver&rsquo;s name and licence details before you decide.
           </span>
         </li>
         <li>
           <Clock3 size={17} aria-hidden="true" />
           <span>
-            <strong>No commission stops</strong>
-            No gem shops, no spice gardens, no detours you didn&rsquo;t ask for.
+            <strong>Your route first</strong>
+            Tell us which stops matter to you in the request.
           </span>
         </li>
       </ul>
@@ -228,7 +236,7 @@ export function QuoteRequestPanel({ itinerary }: { itinerary: GeneratedItinerary
 
           {status === "error" && (
             <p className="wr-quote-error" role="alert">
-              That didn&rsquo;t send. Please try once more.
+              Your request was not submitted. Please try again.
             </p>
           )}
 
@@ -247,7 +255,7 @@ export function QuoteRequestPanel({ itinerary }: { itinerary: GeneratedItinerary
           </button>
 
           <p className="wr-quote-smallprint">
-            No payment now. We use your details only to send this quote.
+            No payment now. We use your details only to handle this request.
           </p>
         </form>
       )}

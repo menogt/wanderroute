@@ -1,7 +1,8 @@
 -- WanderRoute — verified driver quote requests
--- Run this once in Supabase → SQL Editor → New query → Run.
+-- Apply in Supabase SQL Editor; the table, indexes, grants and policy can be reapplied.
 
 create table if not exists public.quote_requests (
+  -- The browser supplies a UUID so a retry can target the same receipt.
   id                uuid primary key default gen_random_uuid(),
   created_at        timestamptz not null default now(),
 
@@ -43,22 +44,20 @@ create index if not exists quote_requests_status_idx
 
 alter table public.quote_requests enable row level security;
 
--- Anonymous visitors may submit a request, but may not read anyone's data.
--- You read the table from the Supabase dashboard (service role), not the app.
+-- RLS limits rows; column grants limit which fields a public insert can set.
+-- The operator reads requests through the dashboard or a server-only key.
+revoke all privileges on table public.quote_requests from public, anon, authenticated;
+grant insert (
+  id, full_name, email, whatsapp, start_date, travellers, note,
+  trip_id, route_name, cities, total_days, travel_style, estimated_total,
+  currency, itinerary_json, device_id, user_agent
+) on table public.quote_requests to anon, authenticated;
+
+-- Visitors may submit, but cannot read or change stored requests.
 drop policy if exists "anon can insert quote requests" on public.quote_requests;
-create policy "anon can insert quote requests"
+drop policy if exists "visitors can insert quote requests" on public.quote_requests;
+create policy "visitors can insert quote requests"
   on public.quote_requests
   for insert
-  to anon
+  to anon, authenticated
   with check (true);
-
--- Conversion rate = count(quote_requests) / count(trips)
--- Both tables are already populated automatically. Run this before Demo Day:
---
---   select
---     (select count(*) from trips)          as plans_generated,
---     (select count(*) from quote_requests) as quote_requests,
---     round(
---       100.0 * (select count(*) from quote_requests)
---             / nullif((select count(*) from trips), 0)
---     , 1) as conversion_pct;
