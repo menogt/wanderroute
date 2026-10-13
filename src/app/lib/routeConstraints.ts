@@ -65,6 +65,16 @@ function departureMinute(brief: TripBriefV1): number | undefined {
   return clockMinute(brief.departure?.window?.earliest ?? brief.departure?.dateTime);
 }
 
+/** Local clock minutes from supplied endpoint data; no timezone is inferred. */
+export function arrivalReadyMinute(brief: TripBriefV1): number | undefined {
+  const arrival = arrivalMinute(brief);
+  return arrival === undefined ? undefined : arrival + TRANSFER_POLICY.arrivalProcessingMinutes;
+}
+export function departureDeadlineMinute(brief: TripBriefV1): number | undefined {
+  const departure = departureMinute(brief);
+  return departure === undefined ? undefined : departure - TRANSFER_POLICY.departureBufferMinutes;
+}
+
 export function arrivalDayUsableMinutes(brief: TripBriefV1): number | undefined {
   const arrival = arrivalMinute(brief);
   return arrival === undefined ? undefined : Math.max(0,

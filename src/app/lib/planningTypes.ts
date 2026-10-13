@@ -1,6 +1,7 @@
 import type {
   Currency, DayItem, DayPlan, GeneratedItinerary, Interest, TravelStyle,
 } from "../components/rl/types";
+import type { TransportPreference } from "./transportTypes";
 
 export type Coordinates = { latitude: number; longitude: number };
 export type TravelPace = "RELAXED" | "BALANCED" | "PACKED" | "SLOW_TRAVEL";
@@ -20,6 +21,8 @@ export type TripBriefV1 = {
   interests: Interest[];
   requestedCities: string[];
   comfortTier: TravelStyle;
+  /** Not collected by the V1 form; absence means no transport choice was made. */
+  transportPreference?: TransportPreference;
   pace?: TravelPace;
   travelMonth?: number;
   travelDates?: { start?: string; end?: string };
@@ -40,6 +43,7 @@ export type PriceEvidence = PriceEvidenceBase & (
   | { status: Exclude<PriceEvidenceStatus, "VERIFIED">; source?: string; checkedAt?: string }
   | { status: "VERIFIED"; source: string; checkedAt: string }
 );
+export type PlaceEvidence = { status: "VERIFIED" | "KNOWN" | "UNKNOWN"; source?: string; checkedAt?: string };
 
 export type CandidatePlace = {
   databaseId?: string;
@@ -88,10 +92,13 @@ export type PlanningItemV2 = Omit<DayItem, "id"> & {
   id: string;
   city: string;
   placeId?: string;
+  placeEvidence?: PlaceEvidence;
   coordinates?: Coordinates;
   plannedStart?: string;
   plannedEnd?: string;
   durationMinutes?: number;
+  /** Stable fromId>toId key for a scheduled intercity transport item. */
+  transportLegId?: string;
   priceEvidence?: PriceEvidence;
 };
 export type PlanningDayV2 = Omit<DayPlan, "items"> & { items: PlanningItemV2[] };

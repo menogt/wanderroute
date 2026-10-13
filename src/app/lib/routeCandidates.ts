@@ -188,7 +188,7 @@ export function generateRouteCandidates(
       const scored = scoreRoute(brief, order, legs, reasons);
       const feasibility = scored.reasons.some(reason => reason.severity === "REJECTION") ? "REJECTED" :
         scored.reasons.some(reason => reason.severity === "UNCERTAIN") ? "UNCERTAIN" : "FEASIBLE";
-      candidates.push({ id, destinations: order, nights, legs, reasons: scored.reasons,
+      candidates.push({ id, routingBasis: "ROAD_DRIVING", destinations: order, nights, legs, reasons: scored.reasons,
         feasibility, score: scored.score,
         firstDayUsableMinutes: arrivalDayUsableMinutes(brief),
         finalDayUsableMinutes: departureDayUsableMinutes(brief) });

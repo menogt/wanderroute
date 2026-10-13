@@ -17,6 +17,8 @@ export type RouteReason = {
 };
 export type CandidateRoute = {
   id: string;
+  /** Task 4 calculations are car-road geography, never transit timetables. */
+  routingBasis: "ROAD_DRIVING";
   destinations: PlanningDestination[];
   nights: number[];
   legs: RoadLeg[];
