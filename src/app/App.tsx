@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, RefreshCw, X } from "lucide-react";
 import { HomeScreen } from "./components/rl/HomeScreen";
 import { PlannerScreen } from "./components/rl/PlannerScreen";
@@ -9,6 +9,9 @@ import { HotelsScreen } from "./components/rl/HotelsScreen";
 import { ShareScreen } from "./components/rl/ShareScreen";
 import { AdminScreen } from "./components/rl/AdminScreen";
 import { MapScreen } from "./components/rl/MapScreen";
+import { PlanningV2BriefScreen } from "./components/rl/PlanningV2BriefScreen";
+import { PlanningV2RoutesScreen } from "./components/rl/PlanningV2RoutesScreen";
+import { PlanningV2ItineraryScreen } from "./components/rl/PlanningV2ItineraryScreen";
 import { BottomNav } from "./components/rl/BottomNav";
 import { TopNav } from "./components/rl/TopNav";
 import { TripsDrawer } from "./components/rl/TripsDrawer";
@@ -18,6 +21,13 @@ import { generateItineraryWithAI } from "./components/rl/aiService";
 import { generateItinerary } from "./components/rl/data";
 import { useLiveRates } from "./components/rl/useLiveRates";
 import { useBreakpoint } from "./hooks/useBreakpoint";
+import { planningV2Enabled } from "./lib/planningV2Feature";
+import { planRouteConcepts, PlanningBriefError, type PlanningV2Issue } from "./lib/planningV2";
+import { emptyPlanningV2Session, returnToPlanningConcepts, selectPlanningConcept,
+  showPlanningConcepts, showPlanningItinerary, selectedPlanningConcept,
+  type PlanningV2Session } from "./lib/planningV2Session";
+import { generatePlanningV2Itinerary } from "./lib/planningV2Itinerary";
+import type { TripBriefV1 } from "./lib/planningTypes";
 import type { Screen, TripInputs, GeneratedItinerary } from "./components/rl/types";
 import "../styles/atlas-app.css";
 
@@ -31,6 +41,7 @@ const LOADING_MESSAGES = [
 
 const RESTORABLE_SCREENS: Screen[] = ["home", "planner", "routes", "hotels", "map"];
 const SCREEN_KEY = "wanderroute_screen";
+const PLANNING_V2_ENABLED = planningV2Enabled(import.meta.env.VITE_ENABLE_PLANNING_V2);
 
 function SriLankaLoadingMark() {
   return (
@@ -63,6 +74,12 @@ export default function App() {
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [cityToAdd, setCityToAdd] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [v2Session, setV2Session] = useState<PlanningV2Session>(emptyPlanningV2Session);
+  const [v2Busy, setV2Busy] = useState(false);
+  const [v2Issues, setV2Issues] = useState<PlanningV2Issue[]>([]);
+  const [v2DetailBusy, setV2DetailBusy] = useState(false);
+  const [v2DetailError, setV2DetailError] = useState<string>();
+  const v2DetailRequest = useRef(0);
 
   const { rates } = useLiveRates();
   const bp = useBreakpoint();
@@ -80,6 +97,7 @@ export default function App() {
   }, [fallbackNotice]);
 
   const navigate = (next: Screen) => {
+    if (next === "planning-v2" && !PLANNING_V2_ENABLED) return;
     if ((next === "itinerary" || next === "costs" || next === "share") && !itinerary) {
       setScreen("planner");
       return;
@@ -146,9 +164,63 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const handleV2Plan = async (brief: TripBriefV1) => {
+    if (!PLANNING_V2_ENABLED || v2Busy) return;
+    v2DetailRequest.current += 1;
+    setV2DetailBusy(false);
+    setV2DetailError(undefined);
+    setV2Busy(true);
+    setV2Issues([]);
+    try {
+      const result = await planRouteConcepts(brief);
+      setV2Session(showPlanningConcepts(result));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (failure) {
+      setV2Issues(failure instanceof PlanningBriefError ? failure.issues : [{ code: "PLANNING_ERROR", severity: "ERROR",
+        detail: "We could not compare routes. Your trip details are still here; please try again." }]);
+    } finally {
+      setV2Busy(false);
+    }
+  };
+
+  const handleV2Select = (id: string) => {
+    v2DetailRequest.current += 1;
+    setV2DetailBusy(false);
+    setV2DetailError(undefined);
+    setV2Session(previous => selectPlanningConcept(previous, id));
+  };
+
+  const handleV2Detail = async () => {
+    const selectedId = v2Session.selectedConceptId;
+    const result = v2Session.result;
+    if (!PLANNING_V2_ENABLED || !selectedId || !result || v2DetailBusy) return;
+    const requestId = ++v2DetailRequest.current;
+    setV2DetailBusy(true);
+    setV2DetailError(undefined);
+    try {
+      const detailed = await generatePlanningV2Itinerary(result, selectedId);
+      if (requestId !== v2DetailRequest.current) return;
+      setV2Session(previous => showPlanningItinerary(previous, selectedId, detailed));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      if (requestId === v2DetailRequest.current) setV2DetailError(
+        "We could not build this route draft. Your selected route is safe; please try again.");
+    } finally {
+      if (requestId === v2DetailRequest.current) setV2DetailBusy(false);
+    }
+  };
+
+  const handleV2Compare = () => {
+    v2DetailRequest.current += 1;
+    setV2DetailBusy(false);
+    setV2DetailError(undefined);
+    setV2Session(previous => returnToPlanningConcepts(previous));
+  };
+
   const screenContent = (
     <>
-      {screen === "home" && <HomeScreen navigate={navigate} onGenerate={handleGenerate} />}
+      {screen === "home" && <HomeScreen navigate={navigate} onGenerate={handleGenerate}
+        showPlanningV2={PLANNING_V2_ENABLED} />}
       {screen === "planner" && (
         <PlannerScreen onGenerate={handleGenerate} navigate={navigate} initialCity={cityToAdd} />
       )}
@@ -163,6 +235,25 @@ export default function App() {
       {screen === "map" && (
         <MapScreen navigate={navigate} onCitySelect={(city) => setCityToAdd(city)} />
       )}
+      {screen === "planning-v2" && PLANNING_V2_ENABLED && (v2Session.view === "brief" || !v2Session.result) &&
+        <PlanningV2BriefScreen initialBrief={v2Session.brief} busy={v2Busy} externalIssues={v2Issues}
+          onPlan={handleV2Plan} onExit={() => navigate("home")} />}
+      {screen === "planning-v2" && PLANNING_V2_ENABLED && v2Session.result &&
+        (v2Session.view === "compare" || v2Session.view === "selected") &&
+        <PlanningV2RoutesScreen session={v2Session} busy={v2Busy} externalIssues={v2Issues}
+          detailBusy={v2DetailBusy} detailError={v2DetailError}
+          onRetry={() => v2Session.brief && handleV2Plan(v2Session.brief)}
+          onEdit={() => { v2DetailRequest.current += 1; setV2Session(previous => ({ ...previous, view: "brief" })); setV2Issues([]); }}
+          onSelect={handleV2Select}
+          onCompare={handleV2Compare}
+          onGenerateDetail={handleV2Detail}
+          onOpenDetail={() => setV2Session(previous => previous.detailed ? { ...previous, view: "itinerary" } : previous)}
+          onExit={() => navigate("planner")} />}
+      {screen === "planning-v2" && PLANNING_V2_ENABLED && v2Session.view === "itinerary" &&
+        v2Session.detailed && selectedPlanningConcept(v2Session) &&
+        <PlanningV2ItineraryScreen key={v2Session.selectedConceptId} detail={v2Session.detailed}
+          concept={selectedPlanningConcept(v2Session)!} busy={v2DetailBusy} error={v2DetailError}
+          onBack={handleV2Compare} onRetry={handleV2Detail} />}
       {(screen === "itinerary" || screen === "costs" || screen === "share") && !itinerary && (
         <HomeScreen navigate={navigate} onGenerate={handleGenerate} />
       )}

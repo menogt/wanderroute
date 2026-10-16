@@ -62,9 +62,11 @@ const STORY_STEPS = [
 export function HomeScreen({
   navigate,
   onGenerate,
+  showPlanningV2 = false,
 }: {
   navigate: (s: Screen) => void;
   onGenerate?: (inputs: TripInputs, travelMonth?: number | null) => void;
+  showPlanningV2?: boolean;
 }) {
   const bp = useBreakpoint();
   const [tapCount, setTapCount] = useState(0);
@@ -192,6 +194,13 @@ export function HomeScreen({
               >
                 Explore a Sample Route
               </button>
+              {showPlanningV2 && <button
+                type="button"
+                className="wr-button wr-button--glass"
+                onClick={() => navigate("planning-v2")}
+              >
+                Compare route concepts
+              </button>}
             </div>
             <p className="wr-home-hero__assurance">
               <Check size={14} aria-hidden="true" />

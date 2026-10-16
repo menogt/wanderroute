@@ -20,7 +20,8 @@ export type TripBriefV1 = {
   budget: { amount: number; currency: Currency };
   interests: Interest[];
   requestedCities: string[];
-  comfortTier: TravelStyle;
+  /** V1 supplies this; the V2 brief may leave it unspecified. */
+  comfortTier?: TravelStyle;
   /** Not collected by the V1 form; absence means no transport choice was made. */
   transportPreference?: TransportPreference;
   pace?: TravelPace;
@@ -57,6 +58,8 @@ export type CandidatePlace = {
   /** The raw database amount is not evidence of verification. */
   recordedPrice?: { amount: number; currency: Currency };
   priceEvidence?: PriceEvidence;
+  /** Only a sourced basis can turn a place price into a ledger charge. */
+  priceBasis?: "PER_PERSON" | "PER_ROOM_NIGHT" | "PER_GROUP";
   sourceUpdatedAt?: string;
 };
 
@@ -88,8 +91,10 @@ export type RouteConceptV1 = {
   generatorVersion: string;
 };
 
-export type PlanningItemV2 = Omit<DayItem, "id"> & {
+export type PlanningItemV2 = Omit<DayItem, "id" | "cost"> & {
   id: string;
+  /** Present only when a ledger-backed exact line exists. */
+  cost?: number;
   city: string;
   placeId?: string;
   placeEvidence?: PlaceEvidence;
@@ -97,14 +102,30 @@ export type PlanningItemV2 = Omit<DayItem, "id"> & {
   plannedStart?: string;
   plannedEnd?: string;
   durationMinutes?: number;
+  durationEvidence?: "ESTIMATED" | "KNOWN";
   /** Stable fromId>toId key for a scheduled intercity transport item. */
   transportLegId?: string;
   priceEvidence?: PriceEvidence;
 };
-export type PlanningDayV2 = Omit<DayPlan, "items"> & { items: PlanningItemV2[] };
-/** Additive to the display model; legacy screens can consume it unchanged. */
-export type PlanningItineraryV2 = Omit<GeneratedItinerary, "days"> & {
+export type PlanningDayV2 = Omit<DayPlan, "items" | "accommodationCostPerNight" | "dailyCostPerPerson"> & {
+  items: PlanningItemV2[];
+  date?: string;
+  overnightCity?: string;
+  accommodationPlaceId?: string;
+  accommodationCostPerNight?: number;
+  dailyCostPerPerson?: number;
+  warnings?: string[];
+};
+/** V2 keeps unknown prices absent; its display uses the accompanying cost ledger. */
+export type PlanningItineraryV2 = Omit<GeneratedItinerary, "days" | "estimatedCostPerPerson" |
+  "estimatedTotalCost" | "remainingBudget" | "budgetStatus" | "costBreakdown" | "travelStyle"> & {
   schemaVersion: 2;
   routeConceptId?: string;
   days: PlanningDayV2[];
+  estimatedCostPerPerson?: number;
+  estimatedTotalCost?: number;
+  remainingBudget?: number;
+  budgetStatus?: GeneratedItinerary["budgetStatus"];
+  costBreakdown?: GeneratedItinerary["costBreakdown"];
+  travelStyle?: TravelStyle;
 };

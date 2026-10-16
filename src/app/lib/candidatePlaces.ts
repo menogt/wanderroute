@@ -2,7 +2,7 @@ import type { DbPlace } from "./supabase";
 import type { CandidatePlace } from "./planningTypes";
 
 type PlaceEnrichment = Pick<CandidatePlace,
-  "providerPlaceId" | "openingHours" | "priceEvidence" | "sourceUpdatedAt"
+  "providerPlaceId" | "openingHours" | "priceEvidence" | "priceBasis" | "sourceUpdatedAt"
 >;
 
 /** Preserve recorded facts; optional enrichment must come from an actual source. */

@@ -18,6 +18,11 @@
   status = 200
 
 [[redirects]]
+  from = "/api/generate-v2-itinerary"
+  to = "/.netlify/functions/generate-v2-itinerary"
+  status = 200
+
+[[redirects]]
   from = "/api/quote-request"
   to = "/.netlify/functions/quote-request"
   status = 200

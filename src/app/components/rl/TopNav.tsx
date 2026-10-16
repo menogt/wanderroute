@@ -41,7 +41,7 @@ export function TopNav({
 
   const isActive = (key: Screen) => {
     if (key === "planner") {
-      return ["planner", "itinerary", "costs", "share"].includes(screen);
+      return ["planner", "planning-v2", "itinerary", "costs", "share"].includes(screen);
     }
     return screen === key;
   };

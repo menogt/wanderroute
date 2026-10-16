@@ -45,6 +45,18 @@ function localClockMinute(value?: string): number | undefined {
   return hour <= 23 && minute <= 59 ? hour * 60 + minute : undefined;
 }
 
+function openingWindow(value: unknown, date?: string): { open: number; close: number } | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as { daily?: { open?: string; close?: string };
+    byWeekday?: Record<string, { open?: string; close?: string }> };
+  const weekday = date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? new Date(`${date}T00:00:00Z`).getUTCDay() : undefined;
+  const period = weekday !== undefined ? record.byWeekday?.[String(weekday)] ?? record.daily : record.daily;
+  const open = localClockMinute(period?.open);
+  const close = localClockMinute(period?.close);
+  return open !== undefined && close !== undefined && close > open ? { open, close } : undefined;
+}
+
 function distanceKm(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): number {
   const radians = Math.PI / 180;
   const lat1 = a.latitude * radians;
@@ -71,6 +83,8 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
     .map(place => [place.databaseId!, place]));
   const limits = drivingLimits(brief);
 
+  if (itinerary.routeConceptId !== route.id) add("ROUTE_CONCEPT_MISMATCH", "ERROR");
+
   if (itinerary.totalDays !== brief.durationDays) add("ITINERARY_DAY_COUNT_MISMATCH", "ERROR");
   if (itinerary.totalPeople !== brief.travellerCount) add("ITINERARY_TRAVELLER_COUNT_MISMATCH", "ERROR");
   if (itinerary.currency !== ledger.currency) add("ITINERARY_CURRENCY_MISMATCH", "ERROR");
@@ -95,6 +109,11 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
       add("UNEXPLAINED_CITY", "ERROR", { day: day.day });
     }
     if (day.day < brief.durationDays && !day.accommodation?.trim()) add("STAY_UNSPECIFIED", "UNKNOWN", { day: day.day });
+    if (day.accommodationPlaceId) {
+      const stay = places.get(day.accommodationPlaceId);
+      if (!stay || stay.category !== "hotel" || stay.city.toLowerCase() !== day.city.toLowerCase() ||
+          stay.name !== day.accommodation) add("ACCOMMODATION_PLACE_MISMATCH", "ERROR", { day: day.day });
+    }
     const timed: { start: number; end: number; id: string }[] = [];
     for (const item of day.items ?? []) {
       if (!item.id || seenItems.has(item.id)) add("DUPLICATE_ITEM_ID", "ERROR", { day: day.day, itemId: item.id });
@@ -134,6 +153,14 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
           const km = distanceKm(item.coordinates, place.coordinates);
           if (km > 1) add("PLACE_COORDINATES_MISMATCH", km > 5 ? "ERROR" : "WARNING",
             { day: day.day, itemId: item.id, details: { separationKm: Math.round(km * 100) / 100 } });
+        }
+        if (place && item.category === "activity") {
+          const hours = openingWindow(place.openingHours, day.date);
+          if (!hours || start === undefined || end === undefined) {
+            add("OPENING_HOURS_UNCONFIRMED", "UNKNOWN", { day: day.day, itemId: item.id });
+          } else if (start < hours.open || end > hours.close) {
+            add("OPENING_HOURS_CONFLICT", "ERROR", { day: day.day, itemId: item.id });
+          }
         }
       }
       if (item.placeEvidence?.status === "VERIFIED" &&
@@ -215,6 +242,18 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
     if (!stop || location.trim().toLowerCase() === stop.name.toLowerCase() || location.trim().toLowerCase() === stop.id.toLowerCase()) return;
     if (!leg) { add(`${kind}_TRANSFER_UNKNOWN`, "UNKNOWN", { day }); return; }
     inspectTransportLeg(leg, day);
+    const scheduled = days[day - 1]?.items?.find(item => item.category === "transport" && item.transportLegId === leg.id);
+    const scheduledStart = localClockMinute(scheduled?.plannedStart);
+    const scheduledEnd = localClockMinute(scheduled?.plannedEnd);
+    if (!scheduled || scheduledStart === undefined || scheduledEnd === undefined) {
+      add(`${kind}_TRANSFER_SCHEDULE_UNKNOWN`, "UNKNOWN", { day, legId: leg.id });
+    } else if (kind === "ARRIVAL" && arrivalReadyMinute(brief) !== undefined &&
+      scheduledStart < arrivalReadyMinute(brief)!) {
+      add("ARRIVAL_TRANSFER_BEFORE_READY", "ERROR", { day, legId: leg.id });
+    } else if (kind === "DEPARTURE" && departureDeadlineMinute(brief) !== undefined &&
+      scheduledEnd > departureDeadlineMinute(brief)!) {
+      add("DEPARTURE_TRANSFER_TOO_LATE", "ERROR", { day, legId: leg.id });
+    }
     if (leg.mode === "PRIVATE_DRIVER" && leg.durationMinutes !== undefined) {
       dailyDrive.set(day, (dailyDrive.get(day) ?? 0) + leg.durationMinutes);
     }
