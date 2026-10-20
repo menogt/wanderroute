@@ -4,7 +4,7 @@ import { handler } from "../../../netlify/functions/generate-v2-itinerary.js";
 import { planRouteConcepts, type PlanningV2Result } from "./planningV2.ts";
 import { generatePlanningV2Itinerary } from "./planningV2Itinerary.ts";
 import { validateAiActivityPlan, type AiActivityPlan } from "./planningV2ItineraryService.ts";
-import { routeDayCities } from "./planningV2Scheduling.ts";
+import { routeDayCities, schedulePlanningDays } from "./planningV2Scheduling.ts";
 import { returnToPlanningConcepts, selectPlanningConcept, showPlanningConcepts,
   showPlanningItinerary } from "./planningV2Session.ts";
 import { validatePlanningItinerary } from "./itineraryValidation.ts";
@@ -80,6 +80,29 @@ test("trusted place IDs survive generation; unknown AI IDs become a limited draf
   assert.equal(fallback.generationMode, "LIMITED_DRAFT");
   assert.equal(fallback.readiness, "NEEDS_CONFIRMATION");
   assert.ok(fallback.itinerary.days.flatMap(day => day.items).every(item => item.placeId !== "invented-place"));
+});
+
+test("AI extras cannot override validated place IDs or inject misclassified venues", async () => {
+  const result = await route();
+  const selected = chosen(result);
+  const restaurant: CandidatePlace = { databaseId: "restaurant-kandy", name: "Balaji Dosai",
+    city: "Kandy", category: "temple", sourceProvider: "foursquare" };
+  const candidates = [...places, restaurant];
+  const untrusted = aiPlan(result, selected.routeConcept.id);
+  Object.assign(untrusted.days[0], { activities: [{ id: "injected-item",
+    placeId: restaurant.databaseId, description: "Recommended temple" }] });
+  const validated = validateAiActivityPlan(untrusted, selected.candidate, result.brief, candidates);
+  assert.equal(Object.prototype.hasOwnProperty.call(validated.days[0], "activities"), false);
+  const output = await generatePlanningV2Itinerary(result, selected.routeConcept.id, {
+    getPlaces: async () => candidates, getAiPlan: async () => untrusted,
+  });
+  assert.ok(output.itinerary.days.flatMap(day => day.items).some(item => item.placeId === "temple-kandy"));
+  assert.ok(output.itinerary.days.flatMap(day => day.items).every(item =>
+    item.placeId !== restaurant.databaseId && item.id !== "injected-item"));
+  const selections = validated.days.map(day => ({ placeIds: [...day.placeIds] }));
+  selections[0].placeIds = [restaurant.databaseId!];
+  assert.throws(() => schedulePlanningDays(result.brief, selected.candidate,
+    selected.transport, candidates, selections));
 });
 
 test("known opening hours guide scheduling; unknown hours stay uncertain", async () => {

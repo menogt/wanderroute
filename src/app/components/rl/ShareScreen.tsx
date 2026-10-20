@@ -217,7 +217,7 @@ export function ShareScreen({
             {error && <p className="wr-feedback-error" role="alert"><AlertCircle aria-hidden="true" size={15} />{error}</p>}
           </div>
 
-          <button className="wr-text-button" onClick={() => navigate("planner")}>
+          <button className="wr-text-button" onClick={() => navigate("classic-planner")}>
             Plan another trip
           </button>
         </aside>

@@ -8,6 +8,9 @@ export type PlanningV2Session = {
   result?: PlanningV2Result;
   selectedConceptId?: string;
   detailed?: DetailedPlanningResult;
+  editPast?: DetailedPlanningResult[];
+  editFuture?: DetailedPlanningResult[];
+  editError?: string;
 };
 
 export const emptyPlanningV2Session = (): PlanningV2Session => ({ view: "brief" });
@@ -20,13 +23,14 @@ export function selectPlanningConcept(session: PlanningV2Session, conceptId: str
   const concept = session.result?.concepts.find(item => item.routeConcept.id === conceptId);
   if (!concept || concept.readiness === "INVALID") return session;
   return { ...session, view: "selected", selectedConceptId: conceptId,
-    ...(session.selectedConceptId === conceptId ? {} : { detailed: undefined }) };
+    ...(session.selectedConceptId === conceptId ? {} : { detailed: undefined,
+      editPast: [], editFuture: [], editError: undefined }) };
 }
 
 export function showPlanningItinerary(session: PlanningV2Session, selectedId: string,
   detailed: DetailedPlanningResult): PlanningV2Session {
   if (session.selectedConceptId !== selectedId || detailed.itinerary.routeConceptId !== selectedId) return session;
-  return { ...session, view: "itinerary", detailed };
+  return { ...session, view: "itinerary", detailed, editPast: [], editFuture: [], editError: undefined };
 }
 
 export function returnToPlanningConcepts(session: PlanningV2Session): PlanningV2Session {

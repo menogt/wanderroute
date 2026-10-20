@@ -542,7 +542,7 @@ export function ItineraryScreen({
               <CalendarDays size={26} aria-hidden="true" />
               <h2>No daily schedule was returned</h2>
               <p>Your trip totals are still available. Try planning again to rebuild the daily route.</p>
-              <button type="button" className="wr-button wr-button-gold" onClick={() => navigate("planner")}>Plan again</button>
+              <button type="button" className="wr-button wr-button-gold" onClick={() => navigate("classic-planner")}>Plan again in Classic Planner</button>
             </div>
           )}
 

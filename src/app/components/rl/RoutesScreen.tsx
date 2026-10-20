@@ -131,7 +131,7 @@ export function RoutesScreen({ navigate }: { navigate: (s: Screen) => void }) {
                     <div className="wr-route-tags" aria-label="Travel interests">
                       {route.tags.map((tag) => <span key={tag}>{tag}</span>)}
                     </div>
-                    <button className="wr-route-cta" onClick={() => navigate("planner")}>
+                    <button className="wr-route-cta" onClick={() => navigate("classic-planner")}>
                       Plan a similar trip
                       <ArrowRight aria-hidden="true" size={17} />
                     </button>
@@ -155,7 +155,7 @@ export function RoutesScreen({ navigate }: { navigate: (s: Screen) => void }) {
             <p className="wr-section-index">Build your own</p>
             <h2 id="routes-closing-title">Your budget can redraw the route.</h2>
           </div>
-          <button className="wr-primary-button" onClick={() => navigate("planner")}>
+          <button className="wr-primary-button" onClick={() => navigate("classic-planner")}>
             Start planning
             <ArrowRight aria-hidden="true" size={17} />
           </button>

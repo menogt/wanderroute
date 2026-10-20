@@ -202,7 +202,7 @@ export function MapScreen({
   const selectCityAndPlan = (city: string) => {
     // Preserve this order: PlannerScreen seeds its city list from this on mount.
     onCitySelect(city);
-    navigate("planner");
+    navigate("classic-planner");
   };
 
   const discoveryStatus = (() => {

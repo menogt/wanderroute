@@ -26,12 +26,13 @@ const TRANSPORT: { value: TransportPreference; label: string }[] = [
 ];
 const ENDPOINTS = [CMB_AIRPORT, ...knownPlanningDestinations()];
 
-export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPlan, onExit }: {
+export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPlan, onExit, onClassic }: {
   initialBrief?: TripBriefV1;
   busy: boolean;
   externalIssues: PlanningV2Issue[];
   onPlan: (brief: TripBriefV1) => void;
   onExit: () => void;
+  onClassic: () => void;
 }) {
   const [durationDays, setDurationDays] = useState(initialBrief?.durationDays ?? 7);
   const [travellerCount, setTravellerCount] = useState(initialBrief?.travellerCount ?? 2);
@@ -97,6 +98,7 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
           <p className="wr-kicker">Route planning · Preview</p>
           <h1 id="wr-v2-brief-title">Start with the journey you want.</h1>
           <p>Compare practical route concepts before building a day-by-day plan. No booking or quote is created here.</p>
+          <button type="button" className="wr-v2__text-link" onClick={onClassic}>Use Classic Planner</button>
         </div>
       </div>
       <form className="wr-v2__wrap wr-v2__brief" onSubmit={submit} noValidate>

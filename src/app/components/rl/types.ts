@@ -1,6 +1,7 @@
 export type Screen =
   | "home"
   | "planner"
+  | "classic-planner"
   | "planning-v2"
   | "itinerary"
   | "costs"

@@ -41,7 +41,7 @@ export function TopNav({
 
   const isActive = (key: Screen) => {
     if (key === "planner") {
-      return ["planner", "planning-v2", "itinerary", "costs", "share"].includes(screen);
+      return ["planner", "classic-planner", "planning-v2", "itinerary", "costs", "share"].includes(screen);
     }
     return screen === key;
   };
@@ -116,7 +116,7 @@ export function TopNav({
             className="wr-topnav__cta"
             onClick={() => navigate("planner")}
           >
-            <span className="wr-topnav__cta-full">Plan My Free Trip</span>
+            <span className="wr-topnav__cta-full">Plan Your Trip</span>
             <span className="wr-topnav__cta-short" aria-hidden="true">Plan trip</span>
             <ArrowUpRight size={15} strokeWidth={2} aria-hidden="true" />
           </button>

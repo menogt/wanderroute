@@ -31,7 +31,7 @@ export function BottomNav({
       return screen === "home";
     }
     if (key === "planner") {
-      return ["planner", "planning-v2", "itinerary", "costs", "share"].includes(screen);
+      return ["planner", "classic-planner", "planning-v2", "itinerary", "costs", "share"].includes(screen);
     }
     if (key === "map") {
       return screen === "map" || screen === "routes";

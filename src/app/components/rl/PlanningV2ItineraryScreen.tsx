@@ -1,7 +1,11 @@
 import { useState } from "react";
-import { AlertTriangle, ArrowLeft, Clock3, MapPin, RefreshCw, WalletCards } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, Clock3, MapPin, Pencil, Redo2,
+  RefreshCw, Trash2, Undo2, WalletCards } from "lucide-react";
 import type { DetailedPlanningResult } from "../../lib/planningV2Itinerary";
+import type { PlanningV2Edit } from "../../lib/planningV2Editing";
+import { eligibleActivityPlaces } from "../../lib/planningV2Places";
 import type { PlanningRouteConcept } from "../../lib/planningV2";
+import type { TripBriefV1 } from "../../lib/planningTypes";
 import type { CostLedger, AmountSummary } from "../../lib/costLedger";
 import type { TransportLeg } from "../../lib/transportTypes";
 import "../../../styles/planning-v2.css";
@@ -40,17 +44,28 @@ function itemCost(ledger: CostLedger, itemId: string): string {
   return amountLabel(line.total ? { ...line.total, unknownCount: 0 } : undefined, ledger.currency);
 }
 
-export function PlanningV2ItineraryScreen({ detail, concept, busy, error, onBack, onRetry }: {
+export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error, editError,
+  canUndo, canRedo, onBack, onRetry, onEdit, onUndo, onRedo }: {
   detail: DetailedPlanningResult;
   concept: PlanningRouteConcept;
+  brief: TripBriefV1;
   busy: boolean;
   error?: string;
+  editError?: string;
+  canUndo: boolean;
+  canRedo: boolean;
   onBack: () => void;
   onRetry: () => void;
+  onEdit: (edit: PlanningV2Edit) => void;
+  onUndo: () => void;
+  onRedo: () => void;
 }) {
   const [activeDay, setActiveDay] = useState(1);
+  const [editing, setEditing] = useState(false);
   const { itinerary, ledger, validation } = detail;
   const day = itinerary.days[activeDay - 1] ?? itinerary.days[0];
+  const dayActivities = day.items.filter(item => item.category === "activity");
+  const paceLimit = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[brief.pace ?? "BALANCED"];
   const legs = new Map([...concept.transport.legs, concept.transport.arrivalTransfer, concept.transport.departureTransfer]
     .filter((leg): leg is TransportLeg => !!leg).map(leg => [leg.id, leg]));
   const visibleIssues = validation.issues.filter(issue => issue.severity !== "WARNING" ||
@@ -68,13 +83,22 @@ export function PlanningV2ItineraryScreen({ detail, concept, busy, error, onBack
           <h2>Your itinerary</h2><p>{detail.generationMode === "LIMITED_DRAFT" ? "Limited draft from available place records." :
             "Activity choices were checked against available place records."} Transport and prices remain uncertain where marked.</p></div>
         <div className="wr-v2-detail__actions">
-          {detail.generationMode === "LIMITED_DRAFT" && <button type="button" className="wr-button wr-button--primary" onClick={onRetry} disabled={busy}>
+          {detail.generationMode === "LIMITED_DRAFT" && !canUndo && !canRedo && <button type="button" className="wr-button wr-button--primary" onClick={onRetry} disabled={busy}>
             <RefreshCw size={16} /> {busy ? "Retrying…" : "Retry suggestions"}</button>}
+          <button type="button" className="wr-v2-detail__edit-toggle" onClick={() => setEditing(value => !value)}
+            aria-expanded={editing}><Pencil size={16} aria-hidden="true" /> {editing ? "Finish editing" : "Edit activities"}</button>
           <button type="button" className="wr-v2__text-link" onClick={onBack}>Compare routes</button>
         </div>
       </div>
-      {detail.generationIssue && <div className="wr-v2__alert" role="status"><AlertTriangle size={18} /> {detail.generationIssue}</div>}
+      {detail.generationIssue && <div className="wr-v2__alert" role="status"><AlertTriangle size={18} />
+        {canUndo || canRedo ? "Activity suggestions were unavailable when this draft was created. Your edits use place records only." : detail.generationIssue}</div>}
       {error && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {error}</div>}
+      {editError && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {editError}</div>}
+      {editing && <div className="wr-v2-detail__edit-toolbar" aria-label="Activity editing history">
+        <p>Changes stay in this planning session. Times, costs and feasibility are recalculated after each edit.</p>
+        <div><button type="button" onClick={onUndo} disabled={!canUndo}><Undo2 size={16} aria-hidden="true" /> Undo</button>
+          <button type="button" onClick={onRedo} disabled={!canRedo}><Redo2 size={16} aria-hidden="true" /> Redo</button></div>
+      </div>}
       <div className="wr-v2-detail__summary" aria-label="Trip costs and status">
         <div><WalletCards size={19} /><span>Whole trip</span><strong>{amountLabel(ledger.summary.trip, ledger.currency)}</strong></div>
         <div><WalletCards size={19} /><span>Per traveller</span><strong>{amountLabel(ledger.summary.perPerson, ledger.currency)}</strong></div>
@@ -93,13 +117,45 @@ export function PlanningV2ItineraryScreen({ detail, concept, busy, error, onBack
           <ol className="wr-v2-detail__timeline">
             {day.items.map(item => {
               const leg = item.transportLegId ? legs.get(item.transportLegId) : undefined;
+              const activityIndex = dayActivities.findIndex(activity => activity.id === item.id);
+              const replacements = item.category === "activity" ? eligibleActivityPlaces(detail.places, day.city)
+                .filter(place => place.databaseId !== item.placeId && !dayActivities.some(activity =>
+                  activity.id !== item.id && activity.placeId === place.databaseId)) : [];
+              const compatibleDays = item.category === "activity" ? itinerary.days.filter(candidate =>
+                candidate.day !== day.day && candidate.city.toLowerCase() === day.city.toLowerCase() &&
+                candidate.items.filter(entry => entry.category === "activity").length < paceLimit &&
+                !candidate.items.some(entry => entry.placeId === item.placeId)) : [];
               return <li key={item.id}>
                 <span className="wr-v2-detail__time">{item.plannedStart ?? item.time}</span>
                 <div><strong>{item.label}</strong><p>{item.detail}</p>
                   {leg && <small>{leg.mode.replace(/_/g, " ").toLowerCase()} · {leg.durationMinutes === undefined ?
                     "journey time unknown" : `${Math.ceil(leg.durationMinutes)} min road-driving estimate`}</small>}
                   {item.category === "activity" && <small>{item.durationMinutes} min visit estimate · Opening hours {detail.places.find(place => place.databaseId === item.placeId)?.openingHours ? "to check" : "unknown"}</small>}
-                  <small>{itemCost(ledger, item.id)}</small></div>
+                  <small>{itemCost(ledger, item.id)}</small>
+                  {editing && item.category === "activity" && <div className="wr-v2-detail__item-editor">
+                    <div className="wr-v2-detail__edit-buttons">
+                      <button type="button" disabled={activityIndex === 0} onClick={() => onEdit({ type: "reorder", itemId: item.id, direction: -1 })}
+                        aria-label={`Move ${item.label} earlier`}><ChevronUp size={16} aria-hidden="true" /> Earlier</button>
+                      <button type="button" disabled={activityIndex === dayActivities.length - 1} onClick={() => onEdit({ type: "reorder", itemId: item.id, direction: 1 })}
+                        aria-label={`Move ${item.label} later`}><ChevronDown size={16} aria-hidden="true" /> Later</button>
+                      <button type="button" onClick={() => onEdit({ type: "remove", itemId: item.id })}
+                        aria-label={`Remove ${item.label}`}><Trash2 size={16} aria-hidden="true" /> Remove</button>
+                    </div>
+                    <label>Replace {item.label} with
+                      <select value="" disabled={!replacements.length} onChange={event => event.target.value &&
+                        onEdit({ type: "replace", itemId: item.id, placeId: event.target.value })}>
+                        <option value="">{replacements.length ? "Choose a trusted place" : "No other place available"}</option>
+                        {replacements.map(place => <option key={place.databaseId} value={place.databaseId}>{place.name}</option>)}
+                      </select>
+                    </label>
+                    {compatibleDays.length > 0 && <label>Move {item.label} to
+                      <select value="" onChange={event => event.target.value &&
+                        onEdit({ type: "move", itemId: item.id, targetDay: Number(event.target.value) })}>
+                        <option value="">Choose a {day.city} day</option>
+                        {compatibleDays.map(candidate => <option key={candidate.day} value={candidate.day}>Day {candidate.day}</option>)}
+                      </select>
+                    </label>}
+                  </div>}</div>
               </li>;
             })}
           </ol>

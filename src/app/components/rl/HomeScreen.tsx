@@ -6,13 +6,13 @@ import {
   Camera,
   Check,
   Compass,
-  Download,
   FileText,
   Landmark,
   MapPinned,
   Minus,
   Mountain,
   Navigation,
+  Pencil,
   Plus,
   Route,
   ShieldCheck,
@@ -56,17 +56,15 @@ const STORY_STEPS = [
   { number: "01", label: "Set a real budget", icon: WalletCards },
   { number: "02", label: "Build a connected route", icon: Route },
   { number: "03", label: "Follow each day", icon: CalendarDays },
-  { number: "04", label: "Take the plan offline", icon: Download },
+  { number: "04", label: "Refine each day", icon: Pencil },
 ];
 
 export function HomeScreen({
   navigate,
-  onGenerate,
-  showPlanningV2 = false,
+  onQuickPlan,
 }: {
   navigate: (s: Screen) => void;
-  onGenerate?: (inputs: TripInputs, travelMonth?: number | null) => void;
-  showPlanningV2?: boolean;
+  onQuickPlan?: (inputs: TripInputs, travelMonth?: number | null) => void;
 }) {
   const bp = useBreakpoint();
   const [tapCount, setTapCount] = useState(0);
@@ -141,8 +139,8 @@ export function HomeScreen({
   const handleQuickGenerate = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (interests.length === 0 || budget <= 0) return;
-    if (onGenerate) {
-      onGenerate(quickInputs, travelMonth);
+    if (onQuickPlan) {
+      onQuickPlan(quickInputs, travelMonth);
       return;
     }
     navigate("planner");
@@ -176,7 +174,7 @@ export function HomeScreen({
             <p className="wr-kicker">The living Sri Lanka atlas</p>
             <h1>Plan Sri Lanka around your real budget.</h1>
             <p className="wr-home-hero__lead">
-              Build a personalised day-by-day route with realistic local costs, places to stay and roads you can actually follow.
+              Build a personalised day-by-day route with places to stay, transport checks and clear cost unknowns.
             </p>
             <div className="wr-home-hero__actions">
               <button
@@ -184,7 +182,7 @@ export function HomeScreen({
                 className="wr-button wr-button--gold"
                 onClick={() => navigate("planner")}
               >
-                Plan My Free Trip
+                Plan Your Trip
                 <ArrowRight size={17} aria-hidden="true" />
               </button>
               <button
@@ -194,13 +192,13 @@ export function HomeScreen({
               >
                 Explore a Sample Route
               </button>
-              {showPlanningV2 && <button
+              <button
                 type="button"
                 className="wr-button wr-button--glass"
-                onClick={() => navigate("planning-v2")}
+                onClick={() => navigate("classic-planner")}
               >
-                Compare route concepts
-              </button>}
+                Classic Planner
+              </button>
             </div>
             <p className="wr-home-hero__assurance">
               <Check size={14} aria-hidden="true" />
@@ -208,7 +206,7 @@ export function HomeScreen({
             </p>
           </div>
 
-          <div className="wr-home-hero__preview" aria-label="Live route preview">
+          <div className="wr-home-hero__preview" aria-label="Sample route preview">
             <div className="wr-home-hero__preview-head">
               <span><Sparkles size={14} aria-hidden="true" /> Route preview</span>
               <small>{preview.totalDays} days</small>
@@ -558,7 +556,7 @@ export function HomeScreen({
           <p className="wr-kicker">A plan that travels with you</p>
           <h2 id="pdf-preview-title">Turn the itinerary into a practical travel document.</h2>
           <p>
-            Your generated route, daily plan, costs and local tips can be downloaded as a PDF for offline reference.
+            Classic Planner itineraries can be downloaded as a PDF for offline reference. The new route drafts stay in your planning session.
           </p>
           <ul>
             <li><FileText size={16} aria-hidden="true" /> Day-by-day schedule</li>
@@ -571,10 +569,10 @@ export function HomeScreen({
       <section className="wr-home-final" aria-labelledby="final-cta-title">
         <span className="wr-coordinates" aria-hidden="true">Your next pin · Sri Lanka</span>
         <h2 id="final-cta-title">Start with the budget. Leave with the route.</h2>
-        <p>Build a Sri Lanka itinerary you can price, follow and take offline.</p>
+        <p>Build a Sri Lanka route, inspect each day and see what still needs confirmation.</p>
         <div>
           <button type="button" className="wr-button wr-button--gold" onClick={() => navigate("planner")}>
-            Plan My Free Trip <ArrowRight size={17} aria-hidden="true" />
+            Plan Your Trip <ArrowRight size={17} aria-hidden="true" />
           </button>
           <button type="button" className="wr-button wr-button--glass" onClick={() => navigate("routes")}>
             Explore a Sample Route

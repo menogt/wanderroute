@@ -3,9 +3,16 @@ import type { CandidatePlace } from "./planningTypes";
 import type { CandidateRoute } from "./routeTypes";
 import type { DbPlace } from "./supabase";
 
-const PER_CITY_LIMIT = 60;
+const CATEGORY_LIMITS = [
+  { category: "attraction", limit: 25 },
+  { category: "temple", limit: 20 },
+  { category: "beach", limit: 10 },
+  { category: "hotel", limit: 15 },
+] as const;
 const MAX_CITIES = 8;
 const QUERY_TIMEOUT_MS = 8_000;
+const NON_ACTIVITY_NAME = /\b(?:restaurant|caf[eé]|coffee|food|dosai|dosa|hotel|resort|guest\s?house|inn|bar|pub|kfc|pizza|bakery|take\s?away|super(?:market|centre|center)|mall|shop|store|lounge)\b/i;
+const RELIGIOUS_PLACE_NAME = /\b(?:temple|vihara|viharaya|kovil|devalaya|mosque|masjid|church|chapel|cathedral|stupa|buddha|monastery|shrine|sacred|piriwena|pirivena|bodhi|maligawa)\b/i;
 
 function stableSlug(value: string): string {
   return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -24,15 +31,25 @@ async function curatedHotels(city: string): Promise<CandidatePlace[]> {
 async function fetchCityPlaces(city: string): Promise<CandidatePlace[]> {
   const { supabase } = await import("./supabase");
   if (!supabase) return [];
-  const signal = AbortSignal.timeout(QUERY_TIMEOUT_MS);
-  const { data, error } = await supabase.from("places")
-    .select("id,name,city,category,lat,lng,price_usd,source,importance_score,rating")
-    .eq("city", city)
-    .order("importance_score", { ascending: false })
-    .limit(PER_CITY_LIMIT)
-    .abortSignal(signal);
-  if (error) throw new Error(`Place lookup failed for ${city}.`);
-  return ((data ?? []) as DbPlace[]).filter(place => !!place.id).map(place => candidateFromDbPlace(place));
+  // A single city-wide limit can be exhausted by restaurants before any sights appear.
+  const places: CandidatePlace[] = [];
+  let successfulQueries = 0;
+  for (const { category, limit } of CATEGORY_LIMITS) {
+    try {
+      const { data, error } = await supabase.from("places")
+        .select("id,name,city,category,lat,lng,price_usd,source,importance_score,rating")
+        .eq("city", city)
+        .eq("category", category)
+        .order("importance_score", { ascending: false })
+        .limit(limit)
+        .abortSignal(AbortSignal.timeout(QUERY_TIMEOUT_MS));
+      if (error) continue;
+      successfulQueries++;
+      places.push(...((data ?? []) as DbPlace[]).filter(place => !!place.id).map(place => candidateFromDbPlace(place)));
+    } catch { /* Keep usable categories when one lookup is unavailable. */ }
+  }
+  if (!successfulQueries) throw new Error(`Place lookup failed for ${city}.`);
+  return places;
 }
 
 /** At most eight bounded city lookups; structured IDs and provenance survive retrieval. */
@@ -59,5 +76,8 @@ export async function loadPlanningV2Places(route: CandidateRoute,
 
 export function eligibleActivityPlaces(places: CandidatePlace[], city: string): CandidatePlace[] {
   return places.filter(place => place.city.toLowerCase() === city.toLowerCase() &&
-    !!place.databaseId && ["attraction", "beach", "temple"].includes(place.category));
+    !!place.databaseId && ["attraction", "beach", "temple"].includes(place.category) &&
+    !NON_ACTIVITY_NAME.test(place.name) &&
+    (place.category !== "temple" || place.sourceProvider?.toLowerCase() !== "foursquare" ||
+      RELIGIOUS_PLACE_NAME.test(place.name)));
 }

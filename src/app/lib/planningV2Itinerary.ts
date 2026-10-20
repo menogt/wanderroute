@@ -83,39 +83,19 @@ function limitedSelections(brief: TripBriefV1, route: PlanningRouteConcept["cand
     .map(place => place.databaseId!) }));
 }
 
-/** The selected route, transport and matrix are authoritative; AI only selects allowed place IDs. */
-export async function generatePlanningV2Itinerary(result: PlanningV2Result, selectedId: string,
-  services: DetailedPlanningServices = {}): Promise<DetailedPlanningResult> {
+function buildDetailedPlanningResult(result: PlanningV2Result, selectedId: string,
+  places: CandidatePlace[], selections: DaySelection[], generationMode: DetailedPlanningResult["generationMode"],
+  generationIssue?: string, exchangeRates: ExchangeRate[] = []): DetailedPlanningResult {
   const selected = result.concepts.find(concept => concept.routeConcept.id === selectedId);
   if (!selected || selected.readiness === "INVALID") throw new Error("Select a usable route concept first.");
   const { brief, matrix } = result;
   const route = selected.candidate;
-  const cities = routeDayCities(route, brief.durationDays);
   if (selected.routeConcept.stops.length !== route.destinations.length ||
       selected.routeConcept.stops.some((stop, index) => stop.destinationName !== route.destinations[index].name ||
         stop.nights !== route.nights[index])) throw new Error("The selected route no longer matches its concept.");
-  const places = await (services.getPlaces ?? loadPlanningV2Places)(route);
-  let selections: DaySelection[];
-  let generationMode: DetailedPlanningResult["generationMode"] = "AI";
-  let generationIssue: string | undefined;
-  if (!cities.some(city => eligibleActivityPlaces(places, city).length > 0)) {
-    generationMode = "LIMITED_DRAFT";
-    generationIssue = "No trusted activity records are available for this route. Add place coverage before relying on daily suggestions.";
-    selections = limitedSelections(brief, route, places);
-  } else {
-    try {
-      const raw = await (services.getAiPlan ?? requestAiActivityPlan)(brief, route, places);
-      const plan = validateAiActivityPlan(raw, route, brief, places);
-      selections = plan.days;
-    } catch {
-      generationMode = "LIMITED_DRAFT";
-      generationIssue = "Activity suggestions could not be verified. This limited draft uses place records only; retry to request suggestions.";
-      selections = limitedSelections(brief, route, places);
-    }
-  }
   const days = schedulePlanningDays(brief, route, selected.transport, places, selections);
   const ledger = calculateCostLedger(buildCostLines(brief, days, places, selected.transport), brief.budget.currency,
-    brief.travellerCount, services.exchangeRates ?? []);
+    brief.travellerCount, exchangeRates);
   const itinerary: PlanningItineraryV2 = {
     schemaVersion: 2, id: `${route.id}:itinerary-v2`, routeConceptId: route.id,
     routeName: route.destinations.map(destination => destination.name).join(" to "),
@@ -135,4 +115,45 @@ export async function generatePlanningV2Itinerary(result: PlanningV2Result, sele
         ? "READY_WITH_WARNINGS" : "READY";
   return { itinerary, ledger, validation, readiness, places, generationMode,
     ...(generationIssue ? { generationIssue } : {}) };
+}
+
+/** Rebuilds every derived field after an edit; no AI or network call is involved. */
+export function recalculatePlanningV2Itinerary(result: PlanningV2Result, selectedId: string,
+  previous: DetailedPlanningResult, selections: DaySelection[]): DetailedPlanningResult {
+  if (previous.itinerary.routeConceptId !== selectedId || selections.length !== result.brief.durationDays) {
+    throw new Error("The edited itinerary no longer matches the selected route.");
+  }
+  return buildDetailedPlanningResult(result, selectedId, previous.places, selections,
+    previous.generationMode, previous.generationIssue, previous.ledger.exchangeRates);
+}
+
+/** The selected route, transport and matrix are authoritative; AI only selects allowed place IDs. */
+export async function generatePlanningV2Itinerary(result: PlanningV2Result, selectedId: string,
+  services: DetailedPlanningServices = {}): Promise<DetailedPlanningResult> {
+  const selected = result.concepts.find(concept => concept.routeConcept.id === selectedId);
+  if (!selected || selected.readiness === "INVALID") throw new Error("Select a usable route concept first.");
+  const { brief } = result;
+  const route = selected.candidate;
+  const cities = routeDayCities(route, brief.durationDays);
+  const places = await (services.getPlaces ?? loadPlanningV2Places)(route);
+  let selections: DaySelection[];
+  let generationMode: DetailedPlanningResult["generationMode"] = "AI";
+  let generationIssue: string | undefined;
+  if (!cities.some(city => eligibleActivityPlaces(places, city).length > 0)) {
+    generationMode = "LIMITED_DRAFT";
+    generationIssue = "No trusted activity records are available for this route. Add place coverage before relying on daily suggestions.";
+    selections = limitedSelections(brief, route, places);
+  } else {
+    try {
+      const raw = await (services.getAiPlan ?? requestAiActivityPlan)(brief, route, places);
+      const plan = validateAiActivityPlan(raw, route, brief, places);
+      selections = plan.days;
+    } catch {
+      generationMode = "LIMITED_DRAFT";
+      generationIssue = "Activity suggestions could not be verified. This limited draft uses place records only; retry to request suggestions.";
+      selections = limitedSelections(brief, route, places);
+    }
+  }
+  return buildDetailedPlanningResult(result, selectedId, places, selections, generationMode,
+    generationIssue, services.exchangeRates ?? []);
 }

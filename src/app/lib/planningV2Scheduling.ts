@@ -2,6 +2,7 @@ import type { CandidatePlace, PlanningDayV2, PlanningItemV2, TripBriefV1 } from 
 import { arrivalReadyMinute, departureDeadlineMinute } from "./routeConstraints.ts";
 import type { CandidateRoute } from "./routeTypes";
 import type { TransportLeg, TransportPlan } from "./transportTypes";
+import { eligibleActivityPlaces } from "./planningV2Places.ts";
 
 const ACTIVITY_COUNT = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 } as const;
 
@@ -62,7 +63,9 @@ function transportItem(day: number, leg: TransportLeg, label: string,
   };
 }
 
-export type DaySelection = { placeIds: string[]; descriptions?: { placeId: string; text: string }[]; note?: string };
+export type DaySelection = { placeIds: string[]; descriptions?: { placeId: string; text: string }[]; note?: string;
+  /** Editing keeps this identity even when the place or day changes. */
+  activities?: { id: string; placeId: string; description?: string }[] };
 
 /** Pure schedule. Unknown transfer times stay unscheduled and block timed activities that day. */
 export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
@@ -117,15 +120,18 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
       else activityEnd = Math.min(activityEnd, deadline);
     }
 
-    const allowed = new Map(places.filter(place => place.city.toLowerCase() === city.toLowerCase() &&
-      ["attraction", "beach", "temple"].includes(place.category) && place.databaseId)
+    const allowed = new Map(eligibleActivityPlaces(places, city)
       .map(place => [place.databaseId!, place]));
     const selection = selections[index] ?? { placeIds: [] };
     const limit = ACTIVITY_COUNT[brief.pace ?? "BALANCED"];
     let cursor = activityStart;
-    for (const [activityIndex, id] of selection.placeIds.slice(0, limit).entries()) {
-      const place = allowed.get(id);
-      if (!place) throw new Error(`An activity is outside the selected route's allowed places: ${id}`);
+    const activities = selection.activities ?? selection.placeIds.map(id => ({
+      id: `day-${dayNumber}:place:${id}`, placeId: id,
+      description: selection.descriptions?.find(item => item.placeId === id)?.text,
+    }));
+    for (const activity of activities.slice(0, limit)) {
+      const place = allowed.get(activity.placeId);
+      if (!place) throw new Error(`An activity is outside the selected route's allowed places: ${activity.placeId}`);
       const duration = 90;
       const hours = openingWindow(place, dateForDay(brief, index));
       const proposed = hours ? Math.max(cursor, hours.open) : cursor;
@@ -135,13 +141,12 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
       const end = canTime ? clock(proposed + duration) : undefined;
       if (!canTime) warnings.push(`${place.name}: visit time needs confirmation.`);
       if (!hours) warnings.push(`${place.name}: opening hours are unknown.`);
-      const description = selection.descriptions?.find(item => item.placeId === id)?.text;
-      items.push({ id: `day-${dayNumber}:place:${id}:${activityIndex}`, city, placeId: id,
+      items.push({ id: activity.id, city, placeId: activity.placeId,
         placeEvidence: { status: "KNOWN", ...(place.sourceProvider ? { source: place.sourceProvider } : {}) },
         ...(place.coordinates ? { coordinates: place.coordinates } : {}),
         ...(place.priceEvidence ? { priceEvidence: place.priceEvidence } : {}),
         time: start ?? "Time to confirm", icon: "✦", label: place.name,
-        detail: description ?? "Suggested from the available place records; visit details need confirmation.",
+        detail: activity.description ?? "Suggested from the available place records; visit details need confirmation.",
         category: "activity", durationMinutes: duration, durationEvidence: "ESTIMATED",
         ...(start && end ? { plannedStart: start, plannedEnd: end } : {}),
       });
@@ -151,7 +156,7 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
       label: "Meal in town", detail: "Choose a venue; price and opening hours are not confirmed.", category: "meal" });
     if (overnight) warnings.push(hotel ? `${hotel.name}: availability and room price need confirmation.` :
       `Accommodation in ${city} needs confirmation.`);
-    if (!selection.placeIds.length) warnings.push(`No activity place was selected for ${city} on this day.`);
+    if (!activities.length) warnings.push(`No activity place was selected for ${city} on this day.`);
     return { day: dayNumber, city, ...(dateForDay(brief, index) ? { date: dateForDay(brief, index) } : {}),
       ...(overnight ? { overnightCity: city } : {}), flag: "📍", heroGradient: "", localTip: selection.note ?? "Check opening hours and reservations before travel.",
       accommodation: overnight ? hotel?.name ?? `Stay to confirm in ${city}` : "",

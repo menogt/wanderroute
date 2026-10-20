@@ -3,7 +3,6 @@ import { test } from "node:test";
 import type { TripBriefV1 } from "./planningTypes";
 import { planRouteConcepts, PlanningBriefError, type PlanningV2Services } from "./planningV2.ts";
 import { CMB_AIRPORT } from "./planningV2Locations.ts";
-import { planningV2Enabled } from "./planningV2Feature.ts";
 import { returnToPlanningConcepts, selectPlanningConcept, selectedPlanningConcept,
   showPlanningConcepts } from "./planningV2Session.ts";
 import type { MatrixLocation, RoadLeg, TravelMatrix } from "./travelTimeMatrix.ts";
@@ -161,11 +160,4 @@ test("network failure produces a recoverable unknown routing result", async () =
   assert.equal(result.matrix.failure, "NETWORK_ERROR");
   assert.ok(result.issues.some(issue => issue.code === "ROUTING_UNAVAILABLE"));
   assert.ok(result.concepts.length > 0);
-});
-
-test("feature flag stays off by default and only exact opt-in exposes the V2 entry", () => {
-  assert.equal(planningV2Enabled(undefined), false);
-  assert.equal(planningV2Enabled("false"), false);
-  assert.equal(planningV2Enabled("TRUE"), false);
-  assert.equal(planningV2Enabled("true"), true);
 });

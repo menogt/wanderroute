@@ -3,7 +3,7 @@ import type { CandidateRoute } from "./routeTypes";
 import { eligibleActivityPlaces } from "./planningV2Places.ts";
 import { routeDayCities, type DaySelection } from "./planningV2Scheduling.ts";
 
-export type AiDaySelection = DaySelection & { day: number };
+export type AiDaySelection = Pick<DaySelection, "placeIds" | "descriptions" | "note"> & { day: number };
 export type AiActivityPlan = { schemaVersion: 2; routeConceptId: string; days: AiDaySelection[] };
 
 export function validateAiActivityPlan(value: unknown, route: CandidateRoute,
@@ -27,7 +27,14 @@ export function validateAiActivityPlan(value: unknown, route: CandidateRoute,
       throw new Error(`The activity service returned an untrusted place for day ${index + 1}.`);
     }
   }
-  return plan as AiActivityPlan;
+  // Project the model response onto the validated fields. Extra keys must not
+  // override trusted place selections or provide item identities to the scheduler.
+  return { schemaVersion: 2, routeConceptId: route.id,
+    days: plan.days.map(day => ({ day: day.day, placeIds: [...day.placeIds],
+      ...(day.note !== undefined ? { note: day.note } : {}),
+      ...(day.descriptions !== undefined ? { descriptions: day.descriptions.map(item =>
+        ({ placeId: item.placeId, text: item.text })) } : {}),
+    })) };
 }
 
 /** V2 asks the server only to select trusted IDs and write short descriptions. */
