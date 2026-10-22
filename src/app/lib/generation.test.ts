@@ -29,7 +29,7 @@ function modelItinerary(request: ReturnType<typeof input>) {
       heroGradient: "linear-gradient(135deg, #111111, #222222)",
       accommodation: "Sample hotel",
       accommodationCostPerNight: 50,
-      dailyCostPerPerson: 50,
+      dailyCostPerPerson: Math.round(50000 / request.days) / 100 + (index === request.days - 1 ? (50000 - Math.round(50000 / request.days) * request.days) / 100 : 0),
       localTip: "Plan ahead.",
       items: [{
         time: "09:00",
@@ -139,4 +139,37 @@ test("missing server key produces a controlled error without calling Groq", asyn
     if (originalKey === undefined) delete process.env.GROQ_API_KEY;
     else process.env.GROQ_API_KEY = originalKey;
   }
+});
+
+
+test("Classic rejects contradictory AI days, route geography and cost arithmetic", async () => {
+  const request = input(7);
+  const cases = [
+    (value: ReturnType<typeof modelItinerary>) => { value.days[2].day = 1; },
+    (value: ReturnType<typeof modelItinerary>) => { value.days[2].city = "Jaffna"; },
+    (value: ReturnType<typeof modelItinerary>) => { value.days.reverse(); value.days.forEach((day, index) => day.day = index + 1); },
+    (value: ReturnType<typeof modelItinerary>) => { value.cities.reverse(); },
+    (value: ReturnType<typeof modelItinerary>) => { value.days[0].items[0].cost = -10; },
+    (value: ReturnType<typeof modelItinerary>) => { value.days[0].accommodationCostPerNight = -50; },
+    (value: ReturnType<typeof modelItinerary>) => { value.costBreakdown.hotels = -400; },
+    (value: ReturnType<typeof modelItinerary>) => { value.estimatedTotalCost = 900; },
+    (value: ReturnType<typeof modelItinerary>) => { value.costBreakdown.food = 300; },
+    (value: ReturnType<typeof modelItinerary>) => { value.days[0].dailyCostPerPerson += 100; },
+    (value: ReturnType<typeof modelItinerary>) => { value.days[0].items[0].cost = 1000; },
+  ];
+  for (const change of cases) {
+    const value = structuredClone(modelItinerary(request)); change(value);
+    const { response, payload } = await runWithMockGroq(request, JSON.stringify(value));
+    assert.equal(response.statusCode, 502);
+    assert.equal(payload.code, "MODEL_OUTPUT_INVALID");
+    assert.ok(!payload.itinerary);
+  }
+});
+
+test("Classic derives budget fit from validated totals instead of an AI claim", async () => {
+  const request = { ...input(7), budget: 500 };
+  const { response, payload } = await runWithMockGroq(request);
+  assert.equal(response.statusCode, 200);
+  assert.equal(payload.itinerary.budgetStatus, "over");
+  assert.equal(payload.itinerary.remainingBudget, -500);
 });

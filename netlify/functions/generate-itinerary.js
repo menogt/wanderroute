@@ -127,7 +127,7 @@ function buildPrompt(inputs) {
   const sym = CURRENCY_SYMBOLS[currency];
 
   const realPlacesBlock = inputs.realPlaces && inputs.realPlaces.trim()
-    ? `\n\nAVAILABLE REAL PLACES (use these EXACT names — they are verified real places in our database):\n${inputs.realPlaces}\n\nCRITICAL: For accommodation, dining and activities, you MUST use places from the list above wherever one fits. Keep their exact names so they match our map pins. Only invent a place if the list has nothing suitable for a given need.`
+    ? `\n\nAVAILABLE REAL PLACES (catalog candidates; keep their exact names but confirm their details):\n${inputs.realPlaces}\n\nCRITICAL: For accommodation, dining and activities, you MUST use places from the list above wherever one fits. Keep their exact names so they match our map pins. If the list has nothing suitable, use a clearly generic choice such as a venue to choose; do not invent a specific business or claim a booking.`
     : "";
 
   return `You are WanderRoute, an expert Sri Lanka travel planner. Generate a detailed, realistic trip itinerary.
@@ -141,8 +141,8 @@ TRIP DETAILS:
 - Travel style: ${travelStyle} (budget=hostels/buses/street food, comfort=boutique hotels/mix dining, luxury=resorts/private transfers)${realPlacesBlock}
 
 IMPORTANT RULES:
-1. Costs must be realistic Sri Lanka 2024/2025 prices in ${currency}
-2. Budget style: ~$30-55/person/day USD. Comfort: ~$85-170/person/day. Luxury: ~$250-500/person/day
+1. Costs are preliminary planning estimates in ${currency}, not verified current tariffs or quotes. Do not claim confirmed availability or reservations.
+2. Reconcile every amount: estimatedTotalCost = estimatedCostPerPerson * ${people}; costBreakdown categories are whole-party totals and must sum to estimatedTotalCost; dailyCostPerPerson values must sum to estimatedCostPerPerson. Item costs are per-person estimates included in the daily amount, not extra charges. Round monetary values to two decimals.
 3. Every day must include accommodation, meals, transport, and activities, with at least 4 entries in its "items" array
 4. Include hidden costs tourists often miss (entry fees, tuk-tuk tips, etc.)
 5. Visit the listed cities in the given order, allocating days proportionally across them; the trip starts and ends near Bandaranaike airport
@@ -333,7 +333,7 @@ function buildGeneratedItinerary(parsed, inputs) {
     estimatedTotalCost: parsed.estimatedTotalCost,
     inputBudget: inputs.budget,
     remainingBudget: remaining,
-    budgetStatus: parsed.budgetStatus ?? budgetStatus,
+    budgetStatus,
     travelStyle: inputs.travelStyle,
     days: parsed.days.map((day) => ({
       ...day,
@@ -344,6 +344,37 @@ function buildGeneratedItinerary(parsed, inputs) {
     warnings: parsed.warnings,
     highlights: parsed.highlights,
   };
+}
+
+function validateAiSemantics(parsed, inputs) {
+  const errors = [];
+  const normalize = city => city.trim().toLowerCase();
+  const expected = inputs.cities.map(normalize);
+  if (parsed.cities.length !== expected.length || parsed.cities.some((city, index) => normalize(city) !== expected[index])) {
+    errors.push("The model route must match the requested city order.");
+  }
+  const visited = [];
+  for (const [index, day] of parsed.days.entries()) {
+    if (day.day !== index + 1) errors.push("Days must be numbered consecutively from one.");
+    const city = normalize(day.city);
+    if (!expected.includes(city)) errors.push("A day uses a city outside the requested route.");
+    if (visited[visited.length - 1] !== city) visited.push(city);
+    for (const value of [day.accommodationCostPerNight, day.dailyCostPerPerson, ...day.items.map(item => item.cost)]) {
+      if (value < 0) errors.push("Daily prices cannot be negative.");
+    }
+    if (day.items.reduce((sum, item) => sum + item.cost, 0) > day.dailyCostPerPerson + .01 * (day.items.length + 1)) {
+      errors.push("Included item costs exceed the daily per-person amount.");
+    }
+  }
+  if (visited.length !== expected.length || visited.some((city, index) => city !== expected[index])) errors.push("Day cities must cover the requested route in order without backtracking.");
+  const categoryTotal = Object.values(parsed.costBreakdown).reduce((sum, value) => sum + value, 0);
+  if ([parsed.estimatedCostPerPerson, parsed.estimatedTotalCost, ...Object.values(parsed.costBreakdown)].some(value => value < 0)) errors.push("Trip prices cannot be negative.");
+  const close = (a, b, tolerance) => Math.abs(a - b) <= tolerance + 1e-7;
+  if (!close(parsed.estimatedCostPerPerson * inputs.people, parsed.estimatedTotalCost, .01 * (inputs.people + 1))) errors.push("Per-person and party totals do not reconcile.");
+  if (!close(categoryTotal, parsed.estimatedTotalCost, .07)) errors.push("Category totals do not reconcile with the party total.");
+  const dailyPerPerson = parsed.days.reduce((sum, day) => sum + day.dailyCostPerPerson, 0);
+  if (!close(dailyPerPerson, parsed.estimatedCostPerPerson, .01 * (inputs.days + 1))) errors.push("Daily amounts do not reconcile with the per-person total.");
+  return errors;
 }
 
 function validateGeneratedItinerary(itinerary) {
@@ -478,6 +509,9 @@ export const handler = async (event) => {
     console.error("Groq returned wrong day count", { requested: inputs.days, returned: parsed.days.length, model: MODEL });
     return json(502, { code: "MODEL_OUTPUT_INVALID", error: `AI returned ${parsed.days.length} days for a ${inputs.days}-day trip.` });
   }
+
+  const semanticErrors = validateAiSemantics(parsed, inputs);
+  if (semanticErrors.length) return json(502, { code: "MODEL_OUTPUT_INVALID", error: "AI itinerary facts did not match the requested trip.", details: semanticErrors });
 
   const itinerary = buildGeneratedItinerary(parsed, inputs);
   const itineraryErrors = validateGeneratedItinerary(itinerary);
