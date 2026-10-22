@@ -2,6 +2,7 @@ import { candidateFromDbPlace } from "./candidatePlaces.ts";
 import type { CandidatePlace } from "./planningTypes";
 import type { CandidateRoute } from "./routeTypes";
 import type { DbPlace } from "./supabase";
+import { MUST_SEE } from "./curatedPlaces.ts";
 
 const CATEGORY_LIMITS = [
   { category: "attraction", limit: 25 },
@@ -18,6 +19,14 @@ function stableSlug(value: string): string {
   return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+/** Reuse the existing editorial landmark list when the live catalog is unavailable.
+ * A guide entry has no inferred coordinates, opening hours, ticket price or availability.
+ */
+export function curatedActivityCandidates(city: string): CandidatePlace[] {
+  return (MUST_SEE[city] ?? []).map(name => ({ databaseId: `curated-activity:${stableSlug(city)}:${stableSlug(name)}`,
+    name, city, category: "attraction", sourceProvider: "WanderRoute landmark guide; visit details to confirm" }));
+}
+
 /** Existing curated hotels are candidates, not availability or current-price evidence. */
 async function curatedHotels(city: string): Promise<CandidatePlace[]> {
   const { HOTELS_BY_CITY } = await import("../components/rl/data");
@@ -32,23 +41,17 @@ async function fetchCityPlaces(city: string): Promise<CandidatePlace[]> {
   const { supabase } = await import("./supabase");
   if (!supabase) return [];
   // A single city-wide limit can be exhausted by restaurants before any sights appear.
-  const places: CandidatePlace[] = [];
-  let successfulQueries = 0;
-  for (const { category, limit } of CATEGORY_LIMITS) {
-    try {
-      const { data, error } = await supabase.from("places")
-        .select("id,name,city,category,lat,lng,price_usd,source,importance_score,rating")
-        .eq("city", city)
-        .eq("category", category)
-        .order("importance_score", { ascending: false })
-        .limit(limit)
-        .abortSignal(AbortSignal.timeout(QUERY_TIMEOUT_MS));
-      if (error) continue;
-      successfulQueries++;
-      places.push(...((data ?? []) as DbPlace[]).filter(place => !!place.id).map(place => candidateFromDbPlace(place)));
-    } catch { /* Keep usable categories when one lookup is unavailable. */ }
-  }
-  if (!successfulQueries) throw new Error(`Place lookup failed for ${city}.`);
+  const settled = await Promise.allSettled(CATEGORY_LIMITS.map(async ({ category, limit }) => {
+    const { data, error } = await supabase.from("places")
+      .select("id,name,city,category,lat,lng,price_usd,source,importance_score,rating")
+      .eq("city", city).eq("category", category)
+      .order("importance_score", { ascending: false }).limit(limit)
+      .abortSignal(AbortSignal.timeout(QUERY_TIMEOUT_MS));
+    if (error) throw new Error("Place category unavailable.");
+    return ((data ?? []) as DbPlace[]).filter(place => !!place.id).map(place => candidateFromDbPlace(place));
+  }));
+  const places = settled.flatMap(result => result.status === "fulfilled" ? result.value : []);
+  if (settled.every(result => result.status === "rejected")) throw new Error(`Place lookup failed for ${city}.`);
   return places;
 }
 
@@ -59,7 +62,9 @@ export async function loadPlanningV2Places(route: CandidateRoute,
   const settled = await Promise.allSettled(cities.map(city => fetchCity(city)));
   const places: CandidatePlace[] = [];
   for (const [index, city] of cities.entries()) {
-    if (settled[index].status === "fulfilled") places.push(...settled[index].value);
+    const retrieved = settled[index].status === "fulfilled" ? settled[index].value : [];
+    places.push(...retrieved);
+    if (!eligibleActivityPlaces(retrieved, city).length) places.push(...curatedActivityCandidates(city));
     places.push(...await curatedHotels(city));
   }
   const seenIds = new Set<string>();

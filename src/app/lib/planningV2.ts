@@ -201,7 +201,7 @@ function neutralRank(route: CandidateRoute): number {
       reason.code === "ENDPOINT_UNKNOWN").length * 20;
 }
 
-function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix: TravelMatrix,
+export function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix: TravelMatrix,
   services: PlanningV2Services): PlanningRouteConcept {
   const transport = buildTransportPlan(route, brief, matrix, services.assignments);
   const effectiveReasons = route.reasons.filter(reason => applicableRoadReason(reason, route, transport));

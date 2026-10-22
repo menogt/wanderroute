@@ -2,7 +2,7 @@
 export type TransportPreference =
   | "PRIVATE_DRIVER" | "PUBLIC_TRANSPORT" | "MIXED" | "TUK_TUK_SELF_DRIVE" | "RECOMMEND";
 export type TransportMode =
-  | "PRIVATE_DRIVER" | "TUK_TUK_SELF_DRIVE" | "TRAIN" | "BUS"
+  | "PRIVATE_DRIVER" | "SELF_DRIVE" | "TUK_TUK_SELF_DRIVE" | "TRAIN" | "BUS"
   | "PUBLIC_TRANSPORT_UNSPECIFIED" | "UNASSIGNED";
 export type TransportValueEvidence = "VERIFIED" | "ESTIMATED" | "UNKNOWN";
 export type TransportLegStatus = "ROAD_ESTIMATE" | "PARTIAL_ROAD_ESTIMATE" | "UNROUTABLE" | "UNKNOWN";

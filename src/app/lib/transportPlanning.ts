@@ -36,7 +36,7 @@ export function transportLegFromRoad(road: RoadLeg | undefined, mode: TransportM
     }
     return base;
   }
-  if (mode === "TUK_TUK_SELF_DRIVE" && road?.source === "OSRM_TABLE" && road.distanceKm !== undefined) {
+  if ((mode === "TUK_TUK_SELF_DRIVE" || mode === "SELF_DRIVE") && road?.source === "OSRM_TABLE" && road.distanceKm !== undefined) {
     return { ...base, roadReferenceDistanceKm: road.distanceKm, routingSource: "OSRM_TABLE" };
   }
   return base;

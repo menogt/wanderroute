@@ -1,3 +1,4 @@
+import type { StayChoice } from "./planningCustomization";
 import { planningDate } from "./planningCalendar.ts";
 import type { CandidatePlace, PlanningDayV2, PlanningItemV2, TripBriefV1 } from "./planningTypes";
 import { arrivalReadyMinute, departureDeadlineMinute } from "./routeConstraints.ts";
@@ -63,7 +64,7 @@ export type DaySelection = { placeIds: string[]; descriptions?: { placeId: strin
 
 /** Pure schedule. Unknown transfer times stay unscheduled and block timed activities that day. */
 export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
-  transport: TransportPlan, places: CandidatePlace[], selections: DaySelection[]): PlanningDayV2[] {
+  transport: TransportPlan, places: CandidatePlace[], selections: DaySelection[], stays: Record<string, StayChoice> = {}): PlanningDayV2[] {
   const cities = routeDayCities(route, brief.durationDays);
   const transferByDay = new Map<number, { leg: TransportLeg; from: string; to: string }>();
   let transferDay = 1;
@@ -81,6 +82,8 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
     let activityEnd = 18 * 60;
     let scheduleKnown = true;
     const overnight = dayNumber < brief.durationDays;
+    const stay = stays[city];
+    const hotel = stay?.placeId ? places.find(place => place.databaseId === stay.placeId && place.city === city && place.category === "hotel") : undefined;
 
     if (dayNumber === 1 && brief.arrival?.location) {
       const ready = arrivalReadyMinute(brief);
@@ -140,10 +143,11 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
       const hours = openingWindow(place, planningDate(brief, index));
       const requested = activity.preferredStart ? Number(activity.preferredStart.slice(0, 2)) * 60 + Number(activity.preferredStart.slice(3)) : cursor;
       const proposed = hours ? Math.max(cursor, requested, hours.open) : Math.max(cursor, requested);
-      const canTime = scheduleKnown && proposed + duration <= activityEnd && proposed + duration <= 21 * 60 &&
+      const canTime = scheduleKnown && !place.sourceProvider?.startsWith("WanderRoute landmark guide") && proposed + duration <= activityEnd && proposed + duration <= 21 * 60 &&
         (!hours || proposed + duration <= hours.close);
       const start = canTime ? clock(proposed) : undefined;
       const end = canTime ? clock(proposed + duration) : undefined;
+      if (canTime && activity.preferredStart && start !== activity.preferredStart) warnings.push(`${place.name}: preferred start adjusted to fit this day and available opening hours.`);
       if (!canTime) warnings.push(`${place.name}: visit time needs confirmation.`);
       if (!hours && !activity.isFreeTime) warnings.push(`${place.name}: opening hours are unknown.`);
       items.push({ id: activity.id, city, ...(activity.isFreeTime ? { isFreeTime: true } : { placeId: activity.placeId }),
@@ -164,7 +168,8 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
     if (!activities.length) warnings.push(`No activity place was selected for ${city} on this day.`);
     return { day: dayNumber, city, ...(planningDate(brief, index) ? { date: planningDate(brief, index) } : {}),
       ...(overnight ? { overnightCity: city } : {}), flag: "📍", heroGradient: "", localTip: selection.note ?? "Check opening hours and reservations before travel.",
-      accommodation: overnight ? `Stay to confirm in ${city}` : "",
+      accommodation: overnight ? hotel?.name || stay?.name?.trim() || (stay?.area ? `Stay in ${stay.area}, ${city}` : `Stay to confirm in ${city}`) : "",
+      ...(overnight && hotel?.databaseId ? { accommodationPlaceId: hotel.databaseId } : {}),
       items, warnings };
   });
 }

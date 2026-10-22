@@ -112,7 +112,7 @@ export function applyPlanningV2Edit(session: PlanningV2Session, edit: PlanningV2
       throw new Error("That change would make the itinerary infeasible. The previous plan was kept.");
     }
     next.unscheduledActivities = shortlist;
-    return { ...session, detailed: next, editPast: [...(session.editPast ?? []), detailed].slice(-HISTORY_LIMIT),
+    return { ...session, result: next.planningContext ?? session.result, brief: next.planningContext?.brief ?? session.brief, selectedConceptId: next.itinerary.routeConceptId ?? session.selectedConceptId, detailed: next, editPast: [...(session.editPast ?? []), detailed].slice(-HISTORY_LIMIT),
       editFuture: [], editError: undefined };
   } catch (error) {
     return { ...session, editError: error instanceof Error ? error.message : "This edit could not be applied." };
@@ -122,13 +122,13 @@ export function applyPlanningV2Edit(session: PlanningV2Session, edit: PlanningV2
 export function undoPlanningV2Edit(session: PlanningV2Session): PlanningV2Session {
   if (!session.detailed || !session.editPast?.length) return session;
   const previous = session.editPast[session.editPast.length - 1];
-  return { ...session, detailed: previous, editPast: session.editPast.slice(0, -1),
+  return { ...session, result: previous.planningContext ?? session.result, brief: previous.planningContext?.brief ?? session.brief, selectedConceptId: previous.itinerary.routeConceptId ?? session.selectedConceptId, detailed: previous, editPast: session.editPast.slice(0, -1),
     editFuture: [session.detailed, ...(session.editFuture ?? [])].slice(0, HISTORY_LIMIT), editError: undefined };
 }
 
 export function redoPlanningV2Edit(session: PlanningV2Session): PlanningV2Session {
   if (!session.detailed || !session.editFuture?.length) return session;
   const [next, ...future] = session.editFuture;
-  return { ...session, detailed: next, editPast: [...(session.editPast ?? []), session.detailed].slice(-HISTORY_LIMIT),
+  return { ...session, result: next.planningContext ?? session.result, brief: next.planningContext?.brief ?? session.brief, selectedConceptId: next.itinerary.routeConceptId ?? session.selectedConceptId, detailed: next, editPast: [...(session.editPast ?? []), session.detailed].slice(-HISTORY_LIMIT),
     editFuture: future, editError: undefined };
 }

@@ -106,3 +106,22 @@
 .wr-v2-detail__day-nav { margin-top: 20px; }
 
 .wr-v2-detail__aside .wr-v2-map { padding: 0; }
+
+.wr-v2-customize { margin-block: 20px; padding: clamp(18px, 3vw, 30px); background: var(--wr-cream); border: 1px solid var(--wr-line-dark); border-radius: 6px; }
+.wr-v2-customize h2 { font: 700 1.8rem var(--wr-serif); color: var(--wr-midnight); }
+.wr-v2-customize p, .wr-v2-customize li { color: var(--wr-ink-soft); line-height: 1.6; }
+.wr-v2-customize fieldset { border: 0; padding: 0; min-width: 0; }
+.wr-v2-customize details { margin: 14px 0; border-top: 1px solid var(--wr-line-dark); padding-top: 12px; }
+.wr-v2-customize summary { font-weight: 700; min-height: 44px; cursor: pointer; color: var(--wr-midnight); }
+.wr-v2-customize__fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.wr-v2-customize label { display: grid; gap: 5px; margin-bottom: 12px; font-size: .88rem; color: var(--wr-midnight); }
+.wr-v2-customize :is(input:not([type=checkbox]), select, textarea) { width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--wr-line-dark); border-radius: 4px; background: var(--wr-ivory); color: var(--wr-midnight); padding: 9px; font: inherit; }
+.wr-v2-customize input[type=checkbox] { width: 20px; height: 20px; }
+.wr-v2-customize__interests { display: flex; flex-wrap: wrap; gap: 16px; padding-top: 15px; }
+.wr-v2-customize__interests label { display: flex; gap: 8px; align-items: center; min-height: 44px; text-transform: capitalize; }
+.wr-v2-customize__stop { margin: 14px 0; padding: 18px; border: 1px solid var(--wr-line-dark); background: var(--wr-ivory); }
+.wr-v2-customize__stop h3 { margin: 0 0 14px; color: var(--wr-midnight); }
+.wr-v2-customize__preview { border-left: 3px solid var(--wr-gold); padding: 16px 20px; margin-top: 16px; background: var(--wr-ivory); }
+.wr-v2-customize button { min-height: 44px; padding: 9px 14px; border: 1px solid var(--wr-line-dark); border-radius: 4px; color: var(--wr-midnight); background: var(--wr-ivory); font: inherit; cursor: pointer; }
+.wr-v2-customize :is(button, select, input, textarea):focus-visible { outline: 3px solid var(--wr-gold); outline-offset: 2px; }
+@media (max-width: 640px) { .wr-v2-customize__fields { grid-template-columns: 1fr; } }

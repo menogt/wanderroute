@@ -1,6 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, Clock3, MapPin, Pencil, Redo2,
   RefreshCw, Trash2, Undo2, WalletCards } from "lucide-react";
+import { PlanningShortlist } from "./PlanningShortlist";
+import { PlanningCustomizationPanel } from "./PlanningCustomizationPanel";
+import type { PlanningV2Session } from "../../lib/planningV2Session";
+import type { CustomizationDraft } from "../../lib/planningCustomization";
 import { PlanningBudgetPanel } from "./PlanningBudgetPanel";
 import { PlanningItineraryMap } from "./PlanningItineraryMap";
 import type { DetailedPlanningResult } from "../../lib/planningV2Itinerary";
@@ -47,7 +51,9 @@ function itemCost(ledger: CostLedger, itemId: string): string {
 }
 
 export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error, editError,
-  canUndo, canRedo, onBack, onRetry, onEdit, onUndo, onRedo }: {
+  canUndo, canRedo, session, onCustomize, onBack, onRetry, onEdit, onUndo, onRedo }: {
+  session: PlanningV2Session;
+  onCustomize: (draft: CustomizationDraft) => Promise<boolean>;
   detail: DetailedPlanningResult;
   concept: PlanningRouteConcept;
   brief: TripBriefV1;
@@ -63,6 +69,7 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
   onRedo: () => void;
 }) {
   const [activeDay, setActiveDay] = useState(1);
+  const [customizing, setCustomizing] = useState(false);
   const [editing, setEditing] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>();
   const [mobilePane, setMobilePane] = useState("itinerary");
@@ -71,6 +78,7 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
   const editHeading = useRef<HTMLHeadingElement>(null);
   const commitEdit = (edit: PlanningV2Edit) => { onEdit(edit); setAnnouncement("Edit checked. Review your itinerary and any messages shown."); if (edit.type === "remove" || edit.type === "move") editHeading.current?.focus(); };
   const { itinerary, ledger, validation } = detail;
+  useEffect(() => { setActiveDay(value => Math.min(value, itinerary.days.length)); }, [itinerary.days.length]);
   const day = itinerary.days[activeDay - 1] ?? itinerary.days[0];
   const dayActivities = day.items.filter(item => item.category === "activity");
   const paceLimit = 6;
@@ -80,7 +88,7 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
   const visibleIssues = validation.issues.filter(issue => !issue.code.startsWith("COST_")).slice(0, 10);
   return <section className="wr-v2 wr-v2-detail" aria-labelledby="wr-v2-detail-title">
     <div className="wr-v2__masthead"><div className="wr-v2__wrap">
-      <button type="button" className="wr-v2__back" onClick={onBack}><ArrowLeft size={17} /> Back to route comparison</button>
+      <button type="button" className="wr-v2__back" onClick={() => setCustomizing(true)}><ArrowLeft size={17} /> Adjust your journey</button>
       <p className="wr-kicker">Day-by-day route draft</p>
       <h1 id="wr-v2-detail-title">{itinerary.routeName}</h1>
       <p>{itinerary.totalDays} days · {itinerary.totalPeople} {itinerary.totalPeople === 1 ? "traveller" : "travellers"} · Your Sri Lanka travel draft.</p>
@@ -93,17 +101,20 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
         <div className="wr-v2-detail__actions">
           {detail.generationMode === "LIMITED_DRAFT" && !canUndo && !canRedo && <button type="button" className="wr-button wr-button--primary" onClick={onRetry} disabled={busy}>
             <RefreshCw size={16} /> {busy ? "Retrying…" : "Retry suggestions"}</button>}
+          <button type="button" className="wr-v2-detail__edit-toggle" disabled={busy} onClick={() => setCustomizing(value => !value)} aria-expanded={customizing}>Customize journey</button>
           <button type="button" className="wr-v2-detail__edit-toggle" onClick={() => setEditing(value => !value)}
             aria-expanded={editing}><Pencil size={16} aria-hidden="true" /> {editing ? "Finish editing" : "Edit activities"}</button>
-          <button type="button" className="wr-v2__text-link" onClick={onBack}>Compare routes</button>
+          <button type="button" className="wr-v2__text-link" onClick={() => setCustomizing(true)}>Compare routes</button>
         </div>
       </div>
       {error && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {error}</div>}
       {editError && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {editError}</div>}
+      {customizing && <PlanningCustomizationPanel session={session} busy={busy} onApply={onCustomize} onClose={() => setCustomizing(false)} />}
+      {brief.requestedCities.some(city => !itinerary.cities.includes(city)) && <section className="wr-v2__alert"><strong>Visits still to arrange</strong><p>{brief.requestedCities.filter(city => !itinerary.cities.includes(city)).join(", ")} have not been scheduled. Keep these requests in view while adjusting your bases and trip length.</p></section>}
       {editing && <div className="wr-v2-detail__edit-toolbar" aria-label="Activity editing history">
         <p>Changes stay in this planning session. Times, costs and feasibility are recalculated after each edit.</p>
-        <div><button type="button" onClick={onUndo} disabled={!canUndo}><Undo2 size={16} aria-hidden="true" /> Undo</button>
-          <button type="button" onClick={onRedo} disabled={!canRedo}><Redo2 size={16} aria-hidden="true" /> Redo</button></div>
+        <div><button type="button" onClick={() => { onUndo(); editHeading.current?.focus(); }} disabled={busy || !canUndo}><Undo2 size={16} aria-hidden="true" /> Undo</button>
+          <button type="button" onClick={() => { onRedo(); editHeading.current?.focus(); }} disabled={busy || !canRedo}><Redo2 size={16} aria-hidden="true" /> Redo</button></div>
       </div>}
       {validation.errors.length > 0 && <div className="wr-v2__alert" role="alert">This draft has conflicts to resolve: {validation.errors.map(issue => readableIssue(issue.code)).join(" · ")}. Keep editing to resolve them.</div>}
       <nav className="wr-v2-detail__day-nav" aria-label="Itinerary days">
@@ -132,7 +143,7 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
                 <div><button type="button" className="wr-v2-detail__activity-name" aria-pressed={selectedItemId === item.id} onClick={() => { setSelectedItemId(item.id); }}>{item.label}</button><p>{item.detail}</p>
                   {leg && <small>{leg.mode.replace(/_/g, " ").toLowerCase()} · {leg.durationMinutes === undefined ?
                     "journey time unknown" : `${Math.ceil(leg.durationMinutes)} min road-driving estimate`}</small>}
-                  {item.category === "activity" && <small>{item.durationMinutes} min visit estimate · Opening hours {detail.places.find(place => place.databaseId === item.placeId)?.openingHours ? "to check" : "unknown"}</small>}
+                  {item.category === "activity" && !item.isFreeTime && <small>{item.durationMinutes} min visit estimate · Opening hours {detail.places.find(place => place.databaseId === item.placeId)?.openingHours ? "to check" : "unknown"}</small>}
                   <small>{item.isFreeTime ? "Personal time; include any spending in your allowances." : itemCost(ledger, item.id)}</small>
                   {editing && item.category === "activity" && <div className="wr-v2-detail__item-editor">
                     <div className="wr-v2-detail__edit-buttons">
@@ -150,6 +161,7 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
                         {replacements.map(place => <option key={place.databaseId} value={place.databaseId}>{place.name}</option>)}
                       </select>
                     </label>}
+                    <label>Preferred start for {item.label}<input type="time" value={item.preferredStart ?? ""} onChange={event => commitEdit({ type: "timing", itemId: item.id, durationMinutes: item.durationMinutes ?? 90, preferredStart: event.target.value || undefined })} /></label>
                     <label>Visit duration for {item.label}<select value={item.durationMinutes ?? 90} onChange={event => commitEdit({ type: "timing", itemId: item.id, durationMinutes: Number(event.target.value), preferredStart: item.preferredStart })}>{[30,60,90,120,180,240].map(minutes => <option key={minutes} value={minutes}>{minutes} minutes</option>)}</select></label>
                     {compatibleDays.length > 0 && <label>Move {item.label} to
                       <select value="" onChange={event => event.target.value &&
@@ -164,7 +176,7 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
           </ol>
           {editing && <div className="wr-v2-detail__item-editor"><h3>Add to day {day.day}</h3><label>Search places in {day.city}<input value={search} onChange={event => setSearch(event.target.value)} type="search" /></label><label>Add an activity<select value="" onChange={event => event.target.value && commitEdit({ type: "add", day: day.day, placeId: event.target.value })}><option value="">{additions.length ? "Choose a place" : "No matching places"}</option>{additions.map(place => <option key={place.databaseId} value={place.databaseId}>{place.name}</option>)}</select></label><button type="button" onClick={() => commitEdit({ type: "free-time", day: day.day })}>Add free time</button>{detail.unscheduledActivities?.filter(item => item.city === day.city).map(item => <button type="button" key={item.id} onClick={() => commitEdit({ type: "restore", day: day.day, itemId: item.id })}>Restore {item.label}</button>)}</div>}
           <p className="wr-sr-only" role="status">{announcement}</p>
-          {day.overnightCity && <div className="wr-v2-detail__stay"><h3>Suggested stay</h3><p>{day.accommodation}</p><small>Availability and room price need confirmation.</small></div>}
+          {day.overnightCity && <div className="wr-v2-detail__stay"><h3>Your stay</h3><p>{day.accommodation}</p><small>{detail.customization?.stays[day.city]?.status === "TRAVELLER_BOOKED" ? "You report this is booked; not independently verified." : detail.customization?.stays[day.city]?.status === "NEEDS_BOOKING" ? "Needs booking; availability and rates must be confirmed." : detail.customization?.stays[day.city]?.status === "CHANGED_CANCELLED" ? "You recorded this arrangement as changed/cancelled. Choose or confirm another stay." : "Proposed; availability and room price need confirmation."}</small>{detail.customization?.stays[day.city]?.rooms && <small>{detail.customization.stays[day.city].rooms} rooms requested; occupancy needs checking.</small>}</div>}
           <div className="wr-v2-detail__day-cost"><span>Day cost</span><strong>{amountLabel(ledger.summary.byDay[day.day], ledger.currency)}</strong></div>
           {day.warnings && day.warnings.length > 0 && <details className="wr-v2-detail__day-warnings"><summary>Checks for this day</summary><ul>{day.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
         </article>
@@ -179,6 +191,7 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
             <div key={category}><dt>{category.toLowerCase().replace(/_/g, " ")}</dt><dd>{amountLabel(summary, ledger.currency)}</dd></div>)}</dl></section>
         </aside>
       </div>
+      <PlanningShortlist detail={detail} onEdit={commitEdit} />
       <div className="wr-v2-detail__summary" aria-label="Trip costs and status">
         <div><WalletCards size={19} /><span>Whole trip</span><strong>{amountLabel(ledger.summary.trip, ledger.currency)}</strong></div>
         <div><WalletCards size={19} /><span>Per traveller</span><strong>{amountLabel(ledger.summary.perPerson, ledger.currency)}</strong></div>

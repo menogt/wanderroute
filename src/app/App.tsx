@@ -25,6 +25,8 @@ import { planRouteConcepts, PlanningBriefError, type PlanningV2Issue } from "./l
 import { emptyPlanningV2Session, returnToPlanningConcepts, selectPlanningConcept,
   showPlanningConcepts, showPlanningItinerary, selectedPlanningConcept,
   type PlanningV2Session } from "./lib/planningV2Session";
+import { previewPlanningCustomization, type CustomizationDraft } from "./lib/planningCustomization";
+import { loadPlanningV2Places } from "./lib/planningV2Places";
 import { generatePlanningV2Itinerary } from "./lib/planningV2Itinerary";
 import { applyPlanningV2Edit, redoPlanningV2Edit, undoPlanningV2Edit } from "./lib/planningV2Editing";
 import { canRestoreScreen, CLASSIC_PLANNER_SCREEN, PRIMARY_PLANNER_SCREEN,
@@ -220,6 +222,26 @@ export default function App() {
     }
   };
 
+  const handleV2Customize = async (draft: CustomizationDraft): Promise<boolean> => {
+    if (v2DetailBusy) return false;
+    const proposal = previewPlanningCustomization(v2Session, draft);
+    if (!proposal.session) { setV2DetailError(proposal.problems.join(" ")); return false; }
+    const requestId = ++v2DetailRequest.current;
+    setV2DetailBusy(true); setV2DetailError(undefined);
+    try {
+      const concept = selectedPlanningConcept(proposal.session)!;
+      const added = concept.candidate.destinations.filter(stop => !v2Session.detailed!.places.some(place => place.city === stop.name));
+      const extra = added.length ? await loadPlanningV2Places({ ...concept.candidate, destinations: added }) : [];
+      if (requestId !== v2DetailRequest.current) return false;
+      const places = [...v2Session.detailed!.places, ...extra.filter(place => !v2Session.detailed!.places.some(old => old.databaseId === place.databaseId))];
+      const completed = previewPlanningCustomization(v2Session, draft, places);
+      if (!completed.session) { setV2DetailError(completed.problems.join(" ")); return false; }
+      setV2Session(completed.session);
+      return true;
+    } catch { setV2DetailError("Your previous plan is safe. We could not apply these changes; please retry."); return false; }
+    finally { if (requestId === v2DetailRequest.current) setV2DetailBusy(false); }
+  };
+
   const handleV2Compare = () => {
     v2DetailRequest.current += 1;
     setV2DetailBusy(false);
@@ -270,14 +292,14 @@ export default function App() {
           onExit={() => navigate("home")} />}
       {screen === "planning-v2" && v2Session.view === "itinerary" &&
         v2Session.detailed && selectedPlanningConcept(v2Session) &&
-        <PlanningV2ItineraryScreen key={v2Session.selectedConceptId} detail={v2Session.detailed}
+        <PlanningV2ItineraryScreen key="planning-workspace" detail={v2Session.detailed} session={v2Session} onCustomize={handleV2Customize}
           concept={selectedPlanningConcept(v2Session)!} brief={v2Session.result!.brief}
           busy={v2DetailBusy} error={v2DetailError} editError={v2Session.editError}
           canUndo={!!v2Session.editPast?.length} canRedo={!!v2Session.editFuture?.length}
           onBack={handleV2Compare} onRetry={handleV2Detail}
-          onEdit={edit => setV2Session(previous => applyPlanningV2Edit(previous, edit))}
-          onUndo={() => setV2Session(undoPlanningV2Edit)}
-          onRedo={() => setV2Session(redoPlanningV2Edit)} />}
+          onEdit={edit => { if (!v2DetailBusy) setV2Session(previous => applyPlanningV2Edit(previous, edit)); }}
+          onUndo={() => { if (!v2DetailBusy) setV2Session(undoPlanningV2Edit); }}
+          onRedo={() => { if (!v2DetailBusy) setV2Session(redoPlanningV2Edit); }} />}
       {(screen === "itinerary" || screen === "costs" || screen === "share") && !itinerary && (
         <HomeScreen navigate={navigate} onQuickPlan={handleQuickV2Plan} />
       )}
