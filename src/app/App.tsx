@@ -292,7 +292,7 @@ export default function App() {
           onExit={() => navigate("home")} />}
       {screen === "planning-v2" && v2Session.view === "itinerary" &&
         v2Session.detailed && selectedPlanningConcept(v2Session) &&
-        <PlanningV2ItineraryScreen key="planning-workspace" detail={v2Session.detailed} session={v2Session} onCustomize={handleV2Customize}
+        <PlanningV2ItineraryScreen key="planning-workspace" detail={v2Session.detailed} session={v2Session} onCustomize={handleV2Customize} onFinalize={revision => setV2Session(previous => ({ ...previous, preferredRevision: revision }))}
           concept={selectedPlanningConcept(v2Session)!} brief={v2Session.result!.brief}
           busy={v2DetailBusy} error={v2DetailError} editError={v2Session.editError}
           canUndo={!!v2Session.editPast?.length} canRedo={!!v2Session.editFuture?.length}

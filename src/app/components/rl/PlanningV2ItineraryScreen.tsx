@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, Clock3, MapPin, Pencil, Redo2,
   RefreshCw, Trash2, Undo2, WalletCards } from "lucide-react";
+import { PlanningReviewPanel } from "./PlanningReviewPanel";
 import { PlanningShortlist } from "./PlanningShortlist";
 import { PlanningCustomizationPanel } from "./PlanningCustomizationPanel";
 import type { PlanningV2Session } from "../../lib/planningV2Session";
@@ -51,8 +52,9 @@ function itemCost(ledger: CostLedger, itemId: string): string {
 }
 
 export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error, editError,
-  canUndo, canRedo, session, onCustomize, onBack, onRetry, onEdit, onUndo, onRedo }: {
+  canUndo, canRedo, session, onCustomize, onFinalize, onBack, onRetry, onEdit, onUndo, onRedo }: {
   session: PlanningV2Session;
+  onFinalize: (revision: string) => void;
   onCustomize: (draft: CustomizationDraft) => Promise<boolean>;
   detail: DetailedPlanningResult;
   concept: PlanningRouteConcept;
@@ -137,7 +139,7 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
               const compatibleDays = item.category === "activity" ? itinerary.days.filter(candidate =>
                 candidate.day !== day.day && candidate.city.toLowerCase() === day.city.toLowerCase() &&
                 candidate.items.filter(entry => entry.category === "activity").length < paceLimit &&
-                !candidate.items.some(entry => entry.placeId === item.placeId)) : [];
+                (!item.placeId || !candidate.items.some(entry => entry.placeId === item.placeId))) : [];
               return <li key={item.id} className={selectedItemId === item.id ? "is-selected" : undefined}>
                 <span className="wr-v2-detail__time">{item.plannedStart ?? item.time}</span>
                 <div><button type="button" className="wr-v2-detail__activity-name" aria-pressed={selectedItemId === item.id} onClick={() => { setSelectedItemId(item.id); }}>{item.label}</button><p>{item.detail}</p>
@@ -198,6 +200,7 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
         <div><MapPin size={19} /><span>Your budget target</span><strong>{brief.budget.currency} {brief.budget.amount.toLocaleString()}</strong></div>
       </div>
       <PlanningBudgetPanel detail={detail} brief={brief} onAllowance={(group, allowance) => commitEdit({ type: "allowance", group, allowance })} />
+      <PlanningReviewPanel detail={detail} brief={brief} concept={concept} busy={busy} approvedRevision={session.preferredRevision} onFinalize={onFinalize} />
       <p className="wr-v2-detail__footer"><Clock3 size={16} /> Activity durations are estimates. Train, bus and other unverified transfers have no invented timetable.</p>
     </div>
   </section>;

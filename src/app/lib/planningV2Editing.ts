@@ -95,7 +95,7 @@ export function applyPlanningV2Edit(session: PlanningV2Session, edit: PlanningV2
         throw new Error("Activities can move only between days in the same destination.");
       }
       if (target.length >= 6 ||
-          target.some(item => item.placeId === current.placeId || item.id === current.id)) {
+          target.some(item => current.placeId && item.placeId === current.placeId || item.id === current.id)) {
         throw new Error("The destination day is full or already includes this place.");
       }
       source.splice(index, 1);

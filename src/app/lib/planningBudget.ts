@@ -13,13 +13,14 @@ export function planningBudget(detail: DetailedPlanningResult, brief: TripBriefV
   const airportIds = new Set(detail.itinerary.days.flatMap(day => day.items)
     .filter(item => item.category === "transport" && /^(Arrival|Departure) transfer/.test(item.label)).map(item => `cost:${item.id}`));
   const rows = Object.entries(BUDGET_GROUPS).map(([key, label]) => ({ key: key as BudgetGroup, label, supported: 0,
-    supportedMaximum: 0, gaps: 0, allowance: undefined as PlanningAllowance | undefined, allowanceTotal: undefined as number | undefined }));
+    supportedMaximum: 0, gaps: 0, lineCount: 0, allowance: undefined as PlanningAllowance | undefined, allowanceTotal: undefined as number | undefined }));
   for (const line of detail.ledger.lines) {
     const category = line.input.category;
     const key: BudgetGroup = category === "ACCOMMODATION" ? "stays" : category === "FOOD" ? "meals" :
       category === "ENTRY_FEES" ? "admission" : category === "ACTIVITIES" ? "tours" : category === "TRANSPORT"
         ? line.input.id === "trip:local-transport" ? "local" : airportIds.has(line.input.id) ? "airports" : "intercity" : "miscellaneous";
     const row = rows.find(row => row.key === key)!;
+    row.lineCount++;
     if (line.total) { row.supported += line.total.minimum; row.supportedMaximum += line.total.maximum; }
     else row.gaps++;
   }
@@ -29,7 +30,7 @@ export function planningBudget(detail: DetailedPlanningResult, brief: TripBriefV
     row.allowance = allowance;
     if (!row.gaps || !allowance || !Number.isFinite(allowance.amount) || allowance.amount < 0) continue;
     const multiplier = allowance.basis === "PERSON_DAY" ? brief.durationDays * brief.travellerCount :
-      allowance.basis === "ROOM_NIGHT" ? Number.isInteger(allowance.rooms) && allowance.rooms! > 0 ? allowance.rooms! * (brief.durationDays - 1) : undefined : 1;
+      allowance.basis === "ROOM_NIGHT" ? Number.isInteger(allowance.rooms) && allowance.rooms! > 0 ? allowance.rooms! * row.gaps : undefined : 1;
     if (multiplier !== undefined) row.allowanceTotal = money(allowance.amount * multiplier);
   }
   const supported = money(rows.reduce((sum, row) => sum + row.supported, 0));

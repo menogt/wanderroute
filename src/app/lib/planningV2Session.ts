@@ -11,6 +11,7 @@ export type PlanningV2Session = {
   editPast?: DetailedPlanningResult[];
   editFuture?: DetailedPlanningResult[];
   editError?: string;
+  preferredRevision?: string;
 };
 
 export const emptyPlanningV2Session = (): PlanningV2Session => ({ view: "brief" });

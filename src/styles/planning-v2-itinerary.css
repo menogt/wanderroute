@@ -125,3 +125,17 @@
 .wr-v2-customize button { min-height: 44px; padding: 9px 14px; border: 1px solid var(--wr-line-dark); border-radius: 4px; color: var(--wr-midnight); background: var(--wr-ivory); font: inherit; cursor: pointer; }
 .wr-v2-customize :is(button, select, input, textarea):focus-visible { outline: 3px solid var(--wr-gold); outline-offset: 2px; }
 @media (max-width: 640px) { .wr-v2-customize__fields { grid-template-columns: 1fr; } }
+
+.wr-v2-review { margin-top: 28px; padding: clamp(20px, 4vw, 36px); border: 1px solid var(--wr-line-dark); background: var(--wr-cream); border-radius: 6px; }
+.wr-v2-review h2 { font: 700 clamp(1.6rem, 3vw, 2.2rem) var(--wr-serif); color: var(--wr-midnight); }
+.wr-v2-review h3 { margin-top: 24px; color: var(--wr-midnight); }
+.wr-v2-review p, .wr-v2-review li { color: var(--wr-ink-soft); line-height: 1.6; overflow-wrap: anywhere; }
+.wr-v2-review__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.wr-v2-review button, .wr-v2-review a { min-height: 44px; padding: 10px 15px; border: 1px solid var(--wr-line-dark); background: var(--wr-ivory); color: var(--wr-midnight); font: inherit; border-radius: 4px; }
+.wr-v2-review :is(button,a,input):focus-visible { outline: 3px solid var(--wr-gold); outline-offset: 3px; }
+.wr-v2-review button:disabled { opacity: .6; cursor: not-allowed; }
+.wr-v2-review__ack { display: flex; align-items: flex-start; gap: 12px; margin: 22px 0; line-height: 1.6; color: var(--wr-midnight); }
+.wr-v2-review__ack input { width: 22px; height: 22px; flex: 0 0 auto; margin-top: 3px; }
+.wr-v2-review details { padding: 12px 0; }
+.wr-v2-review summary { cursor: pointer; min-height: 44px; color: var(--wr-midnight); font-weight: 700; }
+.wr-v2-review__preferred { border-left: 3px solid var(--wr-gold); padding: 12px 16px; background: var(--wr-ivory); }
