@@ -1,3 +1,4 @@
+import { planningCalendarProblems } from "./planningCalendar.ts";
 import type { Currency, Interest } from "../components/rl/types";
 import { buildCandidateDestinations, generateRouteCandidates, knownPlanningDestinations } from "./routeCandidates.ts";
 import { calculateCostLedger, compareBudget, type CostLedger, type CostLineInput } from "./costLedger.ts";
@@ -86,6 +87,7 @@ export function validatePlanningBrief(brief: TripBriefV1): PlanningV2Issue[] {
     if (endpoint?.dateTime && (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(endpoint.dateTime) ||
         !Number.isFinite(Date.parse(endpoint.dateTime)))) error("ENDPOINT_TIME", "Enter a valid arrival or departure time.");
   }
+  for (const detail of planningCalendarProblems(brief)) error("CALENDAR", detail);
   return issues;
 }
 
@@ -228,7 +230,7 @@ function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix: Travel
   const readiness: ConceptReadiness = issues.some(issue => issue.severity === "ERROR") ? "INVALID" :
     issues.some(issue => issue.severity === "UNKNOWN") ? "NEEDS_CONFIRMATION" :
       issues.some(issue => issue.severity === "WARNING") ? "READY_WITH_WARNINGS" : "READY";
-  const knownDriverLegs = transport.legs.filter(leg => leg.mode === "PRIVATE_DRIVER" && leg.durationMinutes !== undefined);
+  const knownDriverLegs = [...transport.legs, transport.arrivalTransfer, transport.departureTransfer].filter((leg): leg is NonNullable<typeof leg> => !!leg).filter(leg => leg.mode === "PRIVATE_DRIVER" && leg.durationMinutes !== undefined);
   const knownDrivingMinutes = knownDriverLegs.length ? knownDriverLegs.reduce((sum, leg) => sum + leg.durationMinutes!, 0) : undefined;
   const longestKnownDrivingLegMinutes = knownDriverLegs.length ? Math.max(...knownDriverLegs.map(leg => leg.durationMinutes!)) : undefined;
   const stopIds = route.destinations.map(destination => `${route.id}:${destination.id}`);

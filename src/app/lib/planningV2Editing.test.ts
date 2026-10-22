@@ -1,3 +1,4 @@
+import { planningBudget } from "./planningBudget.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyPlanningV2Edit, redoPlanningV2Edit, undoPlanningV2Edit } from "./planningV2Editing.ts";
@@ -104,8 +105,8 @@ test("incompatible moves and over-budget replacements leave the prior validated 
   const full = applyPlanningV2Edit(original, { type: "move", itemId, targetDay: 2 });
   assert.ok(activityIds(full.detailed!.itinerary.days[1]).includes(itemId));
   const duplicate = applyPlanningV2Edit(full, { type: "move", itemId: otherId, targetDay: 2 });
-  assert.equal(duplicate.detailed, full.detailed);
-  assert.match(duplicate.editError!, /full/);
+  assert.ok(activityIds(duplicate.detailed!.itinerary.days[1]).includes(otherId));
+  assert.equal(duplicate.editError, undefined);
   const expensivePlaces = places.map(place => place.databaseId === "p4" ? { ...place,
     priceBasis: "PER_PERSON" as const,
     priceEvidence: { amount: 900, currency: "USD" as const, status: "KNOWN" as const, source: "Test tariff" } } : place);
@@ -113,4 +114,57 @@ test("incompatible moves and over-budget replacements leave the prior validated 
   const rejected = applyPlanningV2Edit(expensiveSession, { type: "replace", itemId, placeId: "p4" });
   assert.equal(rejected.detailed, expensiveSession.detailed);
   assert.match(rejected.editError!, /infeasible/);
+});
+
+
+test("add, free time, duration, removal and restore retain independent stable IDs through undo", async () => {
+  const original = await session();
+  const added = applyPlanningV2Edit(original, { type: "add", day: 3, placeId: "p4" });
+  const id = activityIds(added.detailed!.itinerary.days[2])[0];
+  assert.ok(id);
+  const free = applyPlanningV2Edit(added, { type: "free-time", day: 3 });
+  assert.equal(activityIds(free.detailed!.itinerary.days[2]).length, 2);
+  const timed = applyPlanningV2Edit(free, { type: "timing", itemId: id, durationMinutes: 120, preferredStart: "11:00" });
+  const item = timed.detailed!.itinerary.days[2].items.find(item => item.id === id)!;
+  assert.equal(item.plannedStart, "11:00");
+  assert.equal(item.plannedEnd, "13:00");
+  const removed = applyPlanningV2Edit(timed, { type: "remove", itemId: id });
+  assert.equal(removed.detailed!.unscheduledActivities?.[0].id, id);
+  const restored = applyPlanningV2Edit(removed, { type: "restore", day: 4, itemId: id });
+  assert.ok(activityIds(restored.detailed!.itinerary.days[3]).includes(id));
+  assert.equal(restored.detailed!.unscheduledActivities?.length, 0);
+  assert.equal(undoPlanningV2Edit(restored).detailed, removed.detailed);
+  assert.equal(redoPlanningV2Edit(undoPlanningV2Edit(restored)).detailed, restored.detailed);
+  assert.deepEqual(restored.detailed!.itinerary.days[0], original.detailed!.itinerary.days[0]);
+});
+
+test("an existing over-budget draft can be repaired without first becoming affordable", async () => {
+  const original = await session();
+  const result = { ...original.result!, brief: { ...brief, budget: { amount: 5, currency: "USD" as const } } };
+  const detail = await generatePlanningV2Itinerary(result, original.selectedConceptId!, { getPlaces: async () => places,
+    getAiPlan: async () => ({ schemaVersion: 2, routeConceptId: original.selectedConceptId!, days: [
+      { day: 1, placeIds: ["p1", "p3"] }, { day: 2, placeIds: [] }, { day: 3, placeIds: [] }, { day: 4, placeIds: [] }] }) });
+  const invalid = { ...original, result, detailed: detail };
+  const id = activityIds(detail.itinerary.days[0])[0];
+  const repaired = applyPlanningV2Edit(invalid, { type: "remove", itemId: id });
+  assert.equal(repaired.editError, undefined);
+  assert.equal(repaired.detailed!.ledger.summary.trip.minimum, 30);
+  assert.equal(repaired.detailed!.validation.budget.status, "OVER_BUDGET");
+});
+
+
+test("personal allowances use explicit rooms and party quantities without rewriting price evidence", async () => {
+  const original = await session();
+  const familyBrief = { ...brief, durationDays: 4, travellerCount: 6 };
+  let updated = applyPlanningV2Edit(original, { type: "allowance", group: "stays", allowance: { amount: 100, basis: "ROOM_NIGHT", rooms: 2 } });
+  updated = applyPlanningV2Edit(updated, { type: "allowance", group: "meals", allowance: { amount: 10, basis: "PERSON_DAY" } });
+  const budget = planningBudget(updated.detailed!, familyBrief);
+  assert.equal(budget.rows.find(row => row.key === "stays")?.allowanceTotal, 600);
+  assert.equal(budget.rows.find(row => row.key === "meals")?.allowanceTotal, 240);
+  assert.equal(budget.scenarioMinimum, 880); // 40 supported + 600 rooms + 240 meals
+  assert.ok(budget.uncovered.includes("Local transport"));
+  assert.equal(updated.detailed!.ledger, original.detailed!.ledger);
+  assert.equal(undoPlanningV2Edit(updated).detailed?.allowances?.meals, undefined);
+  const unknownRooms = planningBudget({ ...updated.detailed!, allowances: { stays: { amount: 100, basis: "ROOM_NIGHT" } } }, familyBrief);
+  assert.equal(unknownRooms.rows.find(row => row.key === "stays")?.allowanceTotal, undefined);
 });

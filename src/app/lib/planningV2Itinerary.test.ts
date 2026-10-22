@@ -227,3 +227,31 @@ test("V2 endpoint rejects malformed JSON and invented place IDs without touching
     else process.env.GROQ_API_KEY = originalKey;
   }
 });
+
+
+test("fallback distributes distinct places, retains multiple activities and does not assign arbitrary hotels", async () => {
+  const input = { ...brief, durationDays: 4, requestedCities: ["Kandy"] };
+  const result = await route(input);
+  const candidates = [...places, ...Array.from({length: 5}, (_, i) => ({ databaseId: `sight-${i}`, city: "Kandy", category: "attraction", name: `Sight ${i}` }))];
+  const detail = await generatePlanningV2Itinerary(result, result.concepts[0].routeConcept.id, {
+    getPlaces: async () => candidates, getAiPlan: async () => { throw new Error("unavailable"); } });
+  const ids = detail.itinerary.days.flatMap(day => day.items.filter(item => item.category === "activity").map(item => item.placeId));
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(detail.itinerary.days[0].items.filter(item => item.category === "activity").length, 2);
+  assert.ok(detail.itinerary.days.every(day => !day.accommodationPlaceId));
+  assert.equal(detail.generationMode, "LIMITED_DRAFT");
+});
+
+test("23:00 arrival permits a nearby overnight transfer with explicit next-day clocks and recovery", async () => {
+  const input: TripBriefV1 = { ...brief, durationDays: 7, requestedCities: ["Negombo"],
+    arrival: { location: "CMB", dateTime: "2027-02-01T23:00" }, departure: { location: "CMB", dateTime: "2027-02-07T18:00" } };
+  const result = await planRouteConcepts(input, { getMatrix: async locations => matrix(locations, 45) });
+  assert.ok(result.concepts.length);
+  assert.equal(result.concepts[0].knownDrivingMinutes, 90);
+  const detail = await generatePlanningV2Itinerary(result, result.concepts[0].routeConcept.id, { getPlaces: async () => [] });
+  const transfer = detail.itinerary.days[0].items.find(item => item.category === "transport")!;
+  assert.equal(transfer.plannedStart, "2027-02-02T00:30");
+  assert.equal(transfer.plannedEnd, "2027-02-02T01:15");
+  assert.equal(detail.itinerary.days[0].items.filter(item => item.category === "activity").length, 0);
+  assert.ok(!detail.validation.errors.length, JSON.stringify(detail.validation.errors));
+});

@@ -89,7 +89,7 @@ export function departureDayUsableMinutes(brief: TripBriefV1): number | undefine
 }
 export function arrivalTransferBudgetMinutes(brief: TripBriefV1): number | undefined {
   const arrival = arrivalMinute(brief);
-  return arrival === undefined ? undefined : Math.max(0,
+  return arrival === undefined ? undefined : arrival >= 21 * 60 ? 120 : Math.max(0,
     TRANSFER_POLICY.arrivalTransferEndMinute - arrival - TRANSFER_POLICY.arrivalProcessingMinutes);
 }
 export function departureTransferBudgetMinutes(brief: TripBriefV1): number | undefined {

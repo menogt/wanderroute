@@ -1,3 +1,4 @@
+import { planningCalendarProblems, scheduleMinute } from "./planningCalendar.ts";
 import type { CandidatePlace, PlanningItineraryV2, TripBriefV1 } from "./planningTypes";
 import type { CandidateRoute } from "./routeTypes";
 import { arrivalReadyMinute, arrivalTransferBudgetMinutes, departureDeadlineMinute,
@@ -78,6 +79,7 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
   const issues: ValidationIssue[] = [];
   const add = (code: string, severity: ValidationSeverity, extra: Omit<ValidationIssue, "code" | "severity"> = {}) =>
     issues.push({ code, severity, ...extra });
+  for (const problem of planningCalendarProblems(brief)) add("CALENDAR_CONFLICT", "ERROR", { details: { problem } });
   const days = itinerary.days ?? [];
   const places = new Map((input.trustedPlaces ?? []).filter(place => place.databaseId)
     .map(place => [place.databaseId!, place]));
@@ -121,8 +123,8 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
       if (item.city.toLowerCase() !== day.city.toLowerCase() && item.category !== "transport") {
         add("ITEM_CITY_MISMATCH", "ERROR", { day: day.day, itemId: item.id });
       }
-      const start = localClockMinute(item.plannedStart);
-      const statedEnd = localClockMinute(item.plannedEnd);
+      const start = scheduleMinute(item.plannedStart, day.date);
+      const statedEnd = scheduleMinute(item.plannedEnd, day.date);
       if (item.plannedStart && start === undefined || item.plannedEnd && statedEnd === undefined) {
         add("ITEM_TIME_INVALID", "ERROR", { day: day.day, itemId: item.id });
       }
@@ -132,7 +134,7 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
         add("ITEM_DURATION_INVALID", "ERROR", { day: day.day, itemId: item.id });
       }
       if (start !== undefined && end !== undefined) {
-        if (end <= start || end > 24 * 60) add("ITEM_TIME_ORDER_INVALID", "ERROR", { day: day.day, itemId: item.id });
+        if (end <= start || end > (day.day === 1 && item.transportLegId === transportPlan.arrivalTransfer?.id ? 1800 : 1440)) add("ITEM_TIME_ORDER_INVALID", "ERROR", { day: day.day, itemId: item.id });
         else timed.push({ start, end, id: item.id });
         if (item.durationMinutes !== undefined && Math.abs(end - start - item.durationMinutes) > 0.01) {
           add("ITEM_DURATION_MISMATCH", "ERROR", { day: day.day, itemId: item.id });
@@ -210,8 +212,8 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
     if (scheduled.length === 0) add("TRANSFER_UNSCHEDULED", "UNKNOWN", { legId: leg.id, day: transferDay });
     for (const entry of scheduled) {
       if (entry.day !== transferDay) add("TRANSFER_DAY_MISMATCH", "ERROR", { legId: leg.id, day: entry.day });
-      const start = localClockMinute(entry.item.plannedStart);
-      const end = localClockMinute(entry.item.plannedEnd) ??
+      const start = scheduleMinute(entry.item.plannedStart, days[entry.day - 1]?.date);
+      const end = scheduleMinute(entry.item.plannedEnd, days[entry.day - 1]?.date) ??
         (start !== undefined && entry.item.durationMinutes !== undefined ? start + entry.item.durationMinutes : undefined);
       if (start === undefined || end === undefined) add("TRANSFER_SCHEDULE_TIME_UNKNOWN", "UNKNOWN", { legId: leg.id, day: entry.day });
       if (leg.durationMinutes !== undefined && start !== undefined && end !== undefined &&
@@ -243,8 +245,8 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
     if (!leg) { add(`${kind}_TRANSFER_UNKNOWN`, "UNKNOWN", { day }); return; }
     inspectTransportLeg(leg, day);
     const scheduled = days[day - 1]?.items?.find(item => item.category === "transport" && item.transportLegId === leg.id);
-    const scheduledStart = localClockMinute(scheduled?.plannedStart);
-    const scheduledEnd = localClockMinute(scheduled?.plannedEnd);
+    const scheduledStart = scheduleMinute(scheduled?.plannedStart, days[day - 1]?.date);
+    const scheduledEnd = scheduleMinute(scheduled?.plannedEnd, days[day - 1]?.date);
     if (!scheduled || scheduledStart === undefined || scheduledEnd === undefined) {
       add(`${kind}_TRANSFER_SCHEDULE_UNKNOWN`, "UNKNOWN", { day, legId: leg.id });
     } else if (kind === "ARRIVAL" && arrivalReadyMinute(brief) !== undefined &&

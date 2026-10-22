@@ -166,7 +166,7 @@ export default function App() {
 
   const handleV2Plan = async (brief: TripBriefV1) => {
     if (v2Busy) return;
-    v2DetailRequest.current += 1;
+    const requestId = ++v2DetailRequest.current;
     setV2Session({ view: "brief", brief });
     setV2DetailBusy(false);
     setV2DetailError(undefined);
@@ -174,13 +174,22 @@ export default function App() {
     setV2Issues([]);
     try {
       const result = await planRouteConcepts(brief);
-      setV2Session(showPlanningConcepts(result));
+      if (requestId !== v2DetailRequest.current) return;
+      const first = result.concepts[0];
+      if (first) {
+        const selectedId = first.routeConcept.id;
+        const selected = selectPlanningConcept(showPlanningConcepts(result), selectedId);
+        setV2DetailBusy(true);
+        const detailed = await generatePlanningV2Itinerary(result, selectedId);
+        if (requestId !== v2DetailRequest.current) return;
+        setV2Session(showPlanningItinerary(selected, selectedId, detailed));
+      } else setV2Session(showPlanningConcepts(result));
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (failure) {
       setV2Issues(failure instanceof PlanningBriefError ? failure.issues : [{ code: "PLANNING_ERROR", severity: "ERROR",
         detail: "We could not compare routes. Your trip details are still here; please try again." }]);
     } finally {
-      setV2Busy(false);
+      if (requestId === v2DetailRequest.current) { setV2Busy(false); setV2DetailBusy(false); }
     }
   };
 

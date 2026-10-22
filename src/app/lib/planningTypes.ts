@@ -102,6 +102,8 @@ export type PlanningItemV2 = Omit<DayItem, "id" | "cost"> & {
   plannedStart?: string;
   plannedEnd?: string;
   durationMinutes?: number;
+  preferredStart?: string;
+  isFreeTime?: boolean;
   durationEvidence?: "ESTIMATED" | "KNOWN";
   /** Stable fromId>toId key for a scheduled intercity transport item. */
   transportLegId?: string;

@@ -11,7 +11,7 @@ const CATEGORY_LIMITS = [
 ] as const;
 const MAX_CITIES = 8;
 const QUERY_TIMEOUT_MS = 8_000;
-const NON_ACTIVITY_NAME = /\b(?:restaurant|caf[eé]|coffee|food|dosai|dosa|hotel|resort|guest\s?house|inn|bar|pub|kfc|pizza|bakery|take\s?away|super(?:market|centre|center)|mall|shop|store|lounge)\b/i;
+const NON_ACTIVITY_NAME = /\b(?:tat+oo|tatoo|salon|spa|repair|agency|studio|restaurant|caf[eé]|coffee|food|dosai|dosa|hotel|resort|guest\s?house|inn|bar|pub|kfc|pizza|bakery|take\s?away|super(?:market|centre|center)|mall|shop|store|lounge)\b/i;
 const RELIGIOUS_PLACE_NAME = /\b(?:temple|vihara|viharaya|kovil|devalaya|mosque|masjid|church|chapel|cathedral|stupa|buddha|monastery|shrine|sacred|piriwena|pirivena|bodhi|maligawa)\b/i;
 
 function stableSlug(value: string): string {

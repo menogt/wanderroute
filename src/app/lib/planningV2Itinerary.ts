@@ -1,10 +1,12 @@
+import type { PlanningAllowances } from "./planningBudget";
+import { arrivalReadyMinute } from "./routeConstraints.ts";
 import { calculateCostLedger, type CostLedger, type CostLineInput, type ExchangeRate } from "./costLedger.ts";
 import { validatePlanningItinerary, type ValidationResult } from "./itineraryValidation.ts";
 import type { CandidatePlace, PlanningItineraryV2, TripBriefV1 } from "./planningTypes";
 import type { PlanningRouteConcept, PlanningV2Result, ConceptReadiness } from "./planningV2";
 import { loadPlanningV2Places, eligibleActivityPlaces } from "./planningV2Places.ts";
 import { requestAiActivityPlan, validateAiActivityPlan, type AiActivityPlan } from "./planningV2ItineraryService.ts";
-import { routeDayCities, schedulePlanningDays, type DaySelection } from "./planningV2Scheduling.ts";
+import { routeDayCities, schedulePlanningDays, type DaySelection, type ActivitySelection } from "./planningV2Scheduling.ts";
 import type { TransportLeg, TransportPlan } from "./transportTypes";
 
 export type DetailedPlanningResult = {
@@ -14,7 +16,9 @@ export type DetailedPlanningResult = {
   readiness: ConceptReadiness;
   places: CandidatePlace[];
   generationMode: "AI" | "LIMITED_DRAFT";
+  allowances?: PlanningAllowances;
   generationIssue?: string;
+  unscheduledActivities?: (ActivitySelection & { city: string; label: string })[];
 };
 export type DetailedPlanningServices = {
   getPlaces?: (route: PlanningRouteConcept["candidate"]) => Promise<CandidatePlace[]>;
@@ -42,18 +46,17 @@ function buildCostLines(brief: TripBriefV1, days: PlanningItineraryV2["days"],
   const lines: CostLineInput[] = [];
   for (const day of days) {
     if (day.overnightCity) {
-      const hotel = day.accommodationPlaceId ? byId.get(day.accommodationPlaceId) : undefined;
       lines.push({ id: `day-${day.day}:stay`, day: day.day, category: "ACCOMMODATION",
         description: `Stay in ${day.city}; room count and availability to confirm`, quantity: 1,
         periodCount: 1, periodUnit: "NIGHT", chargingBasis: "PER_ROOM",
-        unitPrice: sourcedPrice(hotel, "PER_ROOM_NIGHT") ?? unknown(brief.budget.currency,
+        unitPrice: unknown(brief.budget.currency,
           "No sourced room-night price or room allocation") });
     }
     lines.push({ id: `day-${day.day}:food`, day: day.day, category: "FOOD",
       description: `Meals in ${day.city}`, quantity: brief.travellerCount,
       chargingBasis: "PER_PERSON", unitPrice: unknown(brief.budget.currency, "No sourced meal price") });
     for (const item of day.items) {
-      if (item.category === "activity") {
+      if (item.category === "activity" && !item.isFreeTime) {
         const place = item.placeId ? byId.get(item.placeId) : undefined;
         lines.push({ id: `cost:${item.id}`, day: day.day,
           category: place?.category === "beach" ? "ACTIVITIES" : "ENTRY_FEES",
@@ -70,6 +73,7 @@ function buildCostLines(brief: TripBriefV1, days: PlanningItineraryV2["days"],
       }
     }
   }
+  lines.push({ id: "trip:local-transport", category: "TRANSPORT", description: "Local journeys between activities", quantity: 1, chargingBasis: "FIXED", unitPrice: unknown(brief.budget.currency, "Local transport has not been priced") });
   lines.push({ id: "trip:miscellaneous", category: "MISCELLANEOUS", description: "Other trip expenses",
     quantity: 1, chargingBasis: "FIXED", unitPrice: unknown(brief.budget.currency,
       "Miscellaneous costs have not been priced") });
@@ -79,8 +83,16 @@ function buildCostLines(brief: TripBriefV1, days: PlanningItineraryV2["days"],
 function limitedSelections(brief: TripBriefV1, route: PlanningRouteConcept["candidate"],
   places: CandidatePlace[]): DaySelection[] {
   const cities = routeDayCities(route, brief.durationDays);
-  return cities.map(city => ({ placeIds: eligibleActivityPlaces(places, city).slice(0, 1)
-    .map(place => place.databaseId!) }));
+  const used = new Set<string>();
+  const capacity = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[brief.pace ?? "BALANCED"];
+  return cities.map((city, index) => {
+    const arrivalRest = index === 0 && (arrivalReadyMinute(brief) ?? 0) >= 18 * 60;
+    const departure = index === cities.length - 1 && !!brief.departure;
+    const available = eligibleActivityPlaces(places, city).filter(place => !used.has(place.databaseId!));
+    const chosen = arrivalRest || departure ? [] : available.slice(0, capacity);
+    chosen.forEach(place => used.add(place.databaseId!));
+    return { placeIds: chosen.map(place => place.databaseId!), note: arrivalRest ? "Arrival, check-in and rest." : departure ? "Leave time for packing and your departure transfer." : "Explore at your own pace. Local journeys and opening hours need checking." };
+  });
 }
 
 function buildDetailedPlanningResult(result: PlanningV2Result, selectedId: string,
@@ -123,8 +135,10 @@ export function recalculatePlanningV2Itinerary(result: PlanningV2Result, selecte
   if (previous.itinerary.routeConceptId !== selectedId || selections.length !== result.brief.durationDays) {
     throw new Error("The edited itinerary no longer matches the selected route.");
   }
-  return buildDetailedPlanningResult(result, selectedId, previous.places, selections,
-    previous.generationMode, previous.generationIssue, previous.ledger.exchangeRates);
+  return { ...buildDetailedPlanningResult(result, selectedId, previous.places, selections,
+    previous.generationMode, previous.generationIssue, previous.ledger.exchangeRates),
+    allowances: previous.allowances,
+    unscheduledActivities: previous.unscheduledActivities ?? [] };
 }
 
 /** The selected route, transport and matrix are authoritative; AI only selects allowed place IDs. */

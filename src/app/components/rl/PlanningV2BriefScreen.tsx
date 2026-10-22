@@ -97,7 +97,7 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
           <button type="button" className="wr-v2__back" onClick={onExit}><ArrowLeft size={17} /> Back to home</button>
           <p className="wr-kicker">Route planning · Preview</p>
           <h1 id="wr-v2-brief-title">Start with the journey you want.</h1>
-          <p>Compare practical route concepts before building a day-by-day plan. No booking or quote is created here.</p>
+          <p>Get a day-by-day draft with an interactive map, then make the journey your own. No booking is made.</p>
           <button type="button" className="wr-v2__text-link" onClick={onClassic}>Use Classic Planner</button>
         </div>
       </div>
@@ -202,9 +202,9 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
           </div>
         </div>
         <div className="wr-v2__form-actions">
-          <span>Compare route concepts first, then build a day-by-day draft from your choice.</span>
+          <span>We will prepare an initial itinerary. You can inspect alternatives and customize it afterwards.</span>
           <button className="wr-button wr-button--primary" type="submit" disabled={busy}>
-            {busy ? "Checking routes…" : "Compare routes"} {!busy && <ArrowRight size={17} />}
+            {busy ? "Checking routes…" : "Create my itinerary"} {!busy && <ArrowRight size={17} />}
           </button>
         </div>
       </form>

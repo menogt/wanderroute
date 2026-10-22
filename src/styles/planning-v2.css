@@ -227,3 +227,5 @@
   .wr-v2__comparison, .wr-v2__selected-layout { padding-bottom: 108px; }
   .wr-v2__concept-list { grid-template-columns: 1fr; }
 }
+
+.wr-v2__masthead .wr-v2__text-link { color: var(--wr-ivory); }

@@ -114,6 +114,7 @@ export function TopNav({
           <button
             type="button"
             className="wr-topnav__cta"
+            aria-label="Plan Your Trip"
             onClick={() => navigate("planner")}
           >
             <span className="wr-topnav__cta-full">Plan Your Trip</span>
