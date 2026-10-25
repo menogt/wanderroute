@@ -1,0 +1,13 @@
+# Context for a new account
+
+Owner is building WanderRoute, a production Sri Lanka travel planner. Source menogt/wanderroute, Netlify https://wanderroute.netlify.app/. Current checkout and evidence paths are in START_HERE. Work spans several sessions; preserve existing local changes. A previous test count or summary is not proof that code is committed, public or visually verified.
+
+Owner rejects stopping at architecture reports or reducing the product vision to a sparse activity editor. Deliver recognizable day-by-day itineraries first, retain the original Explore/Classic map appearance AND route-track behavior, meaningful multiple activities and practical arrivals/transfers/stays, full customization with consequences/undo/commitment protections, rational requested-destination coverage, useful evidence-based cost estimates, booking preparation/assistance and an excellent current-state PDF. Classic remains available and is the minimum functional baseline.
+
+Settled: V2 is public primary without feature-flag visibility restriction. Real AI missing configuration may be a documented limitation when a safe clearly labeled limited draft works; it must not be falsely called AI success. Quotes/bookings/payments must remain disabled in V2 until complete. Preferred/finalized means personal draft choice only. Current pricing is supported/recorded subtotal plus personal allowances, not a researched current-market estimator; this remains an unmet product requirement.
+
+Latest task is secure verification and account handover, not a new feature stage: preserve local work/config/.claude, inspect all diffs/secrets, fresh tests/TypeScript/build/whitespace, actual desktop/tablet/phone scenarios, true geometry comparison, PDF/current state, seven/ten-day rationality and documented limitations. Supported browser alternatives are explicitly allowed when native pipe fails. No changes to production AI config, quote submissions or commercial integrations during this task.
+
+Conditional authorization exists for focused commits and ordinary fast-forward origin/main push once required gates pass. Before pushing state exact files/contents/tests/limitations and remote/branch/author. Do not ask for routine Git permission, force-push, rewrite history, discard user work or start Task9. If a real gate fails, preserve changes and report exact issue.
+
+Read all ten handover files and actual Git/source state. The owner should not need previous chat memory. Historical stale CLAUDE.md claims browser Groq is active are superseded by server-side code. Keep the application focused on normal traveler needs.
