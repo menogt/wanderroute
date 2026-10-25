@@ -1,4 +1,5 @@
 import type { StayChoice } from "./planningCustomization";
+import { activityPracticalDetail, visitDurationEstimate } from "./planningActivityChoices.ts";
 import { planningDate } from "./planningCalendar.ts";
 import type { CandidatePlace, PlanningDayV2, PlanningItemV2, TripBriefV1 } from "./planningTypes";
 import { arrivalReadyMinute, departureDeadlineMinute } from "./routeConstraints.ts";
@@ -75,6 +76,8 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
   });
   return cities.map((city, index) => {
     const dayNumber = index + 1;
+    const excursion = transport.excursions?.find(visit => visit.day === dayNumber);
+    const activityCity = excursion?.city ?? city;
     const warnings: string[] = [];
     const items: PlanningItemV2[] = [];
     let activityStart = 9 * 60;
@@ -127,7 +130,17 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
       else activityEnd = Math.min(activityEnd, deadline);
     }
 
-    const allowed = new Map(eligibleActivityPlaces(places, city)
+    if (excursion) {
+      items.push(transportItem(dayNumber, excursion.outbound, `${city} to ${excursion.city} (day visit)`, scheduleKnown && excursion.outbound.durationMinutes !== undefined ? transferStart : undefined));
+      if (excursion.outbound.durationMinutes === undefined || excursion.inbound.durationMinutes === undefined) {
+        scheduleKnown = false;
+        warnings.push("Day visit: outbound and return services, journey times and fares need confirmation. This is not a confirmed excursion.");
+      } else {
+        activityStart = Math.max(activityStart, transferStart + Math.ceil(excursion.outbound.durationMinutes) + 30);
+        activityEnd = Math.min(activityEnd, 18 * 60 - Math.ceil(excursion.inbound.durationMinutes) - 30);
+      }
+    }
+    const allowed = new Map(eligibleActivityPlaces(places, activityCity)
       .map(place => [place.databaseId!, place]));
     const selection = selections[index] ?? { placeIds: [] };
 
@@ -137,9 +150,9 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
       description: selection.descriptions?.find(item => item.placeId === id)?.text,
     }));
     for (const activity of activities) {
-      const place = activity.isFreeTime ? { name: "Free time", city, category: "free-time" } as CandidatePlace : allowed.get(activity.placeId);
+      const place = activity.isFreeTime ? { name: "Free time", city: activityCity, category: "free-time" } as CandidatePlace : allowed.get(activity.placeId);
       if (!place) throw new Error(`An activity is outside the selected route's allowed places: ${activity.placeId}`);
-      const duration = activity.durationMinutes ?? 90;
+      const duration = activity.durationMinutes ?? (activity.isFreeTime ? 60 : visitDurationEstimate(place));
       const hours = openingWindow(place, planningDate(brief, index));
       const requested = activity.preferredStart ? Number(activity.preferredStart.slice(0, 2)) * 60 + Number(activity.preferredStart.slice(3)) : cursor;
       const proposed = hours ? Math.max(cursor, requested, hours.open) : Math.max(cursor, requested);
@@ -150,24 +163,28 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
       if (canTime && activity.preferredStart && start !== activity.preferredStart) warnings.push(`${place.name}: preferred start adjusted to fit this day and available opening hours.`);
       if (!canTime) warnings.push(`${place.name}: visit time needs confirmation.`);
       if (!hours && !activity.isFreeTime) warnings.push(`${place.name}: opening hours are unknown.`);
-      items.push({ id: activity.id, city, ...(activity.isFreeTime ? { isFreeTime: true } : { placeId: activity.placeId }),
+      items.push({ id: activity.id, city: activityCity, ...(activity.isFreeTime ? { isFreeTime: true } : { placeId: activity.placeId }),
         ...(activity.preferredStart ? { preferredStart: activity.preferredStart } : {}),
         placeEvidence: { status: "KNOWN", ...(place.sourceProvider ? { source: place.sourceProvider } : {}) },
         ...(place.coordinates ? { coordinates: place.coordinates } : {}),
         ...(place.priceEvidence ? { priceEvidence: place.priceEvidence } : {}),
         time: start ?? "Time to confirm", icon: "✦", label: place.name,
-        detail: activity.description ?? "Suggested from the available place records; visit details need confirmation.",
+        detail: activity.description ?? activityPracticalDetail(place),
         category: "activity", durationMinutes: duration, durationEvidence: "ESTIMATED",
         ...(start && end ? { plannedStart: start, plannedEnd: end } : {}),
       });
       if (canTime) cursor = proposed + duration + 30;
     }
-    items.push({ id: `day-${dayNumber}:meal`, city, time: "Venue to choose", icon: "◌",
+    if (excursion) {
+      const allTimed = items.filter(item => item.category === "activity").every(item => !!item.plannedEnd);
+      items.push(transportItem(dayNumber, excursion.inbound, `${excursion.city} back to ${city}`, scheduleKnown && allTimed ? cursor : undefined));
+    }
+    items.push({ id: `day-${dayNumber}:meal`, city: activityCity, time: "Venue to choose", icon: "◌",
       label: "Meal in town", detail: "Choose a venue; price and opening hours are not confirmed.", category: "meal" });
     if (overnight) warnings.push(`Accommodation in ${city} needs confirmation.`);
     if (!activities.length) warnings.push(`No activity place was selected for ${city} on this day.`);
     return { day: dayNumber, city, ...(planningDate(brief, index) ? { date: planningDate(brief, index) } : {}),
-      ...(overnight ? { overnightCity: city } : {}), flag: "📍", heroGradient: "", localTip: selection.note ?? "Check opening hours and reservations before travel.",
+      ...(overnight ? { overnightCity: city } : {}), ...(excursion ? { visitCity: excursion.city } : {}), flag: "📍", heroGradient: "", localTip: selection.note ?? "Check opening hours and reservations before travel.",
       accommodation: overnight ? hotel?.name || stay?.name?.trim() || (stay?.area ? `Stay in ${stay.area}, ${city}` : `Stay to confirm in ${city}`) : "",
       ...(overnight && hotel?.databaseId ? { accommodationPlaceId: hotel.databaseId } : {}),
       items, warnings };

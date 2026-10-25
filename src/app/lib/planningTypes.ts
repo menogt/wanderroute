@@ -111,6 +111,7 @@ export type PlanningItemV2 = Omit<DayItem, "id" | "cost"> & {
 };
 export type PlanningDayV2 = Omit<DayPlan, "items" | "accommodationCostPerNight" | "dailyCostPerPerson"> & {
   items: PlanningItemV2[];
+  visitCity?: string;
   date?: string;
   overnightCity?: string;
   accommodationPlaceId?: string;

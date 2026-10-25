@@ -139,3 +139,5 @@
 .wr-v2-review details { padding: 12px 0; }
 .wr-v2-review summary { cursor: pointer; min-height: 44px; color: var(--wr-midnight); font-weight: 700; }
 .wr-v2-review__preferred { border-left: 3px solid var(--wr-gold); padding: 12px 16px; background: var(--wr-ivory); }
+
+.wr-v2-draft-note { color: var(--wr-ink-soft); font-size: .85rem; line-height: 1.6; margin: 10px 0 20px; }

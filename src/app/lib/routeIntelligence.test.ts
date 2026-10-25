@@ -61,6 +61,37 @@ test("7-day balanced auto route uses current city seed and allocates six nights"
   assert.equal(result[0].feasibility, "FEASIBLE");
 });
 
+test("the same seven requested destinations gain overnight coverage with ten days", () => {
+  const requestedCities = ["Negombo", "Sigiriya", "Dambulla", "Kandy", "Ella", "Mirissa", "Galle"];
+  const matrix = fixtureMatrix(requestedCities);
+  const seven = routes({ ...base, durationDays: 7, requestedCities }, matrix).find(route => route.feasibility !== "REJECTED")!;
+  const ten = routes({ ...base, durationDays: 10, requestedCities }, matrix).find(route => route.feasibility !== "REJECTED")!;
+  assert.ok(ten.destinations.length > seven.destinations.length);
+  assert.equal(ten.destinations.length, 7);
+  assert.equal(seven.nights.reduce((sum, value) => sum + value, 0), 6);
+  assert.equal(ten.nights.reduce((sum, value) => sum + value, 0), 9);
+  const covered = new Set(seven.destinations.map(place => place.name));
+  for (const city of requestedCities.filter(city => !covered.has(city))) assert.ok(seven.reasons.some(reason => reason.code === "REQUESTED_CITY_OMITTED" && reason.destinations?.includes(city)));
+});
+
+test("spare nights respond to interests while preserving the same route and total nights", () => {
+  const requestedCities = ["Kandy", "Ella"];
+  const matrix = fixtureMatrix(requestedCities);
+  const order = (interest: "culture" | "hiking") => routes({ ...base, durationDays: 6, requestedCities, interests: [interest] }, matrix)
+    .find(route => route.destinations.map(stop => stop.name).join(",") === "Kandy,Ella")!;
+  assert.ok(order("culture").nights[0] > order("hiking").nights[0]);
+  assert.equal(order("culture").nights.reduce((sum, n) => sum + n, 0), 5);
+  assert.equal(order("hiking").nights.reduce((sum, n) => sum + n, 0), 5);
+});
+
+test("October and November hills carry inter-monsoon context without claiming a forecast", () => {
+  for (const month of [10, 11]) {
+    const season = assessPlanningSeason("Ella", month);
+    assert.equal(season.status, "CAUTION");
+    assert.match(season.rule!, /inter-monsoon/);
+  }
+});
+
 test("10-day relaxed route limits base switching and preserves nine nights", () => {
   const brief = { ...base, durationDays: 10, pace: "RELAXED" as const };
   const names = buildCandidateDestinations(brief).map(destination => destination.name);
@@ -188,13 +219,16 @@ test("traveller drive preference changes limits but comfort tier does not", () =
 test("unroutable leg rejects; unavailable routing remains uncertainty", () => {
   const brief = { ...base, requestedCities: ["Kandy", "Ella"] };
   const unroutable = routes(brief, fixtureMatrix(brief.requestedCities, { "Kandy>Ella": null, "Ella>Kandy": null }));
-  assert.equal(unroutable[0].feasibility, "REJECTED");
-  assert.ok(codes(unroutable[0].reasons).includes("UNROUTABLE"));
+  const fullUnroutable = unroutable.find(route => route.destinations.length === 2)!;
+  assert.equal(fullUnroutable.feasibility, "REJECTED");
+  assert.ok(codes(fullUnroutable.reasons).includes("UNROUTABLE"));
+  assert.ok(unroutable.filter(route => route.destinations.length === 1).every(route => route.reasons.some(reason => reason.code === "REQUESTED_CITY_OMITTED")));
   const unavailable = routes(brief, fixtureMatrix(brief.requestedCities, {}, {
     "Kandy>Ella": "UNAVAILABLE", "Ella>Kandy": "UNAVAILABLE",
   }));
-  assert.equal(unavailable[0].feasibility, "UNCERTAIN");
-  assert.ok(codes(unavailable[0].reasons).includes("ROUTING_UNKNOWN"));
+  const fullUnavailable = unavailable.find(route => route.destinations.length === 2)!;
+  assert.equal(fullUnavailable.feasibility, "UNCERTAIN");
+  assert.ok(codes(fullUnavailable.reasons).includes("ROUTING_UNKNOWN"));
 });
 
 test("requested destination without coordinates stays present and uncertain", () => {

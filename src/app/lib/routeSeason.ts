@@ -28,6 +28,9 @@ export function assessPlanningSeason(destination: string, month?: number): Plann
     return { destination, status: "UNKNOWN" };
   }
   const rule = REGION_SEASONS[region];
-  const status = rule.avoid.includes(month!) ? "AVOID" : rule.caution.includes(month!) ? "CAUTION" : "SUITABLE";
-  return { destination, status, region, rule: rule.weather, month };
+  // Island-wide October-November inter-monsoon context, not a live forecast.
+  // Sri Lanka Tourism climate guide, checked 2026-10-24: https://www.srilanka.travel/weather
+  const interMonsoon = month === 10 || month === 11;
+  const status = rule.avoid.includes(month!) ? "AVOID" : rule.caution.includes(month!) || interMonsoon ? "CAUTION" : "SUITABLE";
+  return { destination, status, region, rule: interMonsoon ? "October-November inter-monsoon rain; keep outdoor plans flexible and check current conditions" : rule.weather, month };
 }

@@ -3,6 +3,7 @@ import type { PlanningRouteConcept } from "./planningV2";
 import type { TripBriefV1 } from "./planningTypes";
 import { planningBudget } from "./planningBudget.ts";
 import { resolvePlanningEndpoint } from "./planningV2Locations.ts";
+import { knownPlanningDestinations } from "./routeCandidates.ts";
 import type { ArrangementStatus } from "./planningCustomization";
 
 export const arrangementLabel = (status?: ArrangementStatus) => status === "TRAVELLER_BOOKED"
@@ -18,6 +19,7 @@ export const planningIssueLabel = (code: string) => ({
 
 /** One detached semantic snapshot for review, approval and export. No new travel facts. */
 export function planningPresentation(detail: DetailedPlanningResult, brief: TripBriefV1, concept: PlanningRouteConcept) {
+  const locations = knownPlanningDestinations();
   const money = (value: number) => planningMoney(value, detail.ledger.currency);
   const lines = new Map(detail.ledger.lines.map(line => [line.input.id, line]));
   const price = (id: string) => {
@@ -29,7 +31,7 @@ export function planningPresentation(detail: DetailedPlanningResult, brief: Trip
   const endpoint = (kind: "arrival" | "departure") => {
     const point = brief[kind]; const known = point?.location ? resolvePlanningEndpoint(point.location) : undefined;
     return { kind, label: point?.location?.replace("CMB_AIRPORT", "CMB airport") ?? "Location to confirm", localDateTime: point?.dateTime,
-      coordinates: known?.coordinates };
+      coordinates: known?.coordinates ?? locations.find(location => location.name.toLowerCase() === point?.location?.toLowerCase())?.coordinates };
   };
   const budget = planningBudget(detail, brief);
   const data = structuredClone({
@@ -38,7 +40,9 @@ export function planningPresentation(detail: DetailedPlanningResult, brief: Trip
       nights: concept.candidate.nights[index], stay: detail.customization?.stays[stop.name],
       status: arrangementLabel(detail.customization?.stays[stop.name]?.status) })),
     endpoints: [endpoint("arrival"), endpoint("departure")],
-    days: detail.itinerary.days.map(day => ({ day: day.day, date: day.date, city: day.city,
+    visits: (detail.transport?.excursions ?? []).map(visit => ({ day: visit.day, name: visit.city, base: visit.base,
+      coordinates: detail.planningContext?.matrix.locations.find(location => location.name === visit.city)?.coordinates ?? locations.find(location => location.name === visit.city)?.coordinates })),
+    days: detail.itinerary.days.map(day => ({ day: day.day, date: day.date, city: day.city, visitCity: day.visitCity,
       overnightCity: day.overnightCity, stay: day.accommodation, note: day.localTip,
       stayStatus: arrangementLabel(detail.customization?.stays[day.city]?.status),
       rooms: detail.customization?.stays[day.city]?.rooms,
@@ -47,8 +51,8 @@ export function planningPresentation(detail: DetailedPlanningResult, brief: Trip
         isFreeTime: item.isFreeTime, coordinates: item.coordinates,
         cost: item.isFreeTime ? "Personal spending: include in your allowances" : price(`cost:${item.id}`) })),
       warnings: day.warnings ?? [], cost: price(`day-${day.day}:stay`) })),
-    transfers: [...concept.transport.arrivalTransfer ? [concept.transport.arrivalTransfer] : [], ...concept.transport.legs,
-      ...concept.transport.departureTransfer ? [concept.transport.departureTransfer] : []].map(leg => ({
+    transfers: [...(detail.transport ?? concept.transport).arrivalTransfer ? [(detail.transport ?? concept.transport).arrivalTransfer] : [], ...(detail.transport ?? concept.transport).legs,
+      ...(detail.transport ?? concept.transport).departureTransfer ? [(detail.transport ?? concept.transport).departureTransfer] : [], ...(detail.transport?.excursions ?? []).flatMap(visit => [visit.outbound, visit.inbound])].map(leg => ({
       id: leg.id, from: leg.fromId.replace("CMB_AIRPORT", "CMB airport"), to: leg.toId.replace("CMB_AIRPORT", "CMB airport"),
       mode: leg.mode.replace(/_/g, " ").toLowerCase(),
       timing: leg.durationMinutes === undefined ? "Journey time unknown; confirm the service and schedule" : `${Math.ceil(leg.durationMinutes)} min road-driving estimate; allow for stops and conditions`,

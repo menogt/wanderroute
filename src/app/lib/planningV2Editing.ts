@@ -43,7 +43,7 @@ export function applyPlanningV2Edit(session: PlanningV2Session, edit: PlanningV2
     const adding = edit.type === "add" || edit.type === "free-time" || edit.type === "restore";
     if (adding) {
       const target = selections[edit.day - 1]?.activities;
-      const city = detailed.itinerary.days[edit.day - 1]?.city;
+      const city = detailed.itinerary.days[edit.day - 1]?.visitCity ?? detailed.itinerary.days[edit.day - 1]?.city;
       if (!target || !city) throw new Error("Choose an existing day.");
       if (target.length >= 6) throw new Error("Keep at most six activities per day; use another day for more.");
       if (edit.type === "restore") {
@@ -66,7 +66,7 @@ export function applyPlanningV2Edit(session: PlanningV2Session, edit: PlanningV2
     const source = selections[sourceDayIndex].activities!;
     const index = source.findIndex(item => item.id === edit.itemId);
     const current = source[index];
-    const sourceCity = detailed.itinerary.days[sourceDayIndex].city;
+    const sourceCity = detailed.itinerary.days[sourceDayIndex].visitCity ?? detailed.itinerary.days[sourceDayIndex].city;
     if (edit.type === "remove") {
       source.splice(index, 1);
       const item = detailed.itinerary.days[sourceDayIndex].items.find(item => item.id === edit.itemId)!;
@@ -90,7 +90,7 @@ export function applyPlanningV2Edit(session: PlanningV2Session, edit: PlanningV2
     } else {
       const targetIndex = edit.targetDay - 1;
       const target = selections[targetIndex]?.activities;
-      const targetCity = detailed.itinerary.days[targetIndex]?.city;
+      const targetCity = detailed.itinerary.days[targetIndex]?.visitCity ?? detailed.itinerary.days[targetIndex]?.city;
       if (!target || targetIndex === sourceDayIndex || targetCity.toLowerCase() !== sourceCity.toLowerCase()) {
         throw new Error("Activities can move only between days in the same destination.");
       }

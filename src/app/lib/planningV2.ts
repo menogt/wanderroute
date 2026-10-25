@@ -289,7 +289,8 @@ export async function planRouteConcepts(rawBrief: TripBriefV1,
   const roadRanking = brief.transportPreference === "PRIVATE_DRIVER";
   all.sort((a, b) => Number(a.readiness === "INVALID") - Number(b.readiness === "INVALID") ||
     (roadRanking ? b.candidate.score.rankValue - a.candidate.score.rankValue :
-      neutralRank(b.candidate) - neutralRank(a.candidate)) || a.routeConcept.id.localeCompare(b.routeConcept.id));
+      neutralRank(b.candidate) - neutralRank(a.candidate)) ||
+      destinations.findIndex(stop => stop.id === a.candidate.destinations[0]?.id) - destinations.findIndex(stop => stop.id === b.candidate.destinations[0]?.id) || a.routeConcept.id.localeCompare(b.routeConcept.id));
   const valid = all.filter(concept => concept.readiness !== "INVALID");
   const distinctSets = new Set<string>();
   const selected: PlanningRouteConcept[] = [];
@@ -299,10 +300,6 @@ export async function planRouteConcepts(rawBrief: TripBriefV1,
     selected.push(concept);
     distinctSets.add(key);
     if (selected.length === 3) break;
-  }
-  for (const concept of valid) {
-    if (selected.length === 3) break;
-    if (!selected.some(existing => existing.routeConcept.id === concept.routeConcept.id)) selected.push(concept);
   }
   const issues: PlanningV2Issue[] = [];
   if (matrix.failure) issues.push({ code: matrix.failure === "TIMEOUT" ? "ROUTING_TIMEOUT" : "ROUTING_UNAVAILABLE",

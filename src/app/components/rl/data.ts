@@ -7,8 +7,8 @@ import type {
   Currency,
   TravelStyle,
 } from "./types";
-import { distributeDays, resolveCities } from "../../lib/cityPlan";
-import { MUST_SEE } from "../../lib/curatedPlaces";
+import { distributeDays, resolveCities } from "../../lib/cityPlan.ts";
+import { MUST_SEE } from "../../lib/curatedPlaces.ts";
 
 // ─── Currency Rates vs USD ───────────────────────────────────────────────────
 export const CURRENCY_RATES: Record<Currency, number> = {

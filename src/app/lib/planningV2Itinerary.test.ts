@@ -40,10 +40,11 @@ function chosen(result: PlanningV2Result) {
 }
 function aiPlan(result: PlanningV2Result, selectedId: string, candidates = places): AiActivityPlan {
   const concept = result.concepts.find(item => item.routeConcept.id === selectedId)!;
+  const used = new Set<string>();
   return { schemaVersion: 2, routeConceptId: selectedId,
     days: routeDayCities(concept.candidate, result.brief.durationDays).map((city, index) => ({
       day: index + 1, placeIds: candidates.filter(place => place.city === city &&
-        ["temple", "attraction", "beach"].includes(place.category)).slice(0, 1).map(place => place.databaseId!),
+        ["temple", "attraction", "beach"].includes(place.category) && !used.has(place.databaseId!)).slice(0, 1).map(place => { used.add(place.databaseId!); return place.databaseId!; }),
       note: `Explore ${city}.`,
     })) };
 }
@@ -254,4 +255,13 @@ test("23:00 arrival permits a nearby overnight transfer with explicit next-day c
   assert.equal(transfer.plannedEnd, "2027-02-02T01:15");
   assert.equal(detail.itinerary.days[0].items.filter(item => item.category === "activity").length, 0);
   assert.ok(!detail.validation.errors.length, JSON.stringify(detail.validation.errors));
+});
+
+
+test("repeated AI attractions across different days are rejected instead of filling the itinerary", async () => {
+  const result = await route({ ...brief, requestedCities: ["Kandy"] });
+  const selected = result.concepts[0];
+  const response = { schemaVersion: 2 as const, routeConceptId: selected.routeConcept.id,
+    days: [{ day: 1, placeIds: ["temple-kandy"] }, { day: 2, placeIds: ["temple-kandy"] }, { day: 3, placeIds: [] }] };
+  assert.throws(() => validateAiActivityPlan(response, selected.candidate, result.brief, places));
 });

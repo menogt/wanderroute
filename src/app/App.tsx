@@ -25,7 +25,9 @@ import { planRouteConcepts, PlanningBriefError, type PlanningV2Issue } from "./l
 import { emptyPlanningV2Session, returnToPlanningConcepts, selectPlanningConcept,
   showPlanningConcepts, showPlanningItinerary, selectedPlanningConcept,
   type PlanningV2Session } from "./lib/planningV2Session";
+import { knownPlanningDestinations } from "./lib/routeCandidates";
 import { previewPlanningCustomization, type CustomizationDraft } from "./lib/planningCustomization";
+import { loadPlanningDraft, savePlanningDraft } from "./lib/planningDraft";
 import { loadPlanningV2Places } from "./lib/planningV2Places";
 import { generatePlanningV2Itinerary } from "./lib/planningV2Itinerary";
 import { applyPlanningV2Edit, redoPlanningV2Edit, undoPlanningV2Edit } from "./lib/planningV2Editing";
@@ -76,7 +78,9 @@ export default function App() {
   const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
   const [cityToAdd, setCityToAdd] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [v2Session, setV2Session] = useState<PlanningV2Session>(emptyPlanningV2Session);
+  const [v2Session, setV2Session] = useState<PlanningV2Session>(() => loadPlanningDraft(localStorage) ?? emptyPlanningV2Session());
+  const [draftStored, setDraftStored] = useState(true);
+  useEffect(() => { setDraftStored(savePlanningDraft(localStorage, v2Session)); }, [v2Session]);
   const [v2Busy, setV2Busy] = useState(false);
   const [v2Issues, setV2Issues] = useState<PlanningV2Issue[]>([]);
   const [v2DetailBusy, setV2DetailBusy] = useState(false);
@@ -230,7 +234,9 @@ export default function App() {
     setV2DetailBusy(true); setV2DetailError(undefined);
     try {
       const concept = selectedPlanningConcept(proposal.session)!;
-      const added = concept.candidate.destinations.filter(stop => !v2Session.detailed!.places.some(place => place.city === stop.name));
+      const visitCities = draft.wishlist.filter(item => item.day && item.requirement !== "EXCLUDED")
+        .map(item => ({ ...(knownPlanningDestinations().find(place => place.name === item.city) ?? { id: item.city, name: item.city }), requested: true }));
+      const added = [...concept.candidate.destinations, ...visitCities].filter(stop => !v2Session.detailed!.places.some(place => place.city === stop.name));
       const extra = added.length ? await loadPlanningV2Places({ ...concept.candidate, destinations: added }) : [];
       if (requestId !== v2DetailRequest.current) return false;
       const places = [...v2Session.detailed!.places, ...extra.filter(place => !v2Session.detailed!.places.some(old => old.databaseId === place.databaseId))];
@@ -292,7 +298,7 @@ export default function App() {
           onExit={() => navigate("home")} />}
       {screen === "planning-v2" && v2Session.view === "itinerary" &&
         v2Session.detailed && selectedPlanningConcept(v2Session) &&
-        <PlanningV2ItineraryScreen key="planning-workspace" detail={v2Session.detailed} session={v2Session} onCustomize={handleV2Customize} onFinalize={revision => setV2Session(previous => ({ ...previous, preferredRevision: revision }))}
+        <PlanningV2ItineraryScreen key="planning-workspace" detail={v2Session.detailed} session={v2Session} draftStored={draftStored} onNewPlan={() => setV2Session(previous => ({ ...previous, view: "brief" }))} onCustomize={handleV2Customize} onFinalize={revision => setV2Session(previous => ({ ...previous, preferredRevision: revision }))}
           concept={selectedPlanningConcept(v2Session)!} brief={v2Session.result!.brief}
           busy={v2DetailBusy} error={v2DetailError} editError={v2Session.editError}
           canUndo={!!v2Session.editPast?.length} canRedo={!!v2Session.editFuture?.length}

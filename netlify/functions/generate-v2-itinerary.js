@@ -28,22 +28,25 @@ function validateModel(value, request) {
   if (!object(value) || value.schemaVersion !== 2 || value.routeConceptId !== request.routeConceptId ||
       !Array.isArray(value.days) || value.days.length !== request.days.length) return false;
   const paceLimit = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[request.pace ?? "BALANCED"];
+  const used = new Set();
   return value.days.every((day, index) => {
     const allowed = new Set(request.days[index].places.map(place => place.id));
-    return object(day) && day.day === index + 1 && Array.isArray(day.placeIds) && day.placeIds.length <= paceLimit &&
-      day.placeIds.every(id => typeof id === "string" && allowed.has(id)) &&
+    const valid = object(day) && day.day === index + 1 && Array.isArray(day.placeIds) && day.placeIds.length <= paceLimit &&
+      day.placeIds.every(id => typeof id === "string" && allowed.has(id) && !used.has(id)) &&
       new Set(day.placeIds).size === day.placeIds.length &&
       (day.note === undefined || typeof day.note === "string" && day.note.length <= 240) &&
       (day.descriptions === undefined || Array.isArray(day.descriptions) && day.descriptions.length <= 3 &&
         day.descriptions.every(description => object(description) && day.placeIds.includes(description.placeId) &&
           typeof description.text === "string" && description.text.length <= 240));
+    if (valid) day.placeIds.forEach(id => used.add(id));
+    return valid;
   });
 }
 
 function prompt(request) {
   return `Select activities for a Sri Lanka trip. You must use only place IDs listed for each day. The fixed route and days must not change. Do not invent opening hours, transport times, prices, bookings or availability. Do not schedule times. Keep notes and descriptions concise. Interests: ${request.interests.join(", ")}. Pace: ${request.pace ?? "BALANCED"}.\n` +
     JSON.stringify({ routeConceptId: request.routeConceptId, days: request.days }) +
-    '\nReturn JSON only: {"schemaVersion":2,"routeConceptId":"same ID","days":[{"day":1,"placeIds":["allowed ID"],"note":"short note","descriptions":[{"placeId":"allowed ID","text":"why it fits"}]}]}. Include every day exactly once. Select zero to three IDs per day.';
+    '\nReturn JSON only: {"schemaVersion":2,"routeConceptId":"same ID","days":[{"day":1,"placeIds":["allowed ID"],"note":"short note","descriptions":[{"placeId":"allowed ID","text":"why it fits"}]}]}. Include every day exactly once. Never repeat a place on another day; leave open time when unique options run out. Select zero to three IDs per day.';
 }
 
 export const handler = async event => {

@@ -41,5 +41,6 @@ export type TransportPlan = {
   legs: TransportLeg[];
   arrivalTransfer?: TransportLeg;
   departureTransfer?: TransportLeg;
+  excursions?: { day: number; city: string; base: string; outbound: TransportLeg; inbound: TransportLeg }[];
   readiness: TransportReadiness;
 };

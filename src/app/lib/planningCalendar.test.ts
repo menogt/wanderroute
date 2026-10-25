@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { validatePlanningBrief } from "./planningV2.ts";
-import { civilDay } from "./planningCalendar.ts";
+import { civilDay, sriLankaCalendarDate } from "./planningCalendar.ts";
 import type { TripBriefV1 } from "./planningTypes";
 
 const brief: TripBriefV1 = { schemaVersion: 1, durationDays: 7, travellerCount: 2,
@@ -16,4 +16,9 @@ test("invalid dates, reversed flights and contradictory calendar spans fail befo
   ]) assert.ok(validatePlanningBrief({ ...brief, ...dates }).some(issue => issue.code === "CALENDAR"));
   assert.deepEqual(validatePlanningBrief({ ...brief, arrival: { dateTime: "2027-02-01T23:00" },
     departure: { dateTime: "2027-02-07T18:00" } }), []);
+});
+
+test("the during-trip date rolls over at Sri Lanka midnight rather than the visitor's home timezone", () => {
+  assert.equal(sriLankaCalendarDate(new Date("2027-02-01T18:29:00Z")), "2027-02-01");
+  assert.equal(sriLankaCalendarDate(new Date("2027-02-01T18:30:00Z")), "2027-02-02");
 });

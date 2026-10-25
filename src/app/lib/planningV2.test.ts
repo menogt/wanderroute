@@ -46,6 +46,18 @@ test("short single-base trip produces fewer concepts and keeps a requested place
   assert.equal(result.concepts[0].routeConcept.stops[0].destinationName, "Kandy");
 });
 
+test("alternatives change base coverage rather than cosmetically reversing an identical route", async () => {
+  const result = await planRouteConcepts(base, services());
+  const sets = result.concepts.map(concept => concept.candidate.destinations.map(place => place.id).sort().join(","));
+  assert.equal(new Set(sets).size, sets.length);
+  assert.ok(result.concepts.some(concept => concept.candidate.destinations.length < 3));
+});
+
+test("unknown transit times do not arbitrarily reverse the traveler's requested start", async () => {
+  const result = await planRouteConcepts({ ...base, requestedCities: ["Kandy", "Ella"], transportPreference: "PUBLIC_TRANSPORT" });
+  assert.equal(result.concepts[0].routeConcept.stops[0].destinationName, "Kandy");
+});
+
 test("excluded requested destinations have explicit reasons", async () => {
   const result = await planRouteConcepts({ ...base, durationDays: 2 }, services());
   assert.ok(result.concepts.some(item => item.issues.some(issue => issue.code === "REQUESTED_CITY_OMITTED")));

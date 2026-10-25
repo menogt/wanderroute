@@ -31,6 +31,12 @@ export function planningDate(brief: TripBriefV1, index: number): string | undefi
   return start === undefined ? undefined : new Date((start + index) * 86400000).toISOString().slice(0, 10);
 }
 
+/** The travel day follows Sri Lanka's civil date, regardless of the device's home timezone. */
+export function sriLankaCalendarDate(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Colombo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  return ["year", "month", "day"].map(kind => parts.find(part => part.type === kind)!.value).join("-");
+}
+
 /** Allows an arrival transfer to cross midnight without wrapping its end backwards. */
 export function scheduleMinute(value?: string, date?: string): number | undefined {
   const match = value?.match(/(?:T|^)([0-2]\d):([0-5]\d)$/);

@@ -10,6 +10,8 @@ import { routeDayCities, type ActivitySelection, type DaySelection } from "./pla
 import { scoreRoute } from "./routeScoring.ts";
 import { assessPlanningSeason, planningSeasonMonth } from "./routeSeason.ts";
 import { matrixLeg } from "./travelTimeMatrix.ts";
+import { excursionTransport } from "./planningExcursions.ts";
+import { eligibleActivityPlaces } from "./planningV2Places.ts";
 import type { CandidateRoute, PlanningDestination, RouteReason } from "./routeTypes";
 
 export type ArrangementStatus = "PROPOSED" | "NEEDS_BOOKING" | "TRAVELLER_BOOKED" | "CHANGED_CANCELLED";
@@ -18,13 +20,15 @@ export type StayChoice = { name?: string; placeId?: string; area?: string; rooms
 export type DestinationChoice = { city: string; nights: number; requirement: "MUST" | "OPTIONAL"; locked?: boolean };
 export type PlanningCustomization = { stops: DestinationChoice[]; stays: Record<string, StayChoice>;
   transport: Record<string, { mode: TransportMode; status: ArrangementStatus; notes?: string }>;
-  wishlist: { city: string; requirement: "MUST" | "OPTIONAL" | "EXCLUDED"; role: "VISIT" | "BASE" }[] };
+  wishlist: { city: string; requirement: "MUST" | "OPTIONAL" | "EXCLUDED"; role: "VISIT" | "BASE"; day?: number; mode?: TransportMode }[] };
 export type CustomizationDraft = PlanningCustomization & { brief: TripBriefV1 };
 
 export function customizationDraft(session: PlanningV2Session): CustomizationDraft {
   const concept = session.result!.concepts.find(concept => concept.routeConcept.id === session.selectedConceptId)!;
   return structuredClone({ brief: session.result!.brief, stops: concept.routeConcept.stops.map(stop => ({
-    city: stop.destinationName, nights: stop.nights, requirement: "OPTIONAL" as const })), stays: {}, transport: {}, wishlist: [],
+    city: stop.destinationName, nights: stop.nights, requirement: "OPTIONAL" as const })), stays: {}, transport: {},
+    wishlist: session.result!.brief.requestedCities.filter(city => !concept.routeConcept.stops.some(stop => stop.destinationName === city))
+      .map(city => ({ city, requirement: "OPTIONAL" as const, role: "VISIT" as const })),
     ...session.detailed?.customization });
 }
 
@@ -96,19 +100,31 @@ export function previewPlanningCustomization(session: PlanningV2Session, draft: 
         JSON.stringify(old.stops) !== JSON.stringify(draft.stops))) problems.push(`Your recorded transfer ${id.replace(">", " to ")} is protected. Record its change/cancellation before changing its route or date.`);
   }
   if (problems.length) return { problems, consequences };
+  let visits: NonNullable<ReturnType<typeof excursionTransport>["excursions"]>;
+  try { visits = excursionTransport(brief, route, matrix, concept.transport, draft.wishlist).excursions!; }
+  catch (error) { return { problems: [error instanceof Error ? error.message : "Check your day-visit choices."], consequences }; }
   const result = { ...session.result!, brief, destinations, concepts: [concept, ...session.result!.concepts.filter(item => item.routeConcept.id !== route.id)] };
   const cities = routeDayCities(route, brief.durationDays);
-  const selections: DaySelection[] = cities.map(() => ({ placeIds: [], activities: [] }));
+  const activityCities = cities.map((city, index) => visits.find(visit => visit.day === index + 1)?.city ?? city);
+  const selections: DaySelection[] = cities.map((city, index) => ({ placeIds: [], activities: [],
+    note: previous.itinerary.days[index]?.city === city ? previous.itinerary.days[index].localTip : undefined }));
   const shortlist = [...(previous.unscheduledActivities ?? [])];
   const used = new Set<string>();
   for (const oldDay of previous.itinerary.days) {
-    const compatible = cities.map((city, i) => ({ city, i })).filter(item => item.city === oldDay.city);
     for (const item of oldDay.items.filter(item => item.category === "activity")) {
+      const compatible = activityCities.map((city, i) => ({ city, i })).filter(target => target.city === item.city);
       if (used.has(item.id)) continue;
       const target = compatible.find(target => target.i === oldDay.day - 1 && selections[target.i].activities!.length < 6) ??
         compatible.find(target => selections[target.i].activities!.length < 6 && !selections[target.i].activities!.some(existing => item.placeId && existing.placeId === item.placeId));
       if (target) { selections[target.i].activities!.push(activitySelection(item)); used.add(item.id); }
-      else shortlist.push({ ...activitySelection(item), city: oldDay.city, label: item.label });
+      else shortlist.push({ ...activitySelection(item), city: item.city, label: item.label });
+    }
+  }
+  for (const visit of visits) {
+    const day = selections[visit.day - 1];
+    if (!day.activities!.length && !old.wishlist.some(item => item.city === visit.city && item.day === visit.day)) {
+      day.activities = eligibleActivityPlaces(places, visit.city).slice(0, brief.pace === "SLOW_TRAVEL" ? 1 : 2)
+        .map(place => ({ id: `visit:${visit.day}:place:${place.databaseId}`, placeId: place.databaseId! }));
     }
   }
   for (const day of selections) day.placeIds = day.activities!.map(item => item.placeId);
@@ -121,7 +137,9 @@ export function previewPlanningCustomization(session: PlanningV2Session, draft: 
   consequences.push(detailed.ledger.summary.trip.minimum > 0 ? `${brief.budget.currency} ${detailed.ledger.summary.trip.minimum.toLocaleString()} in supported or traveler-recorded amounts; additional costs remain unpriced.` : "Rates are still unknown; use your own planning allowances until quotes or sourced prices are available.");
   consequences.push(`${brief.durationDays} days, ${nights} nights across ${draft.stops.length} bases. Existing compatible activities keep their IDs.`);
   if (shortlist.length) consequences.push(`${shortlist.length} activities remain in your unscheduled shortlist; none are discarded.`);
-  for (const item of draft.wishlist.filter(item => item.role === "VISIT" && item.requirement !== "EXCLUDED")) consequences.push(`${item.city} is a requested visit, not an overnight base. It still needs a compatible day and transfer before it can be counted as included.`);
+  for (const item of draft.wishlist.filter(item => item.role === "VISIT" && item.requirement !== "EXCLUDED")) consequences.push(item.day
+    ? `${item.city}: a planned return visit on day ${item.day}. Your overnight base stays unchanged; two transfer fares and any unknown service times need confirmation.`
+    : `${item.city} is a requested visit, not an overnight base. It still needs a compatible day and transfer before it can be counted as included.`);
   consequences.push("Unpriced costs and unverified journeys stay unknown. No reservation is made or changed.");
   if (detailed.validation.errors.some(issue => !["BUDGET_OVER", "MUST_VISIT_UNSCHEDULED"].includes(issue.code))) return { problems: detailed.validation.errors.filter(issue => !["BUDGET_OVER", "MUST_VISIT_UNSCHEDULED"].includes(issue.code)).map(issue => issue.code.toLowerCase().replace(/_/g, " ")), consequences };
   return { problems, consequences, session: { ...session, view: "itinerary", result, brief, selectedConceptId: route.id, detailed,

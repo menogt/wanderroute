@@ -1,3 +1,4 @@
+import { cityInterestAffinity } from "./planningActivityChoices.ts";
 import { CANONICAL_CITY_ORDER, autoSelectCities } from "./cityPlan.ts";
 import { CITY_COORDS } from "../components/rl/mapConfig.ts";
 import type { TripBriefV1 } from "./planningTypes";
@@ -8,7 +9,7 @@ import type { CandidateRoute, PlanningDestination, RouteReason } from "./routeTy
 import { matrixLeg, type MatrixLocation, type RoadLeg, type TravelMatrix } from "./travelTimeMatrix.ts";
 
 const MAX_DESTINATIONS = 8;
-const MAX_SUBSETS = 3;
+const MAX_SUBSETS = 5;
 const MAX_ORDERS_PER_SUBSET = 4;
 
 export function knownPlanningDestinations(): MatrixLocation[] {
@@ -75,13 +76,18 @@ function ordersFor(destinations: PlanningDestination[], matrix: TravelMatrix): P
   }).slice(0, MAX_ORDERS_PER_SUBSET);
 }
 
-function subsetsFor(destinations: PlanningDestination[], limit: number): PlanningDestination[][] {
-  if (destinations.length <= limit) return [destinations];
+function subsetsFor(destinations: PlanningDestination[], limit: number, matrix: TravelMatrix): PlanningDestination[][] {
+  if (destinations.length === 1) return [destinations];
   const canonical = canonicalOrder(destinations);
   const proposals = [
+    ...(destinations.length <= limit ? [destinations] : []),
     destinations.slice(0, limit),
     destinations.slice(-limit),
     canonical.slice(0, limit),
+    nearestOrder(canonical[0], destinations, matrix).slice(0, limit),
+    // A genuine rest / fewer-hotel-changes alternative, with omissions kept explicit.
+    canonical.slice(0, Math.max(1, Math.min(destinations.length, limit) - 1)),
+    canonical.slice(-Math.max(1, Math.min(destinations.length, limit) - 1)),
   ];
   const unique = new Set<string>();
   return proposals.filter(subset => {
@@ -104,11 +110,11 @@ function allocateNights(
   let spare = totalNights - nights.length * minimum;
   // First/last absorb constrained arrival/departure days. Longer inbound drives
   // then earn recovery time; stable index resolves ties.
-  const priorities = stops.map((_, index) => ({
+  const priorities = stops.map((stop, index) => ({
     index,
     weight: (index === 0 && arrivalDayUsableMinutes(brief) === 0 ? 200 : 0) +
       (index === stops.length - 1 && departureDayUsableMinutes(brief) === 0 ? 200 : 0) +
-      (legs[index - 1]?.durationMinutes ?? 0) + (index === 0 || index === stops.length - 1 ? 30 : 0),
+      cityInterestAffinity(stop.name, brief) * 35 + (legs[index - 1]?.durationMinutes ?? 0) + (index === 0 || index === stops.length - 1 ? 30 : 0),
   })).sort((a, b) => b.weight - a.weight || a.index - b.index);
   let cursor = 0;
   while (spare > 0) {
@@ -157,7 +163,7 @@ export function generateRouteCandidates(
   }
   if (destinations.length === 0) return [];
   const maxBases = Math.min(MAX_DESTINATIONS, maximumPlanningBases(brief));
-  const subsets = subsetsFor(destinations, maxBases);
+  const subsets = subsetsFor(destinations, maxBases, matrix);
   // Keep an explicit rejected full-set witness when it is within the bounded size.
   if (destinations.length > maxBases && destinations.length <= MAX_DESTINATIONS) subsets.push(destinations);
   const candidates: CandidateRoute[] = [];
@@ -173,7 +179,7 @@ export function generateRouteCandidates(
         !order.some(stop => stop.id === destination.id));
       const reasons: RouteReason[] = [
         ...omitted.map(destination => ({ code: "REQUESTED_CITY_OMITTED" as const, severity: "PENALTY" as const,
-          destinations: [destination.name], details: { cause: "INSUFFICIENT_DAYS" } })),
+          destinations: [destination.name], details: { cause: order.length < maxBases ? "FEWER_BASES" : "INSUFFICIENT_DAYS" } })),
         ...(omitted.length ? [{ code: "ROUTE_REDUCED" as const, severity: "INFO" as const,
           details: { maximumBases: maxBases } }] : []),
         ...(order.length > maxBases || nights.includes(0) ? [{ code: "INSUFFICIENT_DAYS" as const,

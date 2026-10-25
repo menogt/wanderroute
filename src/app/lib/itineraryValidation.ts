@@ -100,6 +100,8 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
     add("NIGHT_ALLOCATION_INVALID", "ERROR");
   }
   for (const [index, day] of days.entries()) {
+    const visit = transportPlan.excursions?.find(visit => visit.day === day.day);
+    if (day.visitCity !== visit?.city || visit && visit.base !== day.city) add("DAY_VISIT_ROUTE_MISMATCH", "ERROR", { day: day.day });
     if (seenDays.has(day.day)) add("DUPLICATE_DAY_NUMBER", "ERROR", { day: day.day });
     seenDays.add(day.day);
     if (day.day !== index + 1) add("DAY_SEQUENCE_INVALID", "ERROR", { day: day.day });
@@ -120,7 +122,7 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
     for (const item of day.items ?? []) {
       if (!item.id || seenItems.has(item.id)) add("DUPLICATE_ITEM_ID", "ERROR", { day: day.day, itemId: item.id });
       seenItems.add(item.id);
-      if (item.city.toLowerCase() !== day.city.toLowerCase() && item.category !== "transport") {
+      if (item.city.toLowerCase() !== (day.visitCity ?? day.city).toLowerCase() && item.category !== "transport") {
         add("ITEM_CITY_MISMATCH", "ERROR", { day: day.day, itemId: item.id });
       }
       const start = scheduleMinute(item.plannedStart, day.date);
@@ -150,6 +152,7 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
       }
       if (item.placeId) {
         const place = places.get(item.placeId);
+        if (place && place.city.toLowerCase() !== item.city.toLowerCase()) add("PLACE_CITY_MISMATCH", "ERROR", { day: day.day, itemId: item.id });
         if (!place) add("PLACE_ID_NOT_FOUND", "ERROR", { day: day.day, itemId: item.id });
         else if (item.coordinates && place.coordinates) {
           const km = distanceKm(item.coordinates, place.coordinates);
@@ -268,6 +271,33 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
     arrivalTransferBudgetMinutes(brief), 1, "ARRIVAL");
   inspectEndpointTransfer(transportPlan.departureTransfer, brief.departure?.location,
     departureTransferBudgetMinutes(brief), brief.durationDays, "DEPARTURE");
+  const excursionDays = new Set<number>();
+  for (const visit of transportPlan.excursions ?? []) {
+    const day = days[visit.day - 1];
+    if (!day || visit.day <= 1 || visit.day >= brief.durationDays || days[visit.day - 2]?.city !== day.city || excursionDays.has(visit.day)) {
+      add("DAY_VISIT_DAY_INVALID", "ERROR", { day: visit.day }); continue;
+    }
+    excursionDays.add(visit.day);
+    const legs = [visit.outbound, visit.inbound];
+    for (const leg of legs) {
+      inspectTransportLeg(leg, visit.day);
+      const item = day.items.find(item => item.category === "transport" && item.transportLegId === leg.id);
+      if (!item) add("DAY_VISIT_TRANSFER_MISSING", "ERROR", { day: visit.day, legId: leg.id });
+      else if (!item.plannedStart || !item.plannedEnd) add("DAY_VISIT_SERVICE_UNCONFIRMED", "UNKNOWN", { day: visit.day, legId: leg.id });
+      const road = matrixLeg(matrix, leg.fromId, leg.toId);
+      if (leg.mode === "PRIVATE_DRIVER" && leg.durationMinutes !== undefined) {
+        dailyDrive.set(visit.day, (dailyDrive.get(visit.day) ?? 0) + leg.durationMinutes);
+        if (leg.routingSource !== "OSRM_TABLE" || road?.durationMinutes !== leg.durationMinutes) add("ROAD_EVIDENCE_MISMATCH", "ERROR", { day: visit.day, legId: leg.id });
+      }
+    }
+    if (legs.every(leg => leg.durationMinutes !== undefined)) {
+      const activityMinutes = day.items.filter(item => item.category === "activity").reduce((sum, item) => sum + (item.durationMinutes ?? 90) + 30, 0);
+      const outward = day.items.find(item => item.transportLegId === visit.outbound.id);
+      const start = scheduleMinute(outward?.plannedStart, day.date);
+      const available = start === undefined ? 600 : Math.max(0, 18 * 60 - start);
+      if (legs.reduce((sum, leg) => sum + leg.durationMinutes!, 0) + activityMinutes + 60 > available) add("DAY_VISIT_TIME_INSUFFICIENT", "ERROR", { day: visit.day });
+    }
+  }
   if (brief.arrival && !brief.arrival.location) add("ARRIVAL_LOCATION_UNKNOWN", "UNKNOWN");
   if (brief.departure && !brief.departure.location) add("DEPARTURE_LOCATION_UNKNOWN", "UNKNOWN");
   for (const [day, minutes] of dailyDrive) {
@@ -321,6 +351,7 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
   if (accommodation.length > 0 && pricedNights < brief.durationDays - 1) add("ACCOMMODATION_NIGHTS_UNDERCOVERED", "WARNING");
 
   const transport = assessTransportReadiness([...transportPlan.legs,
+    ...(transportPlan.excursions ?? []).flatMap(visit => [visit.outbound, visit.inbound]),
     ...[transportPlan.arrivalTransfer, transportPlan.departureTransfer].filter((leg): leg is TransportLeg => !!leg)],
     transportPlan.preference);
   if (transport.status !== transportPlan.readiness.status) add("TRANSPORT_READINESS_MISMATCH", "ERROR");

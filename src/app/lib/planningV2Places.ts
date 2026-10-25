@@ -12,8 +12,18 @@ const CATEGORY_LIMITS = [
 ] as const;
 const MAX_CITIES = 8;
 const QUERY_TIMEOUT_MS = 8_000;
-const NON_ACTIVITY_NAME = /\b(?:tat+oo|tatoo|salon|spa|repair|agency|studio|restaurant|caf[eé]|coffee|food|dosai|dosa|hotel|resort|guest\s?house|inn|bar|pub|kfc|pizza|bakery|take\s?away|super(?:market|centre|center)|mall|shop|store|lounge)\b/i;
+const NON_ACTIVITY_NAME = /\b(?:tat+oo|tatoo|salon|spa|repair|agency|studio|restaurant|caf[eé]|coffee|food|dosai|dosa|hotel|resort|guest\s?house|inn|bar|pub|kfc|pizza|bakery|take\s?away|super(?:market|centre|center)|mall|shop|store|lounge|home)\b/i;
 const RELIGIOUS_PLACE_NAME = /\b(?:temple|vihara|viharaya|kovil|devalaya|mosque|masjid|church|chapel|cathedral|stupa|buddha|monastery|shrine|sacred|piriwena|pirivena|bodhi|maligawa)\b/i;
+
+const GENERIC_OR_RETAIL = /^(?:bats|buddha|river view|earth bound creations)$/i;
+const landmarkName = (name: string) => name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+export function landmarkIdentity(name: string, city: string): string | undefined {
+  const clean = landmarkName(name);
+  const alias = /sri dalada maligawa|temple of the (?:sacred )?tooth/.test(clean) ? "Temple of the Sacred Tooth Relic" :
+    /(?:royal botan(?:ical|ic) gardens|peradeniya botanical)/.test(clean) ? "Royal Botanical Gardens Peradeniya" :
+    /(?:nine|9) arch/.test(clean) ? "Nine Arches Bridge" : /(?:rawana|ravana) falls/.test(clean) ? "Ravana Falls" : undefined;
+  return (MUST_SEE[city] ?? []).find(guide => landmarkName(guide) === clean || guide === alias);
+}
 
 function stableSlug(value: string): string {
   return value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -29,7 +39,7 @@ export function curatedActivityCandidates(city: string): CandidatePlace[] {
 
 /** Existing curated hotels are candidates, not availability or current-price evidence. */
 async function curatedHotels(city: string): Promise<CandidatePlace[]> {
-  const { HOTELS_BY_CITY } = await import("../components/rl/data");
+  const { HOTELS_BY_CITY } = await import("../components/rl/data.ts");
   return (HOTELS_BY_CITY[city] ?? []).map(hotel => ({
     databaseId: `curated-hotel:${stableSlug(city)}:${stableSlug(hotel.name)}`,
     name: hotel.name, city, category: "hotel", sourceProvider: "WanderRoute curated guide",
@@ -64,7 +74,7 @@ export async function loadPlanningV2Places(route: CandidateRoute,
   for (const [index, city] of cities.entries()) {
     const retrieved = settled[index].status === "fulfilled" ? settled[index].value : [];
     places.push(...retrieved);
-    if (!eligibleActivityPlaces(retrieved, city).length) places.push(...curatedActivityCandidates(city));
+    places.push(...curatedActivityCandidates(city).filter(guide => !eligibleActivityPlaces(retrieved, city).some(place => landmarkIdentity(place.name, city) === guide.name)));
     places.push(...await curatedHotels(city));
   }
   const seenIds = new Set<string>();
@@ -82,7 +92,7 @@ export async function loadPlanningV2Places(route: CandidateRoute,
 export function eligibleActivityPlaces(places: CandidatePlace[], city: string): CandidatePlace[] {
   return places.filter(place => place.city.toLowerCase() === city.toLowerCase() &&
     !!place.databaseId && ["attraction", "beach", "temple"].includes(place.category) &&
-    !NON_ACTIVITY_NAME.test(place.name) &&
+    !NON_ACTIVITY_NAME.test(place.name) && !GENERIC_OR_RETAIL.test(place.name) &&
     (place.category !== "temple" || place.sourceProvider?.toLowerCase() !== "foursquare" ||
-      RELIGIOUS_PLACE_NAME.test(place.name)));
+      RELIGIOUS_PLACE_NAME.test(place.name))).sort((a, b) => Number(!!landmarkIdentity(b.name, city)) - Number(!!landmarkIdentity(a.name, city)));
 }

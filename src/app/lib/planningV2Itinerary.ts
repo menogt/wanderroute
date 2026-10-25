@@ -1,4 +1,6 @@
 import type { PlanningCustomization } from "./planningCustomization";
+import { suggestedActivities } from "./planningActivityChoices.ts";
+import { excursionTransport } from "./planningExcursions.ts";
 import type { PlanningAllowances } from "./planningBudget";
 import { arrivalReadyMinute } from "./routeConstraints.ts";
 import { calculateCostLedger, type CostLedger, type CostLineInput, type ExchangeRate } from "./costLedger.ts";
@@ -20,6 +22,7 @@ export type DetailedPlanningResult = {
   allowances?: PlanningAllowances;
   customization?: PlanningCustomization;
   planningContext?: PlanningV2Result;
+  transport?: TransportPlan;
   generationIssue?: string;
   unscheduledActivities?: (ActivitySelection & { city: string; label: string })[];
 };
@@ -44,7 +47,8 @@ function sourcedPrice(place: CandidatePlace | undefined,
 function buildCostLines(brief: TripBriefV1, days: PlanningItineraryV2["days"],
   places: CandidatePlace[], transport: TransportPlan, customization?: PlanningCustomization): CostLineInput[] {
   const byId = new Map(places.filter(place => place.databaseId).map(place => [place.databaseId!, place]));
-  const legs = new Map([...transport.legs, transport.arrivalTransfer, transport.departureTransfer]
+  const legs = new Map([...transport.legs, transport.arrivalTransfer, transport.departureTransfer,
+    ...(transport.excursions ?? []).flatMap(visit => [visit.outbound, visit.inbound])]
     .filter((leg): leg is TransportLeg => !!leg).map(leg => [leg.id, leg]));
   const lines: CostLineInput[] = [];
   for (const day of days) {
@@ -95,8 +99,7 @@ function limitedSelections(brief: TripBriefV1, route: PlanningRouteConcept["cand
   return cities.map((city, index) => {
     const arrivalRest = index === 0 && (arrivalReadyMinute(brief) ?? 0) >= 18 * 60;
     const departure = index === cities.length - 1 && !!brief.departure;
-    const available = eligibleActivityPlaces(places, city).filter(place => !used.has(place.databaseId!));
-    const chosen = arrivalRest || departure ? [] : available.slice(0, capacity);
+    const chosen = arrivalRest || departure ? [] : suggestedActivities(places, city, brief, used, capacity);
     chosen.forEach(place => used.add(place.databaseId!));
     return { placeIds: chosen.map(place => place.databaseId!), note: arrivalRest ? "Arrival, check-in and rest." : departure ? "Leave time for packing and your departure transfer." : "Explore at your own pace. Local journeys and opening hours need checking." };
   });
@@ -112,8 +115,9 @@ export function buildDetailedPlanningResult(result: PlanningV2Result, selectedId
   if (selected.routeConcept.stops.length !== route.destinations.length ||
       selected.routeConcept.stops.some((stop, index) => stop.destinationName !== route.destinations[index].name ||
         stop.nights !== route.nights[index])) throw new Error("The selected route no longer matches its concept.");
-  const days = schedulePlanningDays(brief, route, selected.transport, places, selections, customization?.stays);
-  const ledger = calculateCostLedger(buildCostLines(brief, days, places, selected.transport, customization), brief.budget.currency,
+  const transport = excursionTransport(brief, route, matrix, selected.transport, customization?.wishlist);
+  const days = schedulePlanningDays(brief, route, transport, places, selections, customization?.stays);
+  const ledger = calculateCostLedger(buildCostLines(brief, days, places, transport, customization), brief.budget.currency,
     brief.travellerCount, exchangeRates);
   const itinerary: PlanningItineraryV2 = {
     schemaVersion: 2, id: `${route.id}:itinerary-v2`, routeConceptId: route.id,
@@ -127,9 +131,9 @@ export function buildDetailedPlanningResult(result: PlanningV2Result, selectedId
       ...(generationIssue ? [generationIssue] : [])], highlights: [],
   };
   const validation = validatePlanningItinerary({ itinerary, brief, route, matrix,
-    transportPlan: selected.transport, ledger, trustedPlaces: places });
+    transportPlan: transport, ledger, trustedPlaces: places });
   for (const request of customization?.wishlist ?? []) {
-    if (request.requirement === "EXCLUDED" || route.destinations.some(stop => stop.name === request.city)) continue;
+    if (request.requirement === "EXCLUDED" || route.destinations.some(stop => stop.name === request.city) || transport.excursions?.some(visit => visit.city === request.city)) continue;
     const issue = { code: request.requirement === "MUST" ? "MUST_VISIT_UNSCHEDULED" : "REQUESTED_VISIT_UNSCHEDULED", severity: request.requirement === "MUST" ? "ERROR" as const : "UNKNOWN" as const, details: { city: request.city } };
     validation.issues.push(issue);
     (issue.severity === "ERROR" ? validation.errors : validation.unknowns).push(issue);
@@ -139,7 +143,7 @@ export function buildDetailedPlanningResult(result: PlanningV2Result, selectedId
     validation.status === "NEEDS_CONFIRMATION" || selected.readiness === "NEEDS_CONFIRMATION" || generationIssue
       ? "NEEDS_CONFIRMATION" : validation.status === "READY_WITH_WARNINGS" || selected.readiness === "READY_WITH_WARNINGS"
         ? "READY_WITH_WARNINGS" : "READY";
-  return { itinerary, ledger, validation, readiness, places, generationMode, customization, planningContext: result,
+  return { itinerary, ledger, validation, readiness, places, generationMode, customization, planningContext: result, transport,
     ...(generationIssue ? { generationIssue } : {}) };
 }
 

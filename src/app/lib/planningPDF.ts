@@ -85,27 +85,42 @@ export function createPlanningPDF(plan: PlanningPresentation, fonts: PlanningPDF
     const start = coords[0], relative = coords.slice(1).map((value, i) => [value[0] - coords[i][0], value[1] - coords[i][1]]);
     doc.lines(relative, start[0], start[1], [1, 1], "FD", true);
   }
-  const markers = [plan.endpoints[0], ...plan.route.map((stop, index) => ({ ...stop, label: `${index + 1}. ${stop.name}`, number: index + 1 })), plan.endpoints[1]];
+  const orderedRoute = plan.days.flatMap((day, index) => [
+    ...(index === 0 || plan.days[index - 1].city !== day.city ? [plan.route.find(stop => stop.name === day.city)] : []),
+    ...(day.visitCity ? [plan.visits.find(visit => visit.day === day.day), plan.route.find(stop => stop.name === day.city)] : []),
+  ]).filter(Boolean).map(stop => ({ ...stop, label: stop.name,
+    ...(plan.route.some(base => base.name === stop.name) ? { number: plan.route.findIndex(base => base.name === stop.name) + 1 } : {}) }));
+  const markers = [plan.endpoints[0], ...orderedRoute, plan.endpoints[1]];
+  const mapped = markers.map(marker => {
+    const coords = marker.coordinates;
+    const p = coords && coords.latitude >= 5.6 && coords.latitude <= 10.1 && coords.longitude >= 79.3 && coords.longitude <= 82.2
+      ? point(coords.longitude, coords.latitude) : undefined;
+    return { marker, p };
+  });
   let previous: [number, number] | undefined;
-  for (const marker of markers) {
-    if (!marker.coordinates) { previous = undefined; continue; }
-    const { longitude, latitude } = marker.coordinates;
-    if (latitude < 5.6 || latitude > 10.1 || longitude < 79.3 || longitude > 82.2) { previous = undefined; continue; }
-    const p = point(longitude, latitude);
-    if (previous) { doc.setLineDashPattern([1, 1], 0); doc.setDrawColor(GOLD); doc.setLineWidth(.8); doc.line(...previous, ...p); doc.setLineDashPattern([], 0); }
+  for (const { p } of mapped) {
+    if (p && previous) { doc.setLineDashPattern([1, 1], 0); doc.setDrawColor(GOLD); doc.setLineWidth(.8); doc.line(...previous, ...p); doc.setLineDashPattern([], 0); }
+    previous = p;
+  }
+  const drawn = new Set<string>();
+  for (const { marker, p } of mapped) {
+    if (!p) continue;
+    const key = `${p.join(",")}:${"number" in marker ? marker.number : marker.label}`;
+    if (drawn.has(key)) continue;
+    drawn.add(key);
     doc.setFillColor("number" in marker ? NAVY : GOLD); doc.circle(p[0], p[1], "number" in marker ? 2.8 : 1.8, "F");
     if ("number" in marker) { doc.setFont("Vera", "bold"); doc.setFontSize(7); doc.setTextColor(IVORY); doc.text(String(marker.number), p[0], p[1] + .9, { align: "center" }); }
-    previous = p;
   }
   doc.setFont("Vera"); doc.setFontSize(7); doc.setTextColor(MUTED); doc.text("N", 180, mapTop + 9); doc.text("Made with Natural Earth / public domain", 22, mapTop + mapHeight - 4);
   y = mapTop + mapHeight + 9;
   for (const [index, stop] of plan.route.entries()) text(`${index + 1}. ${stop.name} - ${stop.nights} nights`, 11, true);
+  for (const visit of plan.visits) text(`Day ${visit.day}: ${visit.name} visit / return to ${visit.base}. Services need confirmation.`, 9);
   for (const endpoint of plan.endpoints) text(`${endpoint.kind === "arrival" ? "Arrival" : "Departure"}: ${endpoint.label} / ${endpoint.localDateTime?.replace("T", " ") ?? "local time to confirm"}`, 9);
   text("Missing coordinates are omitted from this overview. Country outline and city markers are not navigation instructions.", 8, false, MUTED);
 
   begin("Your days in Sri Lanka");
   for (const day of plan.days) {
-    ensure(60); rule(); heading(`Day ${String(day.day).padStart(2, "0")} / ${day.city}`);
+    ensure(60); rule(); heading(`Day ${String(day.day).padStart(2, "0")} / ${day.visitCity ? `${day.visitCity} (from ${day.city})` : day.city}`);
     text(`${day.date ?? "Date to confirm"} / ${day.overnightCity ? `Overnight in ${day.overnightCity}` : "Final travel day"}`, 9, true, GREEN);
     for (const item of day.items) {
       ensure(25); text(`${item.time}${item.end ? ` to ${item.end}` : ""} / ${item.label}`, 10, true);
@@ -159,7 +174,7 @@ export function createPlanningPDF(plan: PlanningPresentation, fonts: PlanningPDF
   if (plan.unscheduled.length || plan.requestedVisits.length) {
     heading("Choices still to schedule");
     for (const item of plan.unscheduled) text(`${item.label} / ${item.city} / not scheduled`, 9);
-    for (const visit of plan.requestedVisits) text(`${visit.city} / ${visit.requirement === "MUST" ? "must visit" : "optional"} / visit request, not a scheduled overnight base`, 9);
+    for (const visit of plan.requestedVisits) text(`${visit.city} / ${visit.requirement === "MUST" ? "must visit" : "optional"} / ${visit.day ? `planned return visit on day ${visit.day}; services need confirmation` : "visit request, not scheduled"}`, 9);
   }
   if (plan.season.length) { heading("Seasonal context"); text(plan.season.join("; "), 9); }
   heading("Plan checks"); for (const issue of plan.checks) text(`- ${issue}`, 8, false, MUTED);

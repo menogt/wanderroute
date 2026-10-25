@@ -14,18 +14,20 @@ export function validateAiActivityPlan(value: unknown, route: CandidateRoute,
       !Array.isArray(plan.days) || plan.days.length !== dayCities.length) {
     throw new Error("The activity service returned an invalid route or day count.");
   }
+  const used = new Set<string>();
   for (const [index, day] of plan.days.entries()) {
     const allowed = new Set(eligibleActivityPlaces(places, dayCities[index]).map(place => place.databaseId));
     const paceLimit = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[brief.pace ?? "BALANCED"];
     if (!day || day.day !== index + 1 || !Array.isArray(day.placeIds) || day.placeIds.length > paceLimit ||
         day.placeIds.some(id => typeof id !== "string" || !allowed.has(id)) ||
-        new Set(day.placeIds).size !== day.placeIds.length ||
+        new Set(day.placeIds).size !== day.placeIds.length || day.placeIds.some(id => used.has(id)) ||
         day.note !== undefined && (typeof day.note !== "string" || day.note.length > 240) ||
         day.descriptions !== undefined && (!Array.isArray(day.descriptions) || day.descriptions.length > 3 ||
           day.descriptions.some(item => !item || !day.placeIds.includes(item.placeId) ||
             typeof item.text !== "string" || item.text.length > 240))) {
       throw new Error(`The activity service returned an untrusted place for day ${index + 1}.`);
     }
+    day.placeIds.forEach(id => used.add(id));
   }
   // Project the model response onto the validated fields. Extra keys must not
   // override trusted place selections or provide item identities to the scheduler.
