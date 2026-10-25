@@ -1,6 +1,6 @@
 # Next steps
 
-Finish the current verification milestone before new product development. Recheck actual Git status/remote and all local changes, execute browser scenarios with the supported installed alternative, record screenshots, finish these handover records and evaluate release gates. If any application-breaking, security or data-integrity issue remains, preserve work and report it. Missing live Groq alone is an explicitly accepted limited-draft release limitation.
+The current verification milestone is complete and the limited-draft application changes are publicly served; see CURRENT_STATUS for evidence. Before further development, recheck the repository checkpoint. Recheck actual Git status/remote and all local changes, execute browser scenarios with the supported installed alternative, record screenshots, finish these handover records and evaluate release gates. If any application-breaking, security or data-integrity issue remains, preserve work and report it. Missing live Groq alone is an explicitly accepted limited-draft release limitation.
 
 Before any push, report the exact included files, commit contents, checks and limitations, plus remote/branch/author. Focused logical commits are preferred; coupled changes may stay together rather than staging an unreliable split. Never stage `.claude/`, environment files or unrelated work. Normal fast-forward origin/main only. Verify Netlify deployed the actual new commit and public UI afterward; a successful Git push is not deployment proof.
 
