@@ -1,3 +1,4 @@
+import type { GenerationOptions } from "./generationRequest.ts";
 import type { PlanningCustomization } from "./planningCustomization";
 import { suggestedActivities } from "./planningActivityChoices.ts";
 import { excursionTransport } from "./planningExcursions.ts";
@@ -26,10 +27,10 @@ export type DetailedPlanningResult = {
   generationIssue?: string;
   unscheduledActivities?: (ActivitySelection & { city: string; label: string })[];
 };
-export type DetailedPlanningServices = {
+export type DetailedPlanningServices = GenerationOptions & {
   getPlaces?: (route: PlanningRouteConcept["candidate"]) => Promise<CandidatePlace[]>;
   getAiPlan?: (brief: TripBriefV1, route: PlanningRouteConcept["candidate"],
-    places: CandidatePlace[]) => Promise<AiActivityPlan>;
+    places: CandidatePlace[], signal?: AbortSignal) => Promise<AiActivityPlan>;
   exchangeRates?: ExchangeRate[];
 };
 
@@ -162,12 +163,15 @@ export function recalculatePlanningV2Itinerary(result: PlanningV2Result, selecte
 /** The selected route, transport and matrix are authoritative; AI only selects allowed place IDs. */
 export async function generatePlanningV2Itinerary(result: PlanningV2Result, selectedId: string,
   services: DetailedPlanningServices = {}): Promise<DetailedPlanningResult> {
+  services.signal?.throwIfAborted();
   const selected = result.concepts.find(concept => concept.routeConcept.id === selectedId);
   if (!selected || selected.readiness === "INVALID") throw new Error("Select a usable route concept first.");
   const { brief } = result;
   const route = selected.candidate;
   const cities = routeDayCities(route, brief.durationDays);
+  services.onProgress?.("places");
   const places = await (services.getPlaces ?? loadPlanningV2Places)(route);
+  services.signal?.throwIfAborted();
   let selections: DaySelection[];
   let generationMode: DetailedPlanningResult["generationMode"] = "AI";
   let generationIssue: string | undefined;
@@ -177,15 +181,20 @@ export async function generatePlanningV2Itinerary(result: PlanningV2Result, sele
     selections = limitedSelections(brief, route, places);
   } else {
     try {
-      const raw = await (services.getAiPlan ?? requestAiActivityPlan)(brief, route, places);
+      services.onProgress?.("suggestions");
+      const raw = await (services.getAiPlan ?? requestAiActivityPlan)(brief, route, places, services.signal);
+      services.signal?.throwIfAborted();
       const plan = validateAiActivityPlan(raw, route, brief, places);
       selections = plan.days;
     } catch {
+      services.signal?.throwIfAborted();
       generationMode = "LIMITED_DRAFT";
       generationIssue = "Activity suggestions could not be verified. This limited draft uses place records only; retry to request suggestions.";
       selections = limitedSelections(brief, route, places);
     }
   }
+  services.signal?.throwIfAborted();
+  services.onProgress?.("assembling");
   return buildDetailedPlanningResult(result, selectedId, places, selections, generationMode,
     generationIssue, services.exchangeRates ?? []);
 }

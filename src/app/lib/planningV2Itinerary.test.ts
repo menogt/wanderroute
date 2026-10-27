@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { handler } from "../../../netlify/functions/generate-v2-itinerary.js";
 import { planRouteConcepts, type PlanningV2Result } from "./planningV2.ts";
 import { generatePlanningV2Itinerary } from "./planningV2Itinerary.ts";
-import { validateAiActivityPlan, type AiActivityPlan } from "./planningV2ItineraryService.ts";
+import { requestAiActivityPlan, validateAiActivityPlan, type AiActivityPlan } from "./planningV2ItineraryService.ts";
 import { routeDayCities, schedulePlanningDays } from "./planningV2Scheduling.ts";
 import { returnToPlanningConcepts, selectPlanningConcept, showPlanningConcepts,
   showPlanningItinerary } from "./planningV2Session.ts";
@@ -264,4 +264,70 @@ test("repeated AI attractions across different days are rejected instead of fill
   const response = { schemaVersion: 2 as const, routeConceptId: selected.routeConcept.id,
     days: [{ day: 1, placeIds: ["temple-kandy"] }, { day: 2, placeIds: ["temple-kandy"] }, { day: 3, placeIds: [] }] };
   assert.throws(() => validateAiActivityPlan(response, selected.candidate, result.brief, places));
+});
+
+
+test("generation reports actual operations and finishes without an animation timer", async () => {
+  const result = await route();
+  const id = chosen(result).routeConcept.id;
+  const events: string[] = [];
+  const output = await generatePlanningV2Itinerary(result, id, {
+    onProgress: stage => events.push(stage),
+    getPlaces: async () => { events.push("places returned"); return places; },
+    getAiPlan: async () => { events.push("AI returned"); return aiPlan(result, id); },
+  });
+  assert.deepEqual(events, ["places", "places returned", "suggestions", "AI returned", "assembling"]);
+  assert.equal(output.generationMode, "AI");
+});
+
+test("cancelling during place lookup prevents AI and does not build a fallback", async () => {
+  const result = await route();
+  const controller = new AbortController();
+  let aiCalls = 0;
+  await assert.rejects(generatePlanningV2Itinerary(result, chosen(result).routeConcept.id, {
+    signal: controller.signal,
+    getPlaces: async () => { controller.abort(); return places; },
+    getAiPlan: async () => { aiCalls++; throw new Error("must not run"); },
+  }), { name: "AbortError" });
+  assert.equal(aiCalls, 0);
+});
+
+test("cancelling an AI request is not an AI failure and cannot publish a limited draft", async () => {
+  const result = await route();
+  const controller = new AbortController();
+  const stages: string[] = [];
+  await assert.rejects(generatePlanningV2Itinerary(result, chosen(result).routeConcept.id, {
+    signal: controller.signal, onProgress: stage => stages.push(stage), getPlaces: async () => places,
+    getAiPlan: async (_brief, _route, _places, signal) => {
+      assert.equal(signal, controller.signal);
+      controller.abort(); throw new Error("cancelled");
+    },
+  }), { name: "AbortError" });
+  assert.deepEqual(stages, ["places", "suggestions"]);
+});
+
+
+test("the AI client aborts its HTTP request when generation is cancelled", async context => {
+  const result = await route();
+  const controller = new AbortController();
+  let requestSignal: AbortSignal | undefined;
+  context.mock.method(globalThis, "fetch", async (_url: string, init: RequestInit) => {
+    requestSignal = init.signal as AbortSignal;
+    return await new Promise<Response>((_resolve, reject) => {
+      requestSignal!.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError")), { once: true });
+    });
+  });
+  const pending = requestAiActivityPlan(result.brief, chosen(result).candidate, places, controller.signal);
+  controller.abort();
+  await assert.rejects(pending, { name: "AbortError" });
+  assert.equal(requestSignal?.aborted, true);
+});
+
+test("an already cancelled request does not contact the AI endpoint", async context => {
+  const result = await route();
+  const controller = new AbortController();
+  controller.abort();
+  const fetchMock = context.mock.method(globalThis, "fetch", async () => { throw new Error("Unexpected request"); });
+  await assert.rejects(requestAiActivityPlan(result.brief, chosen(result).candidate, places, controller.signal), { name: "AbortError" });
+  assert.equal(fetchMock.mock.callCount(), 0);
 });

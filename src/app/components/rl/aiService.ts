@@ -1,3 +1,4 @@
+import type { GenerationOptions } from "../../lib/generationRequest";
 import type { GeneratedItinerary, TripInputs } from "./types";
 import { fetchPlacesForPrompt } from "../../lib/itineraryPlaces";
 
@@ -72,13 +73,16 @@ function getErrorCode(payload: unknown, status: number): GenerationErrorCode {
 }
 
 export async function generateItineraryWithAI(
-  inputs: TripInputs
+  inputs: TripInputs, options: GenerationOptions = {}
 ): Promise<GeneratedItinerary> {
   // Fetch real places from Supabase BEFORE calling the AI, then send them along
   // (the server-side function can't reach Supabase with the browser client).
+  options.signal?.throwIfAborted();
+  options.onProgress?.("places");
   let placesText = "";
   try {
-    const result = await fetchPlacesForPrompt(inputs.cities, inputs.travelStyle);
+    const result = await fetchPlacesForPrompt(inputs.cities, inputs.travelStyle,
+      options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(8_000)]) : AbortSignal.timeout(8_000));
     placesText = result.placesText;
   } catch (err) {
     console.warn("Could not fetch real places, AI will use general knowledge:", err);
@@ -86,10 +90,13 @@ export async function generateItineraryWithAI(
 
   // Contract: only TripInputs and the optional grounded place list cross the
   // browser/server boundary. The Groq credential remains on the server.
+  options.signal?.throwIfAborted();
+  options.onProgress?.("suggestions");
   let response: Response;
   try {
     response = await fetch("/api/generate-itinerary", {
       method: "POST",
+      signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(35_000)]) : AbortSignal.timeout(35_000),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         budget: inputs.budget,

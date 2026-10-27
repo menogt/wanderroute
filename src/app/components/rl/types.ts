@@ -83,6 +83,8 @@ export type Hotel = {
 };
 
 export type GeneratedItinerary = {
+  /** Client-recorded provenance; absent on older saved trips. */
+  generationMode?: "AI" | "STANDARD";
   id: string;
   routeName: string;
   routeSlogan: string;

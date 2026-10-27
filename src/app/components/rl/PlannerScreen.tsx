@@ -104,22 +104,26 @@ export function PlannerScreen({
   onGenerate,
   navigate,
   initialCity,
+  initialInputs, initialMonth,
+  generating = false,
 }: {
   onGenerate: (inputs: TripInputs, travelMonth?: number | null) => void;
   navigate: (s: Screen) => void;
   initialCity?: string | null;
+  initialInputs?: TripInputs | null;
+  initialMonth?: number | null;
+  generating?: boolean;
 }) {
   const [step, setStep] = useState(0);
   // Optional, 1-12. Kept out of TripInputs so it never reaches generation.
-  const [travelMonth, setTravelMonth] = useState<number | null>(null);
-  const [budget, setBudget] = useState(800);
-  const [currency, setCurrency] = useState<Currency>("USD");
-  const [days, setDays] = useState(7);
-  const [people, setPeople] = useState(2);
-  const [cities, setCities] = useState<string[]>(initialCity ? [initialCity] : []);
-  const [interests, setInterests] = useState<Interest[]>(["beaches", "culture"]);
-  const [travelStyle, setTravelStyle] = useState<TravelStyle>("comfort");
-  const [generating, setGenerating] = useState(false);
+  const [travelMonth, setTravelMonth] = useState<number | null>(initialMonth ?? null);
+  const [budget, setBudget] = useState(initialInputs?.budget ?? 800);
+  const [currency, setCurrency] = useState<Currency>(initialInputs?.currency ?? "USD");
+  const [days, setDays] = useState(initialInputs?.days ?? 7);
+  const [people, setPeople] = useState(initialInputs?.people ?? 2);
+  const [cities, setCities] = useState<string[]>(initialCity ? [initialCity] : initialInputs?.cities ?? []);
+  const [interests, setInterests] = useState<Interest[]>(initialInputs?.interests ?? ["beaches", "culture"]);
+  const [travelStyle, setTravelStyle] = useState<TravelStyle>(initialInputs?.travelStyle ?? "comfort");
 
   const sym = CURRENCY_SYMBOLS[currency];
   const { rates, error: ratesError } = useLiveRates();
@@ -159,11 +163,7 @@ export function PlannerScreen({
   };
 
   const handleGenerate = () => {
-    setGenerating(true);
-    setTimeout(() => {
-      onGenerate(tripInputs, travelMonth);
-      setGenerating(false);
-    }, 1600);
+    if (!generating) onGenerate(tripInputs, travelMonth);
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {

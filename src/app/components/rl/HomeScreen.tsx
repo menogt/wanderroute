@@ -62,21 +62,24 @@ const STORY_STEPS = [
 export function HomeScreen({
   navigate,
   onQuickPlan,
+  initialInputs, initialMonth,
 }: {
   navigate: (s: Screen) => void;
   onQuickPlan?: (inputs: TripInputs, travelMonth?: number | null) => void;
+  initialInputs?: TripInputs | null;
+  initialMonth?: number | null;
 }) {
   const bp = useBreakpoint();
   const [tapCount, setTapCount] = useState(0);
   const [tapTimer, setTapTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
-  const [budget, setBudget] = useState(800);
-  const [days, setDays] = useState(7);
-  const [people, setPeople] = useState(2);
-  const [cities, setCities] = useState<string[]>([]);
-  const [interests, setInterests] = useState<Interest[]>(["beaches", "culture"]);
-  const [travelStyle, setTravelStyle] = useState<TravelStyle>("comfort");
+  const [budget, setBudget] = useState(initialInputs?.budget ?? 800);
+  const [days, setDays] = useState(initialInputs?.days ?? 7);
+  const [people, setPeople] = useState(initialInputs?.people ?? 2);
+  const [cities, setCities] = useState<string[]>(initialInputs?.cities ?? []);
+  const [interests, setInterests] = useState<Interest[]>(initialInputs?.interests ?? ["beaches", "culture"]);
+  const [travelStyle, setTravelStyle] = useState<TravelStyle>(initialInputs?.travelStyle ?? "comfort");
   // Optional, 1-12. Kept out of TripInputs so it never reaches generation.
-  const [travelMonth, setTravelMonth] = useState<number | null>(null);
+  const [travelMonth, setTravelMonth] = useState<number | null>(initialMonth ?? null);
 
   const quickInputs: TripInputs = {
     budget,

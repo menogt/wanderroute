@@ -41,13 +41,15 @@ export function validateAiActivityPlan(value: unknown, route: CandidateRoute,
 
 /** V2 asks the server only to select trusted IDs and write short descriptions. */
 export async function requestAiActivityPlan(brief: TripBriefV1, route: CandidateRoute,
-  places: CandidatePlace[]): Promise<AiActivityPlan> {
+  places: CandidatePlace[], signal?: AbortSignal): Promise<AiActivityPlan> {
+  signal?.throwIfAborted();
   const cities = routeDayCities(route, brief.durationDays);
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener("abort", abort, { once: true });
   const timeout = setTimeout(() => controller.abort(), 25_000);
-  let response: Response;
   try {
-    response = await fetch("/api/generate-v2-itinerary", { method: "POST", signal: controller.signal,
+    const response = await fetch("/api/generate-v2-itinerary", { method: "POST", signal: controller.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ schemaVersion: 2, routeConceptId: route.id,
         interests: brief.interests, pace: brief.pace,
@@ -55,13 +57,15 @@ export async function requestAiActivityPlan(brief: TripBriefV1, route: Candidate
           places: eligibleActivityPlaces(places, city).slice(0, 15).map(place => ({
             id: place.databaseId!, name: place.name, category: place.category,
           })) })) }) });
-  } catch {
-    throw new Error("Activity suggestions are unavailable. Retry to check the service.");
-  } finally { clearTimeout(timeout); }
-  let payload: any;
-  try { payload = await response.json(); }
-  catch { throw new Error("The activity service returned an unreadable response."); }
-  if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error :
-    "Activity suggestions are unavailable.");
-  return validateAiActivityPlan(payload?.plan, route, brief, places);
+    let payload: any;
+    try { payload = await response.json(); }
+    catch { throw new Error("The activity service returned an unreadable response."); }
+    if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error :
+      "Activity suggestions are unavailable.");
+    signal?.throwIfAborted();
+    return validateAiActivityPlan(payload?.plan, route, brief, places);
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+  }
 }

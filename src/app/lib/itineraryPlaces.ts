@@ -5,7 +5,8 @@ import { MUST_SEE } from "./curatedPlaces";
 // Fetch a compact real-place list for the AI prompt
 export async function fetchPlacesForPrompt(
   cities: string[],
-  style: TravelStyle
+  style: TravelStyle,
+  signal: AbortSignal = AbortSignal.timeout(8_000)
 ): Promise<{ cities: string[]; placesText: string }> {
   if (!supabase) {
     return { cities, placesText: "" };
@@ -14,6 +15,7 @@ export async function fetchPlacesForPrompt(
   const blocks: string[] = [];
 
   for (const city of cities) {
+    signal.throwIfAborted();
     // Hotels matching the travel style (fall back to any if none)
     let { data: hotels } = await supabase
       .from("places")
@@ -23,7 +25,7 @@ export async function fetchPlacesForPrompt(
       .eq("style", style)
       .order("importance_score", { ascending: false })
       .order("rating", { ascending: false })
-      .limit(5);
+      .limit(5).abortSignal(signal);
 
     if (!hotels || hotels.length === 0) {
       const res = await supabase
@@ -31,7 +33,7 @@ export async function fetchPlacesForPrompt(
         .select("name, area, price_usd")
         .eq("city", city)
         .eq("category", "hotel")
-        .limit(5);
+        .limit(5).abortSignal(signal);
       hotels = res.data || [];
     }
 
@@ -43,7 +45,7 @@ export async function fetchPlacesForPrompt(
       .in("category", ["attraction", "temple", "beach"])
       .order("importance_score", { ascending: false })
       .order("rating", { ascending: false })
-      .limit(8);
+      .limit(8).abortSignal(signal);
 
     // Top restaurants
     const { data: restaurants } = await supabase
@@ -53,7 +55,7 @@ export async function fetchPlacesForPrompt(
       .eq("category", "restaurant")
       .order("importance_score", { ascending: false })
       .order("rating", { ascending: false })
-      .limit(5);
+      .limit(5).abortSignal(signal);
 
     const hotelNames = (hotels || []).map(h =>
       `${h.name}${h.price_usd ? ` (~$${h.price_usd}/night)` : ""}`
