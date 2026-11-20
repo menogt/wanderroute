@@ -7,6 +7,11 @@ export function civilDay(value?: string): number | undefined {
   return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value ? time / 86400000 : undefined;
 }
 
+export function calendarDuration(start?: string, end?: string): number | undefined {
+  const first = civilDay(start), last = civilDay(end);
+  return first === undefined || last === undefined ? undefined : last - first + 1;
+}
+
 export function planningCalendarProblems(brief: TripBriefV1): string[] {
   const problems: string[] = [];
   const start = brief.travelDates?.start ?? brief.arrival?.dateTime?.slice(0, 10);
