@@ -25,7 +25,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 import hillCountryImage from "../../../assets/wanderroute-hill-country.jpg";
 import { CURRENCY_SYMBOLS, POPULAR_ROUTES, generateItinerary } from "./data";
-import { SELECTABLE_CITIES, resolveCities } from "../../lib/cityPlan";
+import { SELECTABLE_CITIES } from "../../lib/cityPlan";
+import { DestinationHint } from "./DestinationHint";
 import { MONTH_NAMES } from "../../lib/seasonData";
 import type { Interest, Screen, TravelStyle, TripInputs } from "./types";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
@@ -95,9 +96,6 @@ export function HomeScreen({
     () => generateItinerary(quickInputs),
     [budget, days, people, cities, interests, travelStyle]
   );
-  // What the user actually gets: canonical order, capped to what the trip length
-  // supports. Never their click order.
-  const resolvedCities = resolveCities(cities, days);
 
   const toggleCity = (city: string) =>
     setCities((current) =>
@@ -195,6 +193,7 @@ export function HomeScreen({
               >
                 Explore a Sample Route
               </button>
+              <a className="wr-button wr-button--glass" href="/trip-studio">Open Trip Studio</a>
               <button
                 type="button"
                 className="wr-button wr-button--glass"
@@ -323,10 +322,9 @@ export function HomeScreen({
             <p className="wr-quick__route-note">
               {cities.length === 0
                 ? "We'll pick a route for you"
-                : resolvedCities.cities.join(" \u2192 ")}
-              {resolvedCities.dropped.length > 0 &&
-                ` \u00b7 ${resolvedCities.dropped.join(", ")} dropped \u2014 too many stops for ${days} days`}
+                : `Selected: ${cities.join(" · ")}`}
             </p>
+            <DestinationHint cities={cities} days={days} />
           </fieldset>
 
           <fieldset className="wr-quick__options">
