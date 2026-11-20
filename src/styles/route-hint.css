@@ -1,0 +1,21 @@
+.wr-route-hint {
+  margin-block: .75rem;
+  padding-inline-start: .85rem;
+  border-inline-start: 2px solid #a58a57;
+  font-size: .92rem;
+  line-height: 1.5;
+}
+.wr-route-hint p { margin: 0; }
+.wr-route-hint button {
+  display: block;
+  min-height: 44px;
+  border: 0;
+  padding: .35rem 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  text-decoration: underline;
+  cursor: pointer;
+}
