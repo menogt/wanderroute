@@ -47,7 +47,7 @@ export type StudioPlan = {
 
 export function newStudioPlan(): StudioPlan {
   return {
-    version: 1, dates: { kind: "unset" }, start: null, end: null, party: null, pace: "balanced",
+    version: 1, dates: { kind: "unset" }, start: "CMB_AIRPORT", end: "CMB_AIRPORT", party: null, pace: "balanced",
     mode: "undecided", legModes: {}, wishes: [], bases: [], visits: [], budget: { currency: "USD" },
   };
 }
