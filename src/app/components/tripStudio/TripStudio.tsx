@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Bookmark, CalendarDays, Compass, Map, Redo2, Undo2, WalletCards } from "lucide-react";
+import { ArrowLeft, Bookmark, Redo2, Undo2 } from "lucide-react";
 import { fetchRoadRoute } from "../../lib/osrmRoute";
 import { fetchTravelMatrix, travelMatrixKey, type TravelMatrix } from "../../lib/travelTimeMatrix";
 import { locations, studioPlaces, studioPlace } from "../../lib/tripStudio/catalog";
@@ -8,15 +8,12 @@ import { canScheduleVisit, canUseDriveTime, formatEndpoint, modes, orderAlternat
   studioDays, studioIssues, studioLegs, wishlistOutline, type StudioBase, type StudioPlan } from "../../lib/tripStudio/model";
 import { loadStudio, redoStudio, reviseStudio, saveStudio, undoStudio } from "../../lib/tripStudio/storage";
 import { StudioBudget } from "./StudioBudget";
+import { DestinationHint } from "../rl/DestinationHint";
 import { StudioJourney } from "./StudioJourney";
 import { StudioMap } from "./StudioMap";
 import "../../../styles/trip-studio.css";
 
-const panels = [
-  ["places", "My Places", Compass], ["route", "My Route", Map],
-  ["journey", "My Journey", CalendarDays], ["budget", "My Budget", WalletCards],
-] as const;
-type Panel = typeof panels[number][0];
+import { StudioNavigation, type StudioPanel } from "./StudioNavigation";
 
 function timeLabel(minutes: number) {
   const value = Math.round(minutes);
@@ -27,7 +24,7 @@ function timeLabel(minutes: number) {
 export default function TripStudio() {
   const [history, setHistory] = useState(loadStudio);
   const plan = history.current;
-  const [panel, setPanel] = useState<Panel>("places");
+  const [panel, setPanel] = useState<StudioPanel>("places");
   const [query, setQuery] = useState("");
   const [town, setTown] = useState("");
   const [visitPlace, setVisitPlace] = useState("");
@@ -129,7 +126,8 @@ export default function TripStudio() {
         <a className="wr-studio__back" href="/"><ArrowLeft size={16} aria-hidden="true" /> WanderRoute</a>
         <div className="wr-studio__title-row">
           <div><p className="wr-studio__eyebrow">Sri Lanka</p><h1>Trip Studio</h1>
-            <p>Collect places, shape your route and see what still needs checking.</p></div>
+            <p>Collect places, shape your route and see what still needs checking.</p>
+            <a href="/?plan">Generate a trip from my preferences</a></div>
           <div className="wr-studio__history">
             <button aria-label="Undo" disabled={!history.past.length} onClick={() => { setHistory(undoStudio); setNotice(""); }}><Undo2 size={18} aria-hidden="true" /></button>
             <button aria-label="Redo" disabled={!history.future.length} onClick={() => { setHistory(redoStudio); setNotice(""); }}><Redo2 size={18} aria-hidden="true" /></button>
@@ -140,10 +138,7 @@ export default function TripStudio() {
       </div>
     </header>
     <div className="wr-studio__wrap">
-      <nav className="wr-studio__nav" aria-label="Trip Studio views">
-        {panels.map(([id, label, Icon]) => <button key={id} aria-pressed={panel === id} aria-controls="studio-panel" onClick={() => { setPanel(id); setNotice(""); }}>
-          <Icon size={18} aria-hidden="true" />{label}</button>)}
-      </nav>
+      <StudioNavigation panel={panel} select={value => { setPanel(value); setNotice(""); }} />
       {notice && <p role="status" className="wr-studio__notice">{notice}</p>}
       <div className="wr-studio__layout">
         <section className="wr-studio__panel" id="studio-panel">
@@ -162,6 +157,8 @@ export default function TripStudio() {
                 {studioPlaces.filter(place => place.kind === "destination").map(place => <option key={place.id}>{place.name}</option>)}
               </select></label>
             </div>
+            <DestinationHint cities={[...new Set([...plan.bases.map(base => base.place), ...plan.wishes.map(wish => studioPlace.get(wish.place)!.town)])]}
+              days={calendar.days} start={plan.start} end={plan.end} lockedOrder={plan.bases.some(base => !!base.stay?.lock)} />
             {!!plan.wishes.length && <details className="wr-studio__detail">
               <summary>Wishlist · {plan.wishes.length}</summary>
               <ul className="wr-studio__wishlist">{plan.wishes.map(item => <li key={item.place}>
