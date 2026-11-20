@@ -2,12 +2,14 @@ import { useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, CalendarDays, MapPin, Route, WalletCards } from "lucide-react";
 import { SELECTABLE_CITIES } from "../../lib/cityPlan";
 import { MONTH_NAMES } from "../../lib/seasonData";
+import { calendarDuration } from "../../lib/planningCalendar";
 import { CMB_AIRPORT } from "../../lib/planningV2Locations";
 import { knownPlanningDestinations } from "../../lib/routeCandidates";
 import { validatePlanningBrief, type PlanningV2Issue } from "../../lib/planningV2";
 import type { TripBriefV1, TravelPace } from "../../lib/planningTypes";
 import type { TransportPreference } from "../../lib/transportTypes";
 import type { Currency, Interest, TravelStyle } from "./types";
+import { DestinationHint } from "./DestinationHint";
 import "../../../styles/planning-v2.css";
 
 const INTERESTS: { value: Interest; label: string }[] = [
@@ -34,6 +36,11 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
   onExit: () => void;
   onClassic: () => void;
 }) {
+  const [dateMode, setDateMode] = useState(initialBrief?.travelDates?.start || initialBrief?.travelDates?.end ||
+    initialBrief?.arrival?.dateTime || initialBrief?.departure?.dateTime ? "exact" : "approximate");
+  const [start, setStart] = useState(initialBrief?.travelDates?.start ?? initialBrief?.arrival?.dateTime?.slice(0, 10) ?? "");
+  const [end, setEnd] = useState(initialBrief?.travelDates?.end ?? initialBrief?.departure?.dateTime?.slice(0, 10) ?? "");
+  const exactDays = calendarDuration(start, end);
   const [durationDays, setDurationDays] = useState(initialBrief?.durationDays ?? 7);
   const [travellerCount, setTravellerCount] = useState(initialBrief?.travellerCount ?? 2);
   const [budget, setBudget] = useState(initialBrief?.budget.amount ?? 1000);
@@ -46,11 +53,11 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
   const [pace, setPace] = useState<TravelPace | "">(initialBrief?.pace ?? "");
   const [transportPreference, setTransportPreference] = useState<TransportPreference | "">(initialBrief?.transportPreference ?? "");
   const [arrivalLocation, setArrivalLocation] = useState(initialBrief?.arrival?.location === CMB_AIRPORT.id
-    ? CMB_AIRPORT.name : initialBrief?.arrival?.location ?? "");
-  const [arrivalTime, setArrivalTime] = useState(initialBrief?.arrival?.dateTime ?? "");
+    ? CMB_AIRPORT.name : initialBrief?.arrival?.location ?? CMB_AIRPORT.name);
+  const [arrivalTime, setArrivalTime] = useState(initialBrief?.arrival?.dateTime?.slice(11, 16) ?? "");
   const [departureLocation, setDepartureLocation] = useState(initialBrief?.departure?.location === CMB_AIRPORT.id
-    ? CMB_AIRPORT.name : initialBrief?.departure?.location ?? "");
-  const [departureTime, setDepartureTime] = useState(initialBrief?.departure?.dateTime ?? "");
+    ? CMB_AIRPORT.name : initialBrief?.departure?.location ?? CMB_AIRPORT.name);
+  const [departureTime, setDepartureTime] = useState(initialBrief?.departure?.dateTime?.slice(11, 16) ?? "");
   const [preferredDrive, setPreferredDrive] = useState(initialBrief?.maxPreferredDailyDrivingMinutes?.toString() ?? "");
   const [localIssues, setLocalIssues] = useState<PlanningV2Issue[]>([]);
   const issues = [...localIssues, ...externalIssues];
@@ -68,20 +75,28 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
   };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const exact = dateMode === "exact";
+    if (exact && (exactDays === undefined || exactDays < 2 || exactDays > 21)) {
+      setLocalIssues([{ code: "CALENDAR", severity: "ERROR", detail: "Choose arrival and departure dates spanning 2 to 21 calendar days." }]);
+      return;
+    }
+    const arrivalClock = exact && arrivalTime ? `${start}T${arrivalTime}` : undefined;
+    const departureClock = exact && departureTime ? `${end}T${departureTime}` : undefined;
     const brief: TripBriefV1 = {
-      schemaVersion: 1, durationDays, travellerCount, budget: { amount: budget, currency },
+      schemaVersion: 1, durationDays: exact ? exactDays! : durationDays, travellerCount,
+      budget: { amount: budget, currency },
       interests, requestedCities,
-      ...(travelMonth ? { travelMonth: Number(travelMonth) } : {}),
+      ...(exact ? { travelDates: { start, end } } : travelMonth ? { travelMonth: Number(travelMonth) } : {}),
       ...(comfortTier ? { comfortTier } : {}),
       ...(pace ? { pace } : {}),
       ...(transportPreference ? { transportPreference } : {}),
-      ...(arrivalLocation.trim() || arrivalTime ? { arrival: {
+      ...(arrivalLocation.trim() || arrivalClock ? { arrival: {
         ...(arrivalLocation.trim() ? { location: arrivalLocation.trim() } : {}),
-        ...(arrivalTime ? { dateTime: arrivalTime } : {}),
+        ...(arrivalClock ? { dateTime: arrivalClock } : {}),
       } } : {}),
-      ...(departureLocation.trim() || departureTime ? { departure: {
+      ...(departureLocation.trim() || departureClock ? { departure: {
         ...(departureLocation.trim() ? { location: departureLocation.trim() } : {}),
-        ...(departureTime ? { dateTime: departureTime } : {}),
+        ...(departureClock ? { dateTime: departureClock } : {}),
       } } : {}),
       ...(preferredDrive ? { maxPreferredDailyDrivingMinutes: Number(preferredDrive) } : {}),
     };
@@ -98,6 +113,7 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
           <p className="wr-kicker">Route planning · Preview</p>
           <h1 id="wr-v2-brief-title">Start with the journey you want.</h1>
           <p>Get a day-by-day draft with an interactive map, then make the journey your own. No booking is made.</p>
+          <a className="wr-v2__text-link" href="/trip-studio">Open Trip Studio</a>{" · "}
           <button type="button" className="wr-v2__text-link" onClick={onClassic}>Use Classic Planner</button>
         </div>
       </div>
@@ -110,16 +126,25 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
           <div className="wr-v2__brief-main">
             <fieldset className="wr-v2__section">
               <legend><CalendarDays size={19} /> Trip essentials</legend>
-              <div className="wr-v2__fields wr-v2__fields--three">
-                <label>Days <input type="number" min="2" max="21" required value={durationDays}
+              <label>Travel dates <select value={dateMode} onChange={event => setDateMode(event.target.value)}>
+                <option value="approximate">I’m planning roughly</option><option value="exact">I know my dates</option>
+              </select></label>
+              {dateMode === "approximate" ? <div className="wr-v2__fields wr-v2__fields--budget">
+                <label>Calendar days <input type="number" min="2" max="21" required value={durationDays}
                   onChange={event => setDurationDays(Number(event.target.value))} /></label>
-                <label>Travellers <input type="number" min="1" max="12" required value={travellerCount}
-                  onChange={event => setTravellerCount(Number(event.target.value))} /></label>
-                <label>Travel month <select value={travelMonth} onChange={event => setTravelMonth(event.target.value)}>
+                <label>Approximate month <select value={travelMonth} onChange={event => setTravelMonth(event.target.value)}>
                   <option value="">Not sure yet</option>
                   {MONTH_NAMES.map((name, index) => <option key={name} value={index + 1}>{name}</option>)}
                 </select></label>
-              </div>
+              </div> : <>
+                <div className="wr-v2__fields wr-v2__fields--budget">
+                  <label>Arrival date <input type="date" required value={start} onChange={event => setStart(event.target.value)} /></label>
+                  <label>Departure date <input type="date" required value={end} min={start || undefined} onChange={event => setEnd(event.target.value)} /></label>
+                </div>
+                <p className="wr-v2__hint" aria-live="polite">{exactDays && exactDays > 1
+                  ? `${exactDays} calendar days, ${exactDays - 1} nights. The final day is departure day.`
+                  : "Include your arrival and departure days."}</p>
+              </>}
             </fieldset>
 
             <fieldset className="wr-v2__section">
@@ -131,7 +156,9 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
                   {CURRENCIES.map(value => <option key={value} value={value}>{value}</option>)}
                 </select></label>
               </div>
-              <p className="wr-v2__hint">This is for the whole group and trip. Route costs stay unpriced until sourced data is available.</p>
+              <label>Travellers <input type="number" min="1" max="12" required value={travellerCount}
+                onChange={event => setTravellerCount(Number(event.target.value))} /></label>
+              <p className="wr-v2__hint">Enter a total land-trip budget for the whole group, excluding international flights.</p>
             </fieldset>
 
             <fieldset className="wr-v2__section">
@@ -159,6 +186,8 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
               </div>
               {requestedCities.length > 0 && <p className="wr-v2__selected-cities">Selected: {requestedCities.join(" · ")}</p>}
               <p className="wr-v2__hint">Choose up to eight, or leave this open for a suggested route. Unknown places stay marked as unknown.</p>
+              <DestinationHint cities={requestedCities} days={dateMode === "exact" ? exactDays : durationDays}
+                start={arrivalLocation} end={departureLocation} />
             </fieldset>
           </div>
 
@@ -185,19 +214,21 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
             </fieldset>
 
             <fieldset className="wr-v2__section">
-              <legend>Arrival and departure <small>optional</small></legend>
+              <legend>Airport transfers</legend>
+              <p>{arrivalLocation || "Start to confirm"} → {departureLocation || "End to confirm"}</p>
+              <details><summary>Change transfers or add flight times</summary>
               <datalist id="wr-v2-endpoints">
                 {ENDPOINTS.map(point => <option key={point.id} value={point.name} />)}
               </datalist>
               <label>Arrival location <input list="wr-v2-endpoints" value={arrivalLocation}
-                placeholder="Airport or city" onChange={event => setArrivalLocation(event.target.value)} /></label>
-              <label>Arrival date and local time <input type="datetime-local" value={arrivalTime}
-                onChange={event => setArrivalTime(event.target.value)} /></label>
+                placeholder="Airport, city or hotel" onChange={event => setArrivalLocation(event.target.value)} /></label>
+              {dateMode === "exact" && <label>Arrival local time <input type="time" value={arrivalTime}
+                onChange={event => setArrivalTime(event.target.value)} /></label>}
               <label>Departure location <input list="wr-v2-endpoints" value={departureLocation}
-                placeholder="Airport or city" onChange={event => setDepartureLocation(event.target.value)} /></label>
-              <label>Departure date and local time <input type="datetime-local" value={departureTime}
-                onChange={event => setDepartureTime(event.target.value)} /></label>
-              <p className="wr-v2__hint">Leave anything unknown blank. Times are treated as Sri Lanka local time.</p>
+                placeholder="Airport, city or hotel" onChange={event => setDepartureLocation(event.target.value)} /></label>
+              {dateMode === "exact" && <label>Departure local time <input type="time" value={departureTime}
+                onChange={event => setDepartureTime(event.target.value)} /></label>}
+              <p className="wr-v2__hint">Leave anything unknown blank. Times are treated as Sri Lanka local time.</p></details>
             </fieldset>
           </div>
         </div>
