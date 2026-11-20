@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, Clock3, MapPin, Pencil, Redo2,
   RefreshCw, Trash2, Undo2, WalletCards } from "lucide-react";
+import { StudioNavigation, type StudioPanel } from "../tripStudio/StudioNavigation";
+import "../../../styles/trip-studio.css";
 import { PlanningReviewPanel } from "./PlanningReviewPanel";
 import { sriLankaCalendarDate } from "../../lib/planningCalendar";
 import { PlanningShortlist } from "./PlanningShortlist";
@@ -56,8 +58,9 @@ function itemCost(ledger: CostLedger, itemId: string): string {
   return amountLabel(line.total ? { ...line.total, unknownCount: 0 } : undefined, ledger.currency);
 }
 
-export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error, editError,
+export function PlanningV2ItineraryScreen({ initialStudio = false, detail, concept, brief, busy, error, editError,
   canUndo, canRedo, session, draftStored, onNewPlan, onCustomize, onFinalize, onBack, onRetry, onEdit, onUndo, onRedo }: {
+  initialStudio?: boolean;
   session: PlanningV2Session;
   draftStored: boolean;
   onNewPlan: () => void;
@@ -79,7 +82,17 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
 }) {
   const today = detail.itinerary.days.find(day => day.date === sriLankaCalendarDate())?.day;
   const [activeDay, setActiveDay] = useState(today ?? 1);
-  const [customizing, setCustomizing] = useState(false);
+  const [editorRevision, setEditorRevision] = useState(0);
+  const [studio, setStudio] = useState(initialStudio);
+  const [panel, setPanel] = useState<StudioPanel>("journey");
+  function openPanel(next: StudioPanel) {
+    setStudio(true);
+    setPanel(next);
+    setEditing(next === "places");
+    setCustomizing(true);
+    setMobilePane(next === "route" ? "map" : "itinerary");
+  }
+  const [customizing, setCustomizing] = useState(initialStudio);
   const [editing, setEditing] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string>();
   const [mobilePane, setMobilePane] = useState("itinerary");
@@ -100,8 +113,8 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
   const visibleIssues = validation.issues.filter(issue => !issue.code.startsWith("COST_")).slice(0, 10);
   return <section className="wr-v2 wr-v2-detail" aria-labelledby="wr-v2-detail-title">
     <div className="wr-v2__masthead"><div className="wr-v2__wrap">
-      <button type="button" className="wr-v2__back" onClick={() => setCustomizing(true)}><ArrowLeft size={17} /> Adjust your journey</button>
-      <p className="wr-kicker">Day-by-day route draft</p>
+      {studio && <button type="button" className="wr-v2__back" onClick={() => { setStudio(false); setCustomizing(false); setEditing(false); setMobilePane("itinerary"); }}><ArrowLeft size={17} /> Back to itinerary</button>}
+      <p className="wr-kicker">{studio ? "Trip Studio" : "Day-by-day route draft"}</p>
       <h1 id="wr-v2-detail-title">{itinerary.routeName}</h1>
       <p>{itinerary.totalDays} days · {itinerary.totalPeople} {itinerary.totalPeople === 1 ? "traveller" : "travellers"} · Your Sri Lanka travel draft.</p>
     </div></div>
@@ -113,23 +126,28 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
         <div className="wr-v2-detail__actions">
           {detail.generationMode === "LIMITED_DRAFT" && !canUndo && !canRedo && <button type="button" className="wr-button wr-button--primary" onClick={onRetry} disabled={busy}>
             <RefreshCw size={16} /> {busy ? "Retrying…" : "Retry suggestions"}</button>}
-          <button type="button" className="wr-v2-detail__edit-toggle" disabled={busy} onClick={() => setCustomizing(value => !value)} aria-expanded={customizing}>Customize journey</button>
-          <button type="button" className="wr-v2-detail__edit-toggle" onClick={() => setEditing(value => !value)}
-            aria-expanded={editing}><Pencil size={16} aria-hidden="true" /> {editing ? "Finish editing" : "Edit activities"}</button>
-          <button type="button" className="wr-v2__text-link" onClick={() => setCustomizing(true)}>Compare routes</button><button type="button" className="wr-v2__text-link" disabled={busy} onClick={onNewPlan}>Start another plan</button>
+          {!studio && <button type="button" className="wr-button wr-button--primary" disabled={busy} onClick={() => openPanel("journey")}>Edit in Trip Studio</button>}
+          {!studio && <button type="button" className="wr-v2__text-link" onClick={() => openPanel("places")}>Edit activities</button>}
+          {studio && <a href="/trip-studio?manual">Open manual Studio draft</a>}
+          <button type="button" className="wr-v2__text-link" disabled={busy} onClick={onNewPlan}>Start another plan</button>
         </div>
       </div>
       <p className="wr-v2-draft-note" role="status">{draftStored ? "Draft saved in this browser, including recent undo history. Prices, hours and arrangements still need checking. Use the PDF for an offline copy." : "This browser could not save your latest draft. Keep this tab open and download a PDF before leaving."}</p>
       {error && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {error}</div>}
       {editError && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {editError}</div>}
-      {customizing && <PlanningCustomizationPanel session={session} busy={busy} onApply={onCustomize} onClose={() => setCustomizing(false)} />}
+      {customizing && <div hidden={panel !== "journey"}><PlanningCustomizationPanel key={editorRevision} session={session} busy={busy} onApply={onCustomize} onClose={() => { setCustomizing(false); setStudio(false); }} /></div>}
       {brief.requestedCities.some(city => !coveredCities.has(city)) && <section className="wr-v2__alert"><strong>Visits still to arrange</strong><p>{brief.requestedCities.filter(city => !coveredCities.has(city)).join(", ")} have not been scheduled. Keep these requests in view while adjusting your bases and trip length.</p></section>}
-      {editing && <div className="wr-v2-detail__edit-toolbar" aria-label="Activity editing history">
+      {(editing || studio) && <div className="wr-v2-detail__edit-toolbar" aria-label="Activity editing history">
         <p>Changes are kept in this browser when storage is available. Times, costs and feasibility are recalculated after each edit.</p>
-        <div><button type="button" onClick={() => { onUndo(); editHeading.current?.focus(); }} disabled={busy || !canUndo}><Undo2 size={16} aria-hidden="true" /> Undo</button>
-          <button type="button" onClick={() => { onRedo(); editHeading.current?.focus(); }} disabled={busy || !canRedo}><Redo2 size={16} aria-hidden="true" /> Redo</button></div>
+        <div><button type="button" onClick={() => { onUndo(); setEditorRevision(value => value + 1); editHeading.current?.focus(); }} disabled={busy || !canUndo}><Undo2 size={16} aria-hidden="true" /> Undo</button>
+          <button type="button" onClick={() => { onRedo(); setEditorRevision(value => value + 1); editHeading.current?.focus(); }} disabled={busy || !canRedo}><Redo2 size={16} aria-hidden="true" /> Redo</button></div>
       </div>}
       {validation.errors.length > 0 && <div className="wr-v2__alert" role="alert">This draft has conflicts to resolve: {validation.errors.map(issue => readableIssue(issue.code)).join(" · ")}. Keep editing to resolve them.</div>}
+      {studio && panel === "route" && <section className="wr-v2__section"><h2>My Route</h2>
+        <ol>{[concept.transport.arrivalTransfer, ...concept.transport.legs, concept.transport.departureTransfer].filter((leg): leg is TransportLeg => !!leg).map(leg =>
+          <li key={leg.id}>{leg.fromId.replace("CMB_AIRPORT", "Bandaranaike Airport (CMB)")} → {leg.toId.replace("CMB_AIRPORT", "Bandaranaike Airport (CMB)")} · {leg.durationMinutes === undefined ? "Journey time to confirm" : `${Math.round(leg.durationMinutes)} min estimated`}</li>)}</ol>
+        <button type="button" onClick={() => openPanel("journey")}>Adjust stops and nights</button></section>}
+      <div hidden={studio && (panel === "budget" || panel === "journey")}>
       <nav className="wr-v2-detail__day-nav" aria-label="Itinerary days">
         {today && <button type="button" onClick={() => { setActiveDay(today); setMobilePane("itinerary"); }}><span>During your trip</span><strong>Today's plan</strong></button>}
         {itinerary.days.map(item => <button key={item.day} type="button" aria-current={activeDay === item.day ? "step" : undefined}
@@ -206,12 +224,15 @@ export function PlanningV2ItineraryScreen({ detail, concept, brief, busy, error,
         </aside>
       </div>
       <PlanningShortlist detail={detail} onEdit={commitEdit} />
+      </div>
+      <div hidden={studio && panel !== "budget"}>
       <div className="wr-v2-detail__summary" aria-label="Trip costs and status">
         <div><WalletCards size={19} /><span>Whole trip</span><strong>{amountLabel(ledger.summary.trip, ledger.currency)}</strong></div>
         <div><WalletCards size={19} /><span>Per traveller</span><strong>{amountLabel(ledger.summary.perPerson, ledger.currency)}</strong></div>
         <div><MapPin size={19} /><span>Your budget target</span><strong>{brief.budget.currency} {brief.budget.amount.toLocaleString()}</strong></div>
       </div>
       <PlanningBudgetPanel detail={detail} brief={brief} onAllowance={(group, allowance) => commitEdit({ type: "allowance", group, allowance })} />
+      </div>
       <PlanningReviewPanel detail={detail} brief={brief} concept={concept} busy={busy} approvedRevision={session.preferredRevision} onFinalize={onFinalize} />
       <p className="wr-v2-detail__footer"><Clock3 size={16} /> Activity durations are estimates. Train, bus and other unverified transfers have no invented timetable.</p>
     </div>
