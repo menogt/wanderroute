@@ -41,10 +41,10 @@ import "../styles/atlas-app.css";
 
 const SCREEN_KEY = "wanderroute_screen";
 
-export default function App() {
+export default function App({ openStudio = false, recoveredTrip }: { openStudio?: boolean; recoveredTrip?: PlanningV2Session }) {
   const [screen, setScreen] = useState<Screen>(() => {
     const saved = localStorage.getItem(SCREEN_KEY) as Screen | null;
-    return restoreScreen(saved);
+    return openStudio || window.location.search === "?plan" ? PRIMARY_PLANNER_SCREEN : restoreScreen(saved);
   });
   const [itinerary, setItinerary] = useState<GeneratedItinerary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -59,7 +59,7 @@ export default function App() {
     ? "Standard draft · AI suggestions are unavailable. Review this locally generated itinerary before relying on it." : null;
   const [cityToAdd, setCityToAdd] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [v2Session, setV2Session] = useState<PlanningV2Session>(() => loadPlanningDraft(localStorage) ?? emptyPlanningV2Session());
+  const [v2Session, setV2Session] = useState<PlanningV2Session>(() => recoveredTrip ?? loadPlanningDraft(localStorage) ?? emptyPlanningV2Session());
   const [draftStored, setDraftStored] = useState(true);
   useEffect(() => { setDraftStored(savePlanningDraft(localStorage, v2Session)); }, [v2Session]);
   const [v2Busy, setV2Busy] = useState(false);
@@ -267,6 +267,7 @@ export default function App() {
     setQuickInputs(inputs); setQuickMonth(travelMonth ?? null);
     const brief: TripBriefV1 = { schemaVersion: 1, durationDays: inputs.days,
       travellerCount: inputs.people, budget: { amount: inputs.budget, currency: inputs.currency },
+      arrival: { location: "CMB_AIRPORT" }, departure: { location: "CMB_AIRPORT" },
       interests: inputs.interests, requestedCities: inputs.cities, comfortTier: inputs.travelStyle,
       ...(travelMonth ? { travelMonth } : {}) };
     navigate(PRIMARY_PLANNER_SCREEN);
@@ -307,7 +308,7 @@ export default function App() {
           onExit={() => navigate("home")} />}
       {screen === "planning-v2" && v2Session.view === "itinerary" &&
         v2Session.detailed && selectedPlanningConcept(v2Session) &&
-        <PlanningV2ItineraryScreen key="planning-workspace" detail={v2Session.detailed} session={v2Session} draftStored={draftStored} onNewPlan={() => setV2Session(previous => ({ ...previous, view: "brief" }))} onCustomize={handleV2Customize} onFinalize={revision => setV2Session(previous => ({ ...previous, preferredRevision: revision }))}
+        <PlanningV2ItineraryScreen key="planning-workspace" initialStudio={openStudio} detail={v2Session.detailed} session={v2Session} draftStored={draftStored} onNewPlan={() => setV2Session(previous => ({ ...previous, view: "brief" }))} onCustomize={handleV2Customize} onFinalize={revision => setV2Session(previous => ({ ...previous, preferredRevision: revision }))}
           concept={selectedPlanningConcept(v2Session)!} brief={v2Session.result!.brief}
           busy={v2DetailBusy} error={v2DetailError} editError={v2Session.editError}
           canUndo={!!v2Session.editPast?.length} canRedo={!!v2Session.editFuture?.length}
