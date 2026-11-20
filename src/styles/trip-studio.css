@@ -11,6 +11,7 @@
   font: 1rem/1.55 var(--wr-font-body, system-ui, sans-serif);
 }
 .wr-studio * { box-sizing: border-box; }
+.wr-studio.wr-v2-studio-nav { min-height: auto; }
 .wr-studio h1, .wr-studio h2, .wr-studio h3 {
   font-family: var(--wr-font-heading, "Fraunces", Georgia, serif);
   font-weight: 600;
