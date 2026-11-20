@@ -72,8 +72,9 @@ export function StudioSettings({ plan, apply }: Props) {
       Flying in and out of CMB
     </button>}
     <div className="wr-studio__field-grid">
+      <details><summary>{formatEndpoint(start)} → {formatEndpoint(end)} · Change transfers</summary>
       <Endpoint label="Start location" value={start} change={setStart} />
-      <Endpoint label="End location" value={end} change={setEnd} />
+      <Endpoint label="End location" value={end} change={setEnd} /></details>
       <label>Pace<select aria-label="Pace" value={pace} onChange={event => setPace(event.target.value as StudioPlan["pace"])}>
         <option value="relaxed">Relaxed · shorter driving days</option>
         <option value="balanced">Balanced</option>
