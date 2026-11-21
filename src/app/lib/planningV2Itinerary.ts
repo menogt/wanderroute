@@ -5,6 +5,9 @@ import { excursionTransport } from "./planningExcursions.ts";
 import type { PlanningAllowances } from "./planningBudget";
 import { arrivalReadyMinute } from "./routeConstraints.ts";
 import { calculateCostLedger, type CostLedger, type CostLineInput, type ExchangeRate } from "./costLedger.ts";
+import { admissionPrice, foodDayPrice, INDICATIVE_EXCHANGE_RATES, legCost, localTransportCost,
+  miscellaneousCost, roomNightPrice } from "./indicativePrices.ts";
+import { planningSeasonMonth } from "./routeSeason.ts";
 import { validatePlanningItinerary, type ValidationResult } from "./itineraryValidation.ts";
 import type { CandidatePlace, PlanningItineraryV2, TripBriefV1 } from "./planningTypes";
 import type { PlanningRouteConcept, PlanningV2Result, ConceptReadiness } from "./planningV2";
@@ -51,44 +54,53 @@ function buildCostLines(brief: TripBriefV1, days: PlanningItineraryV2["days"],
   const legs = new Map([...transport.legs, transport.arrivalTransfer, transport.departureTransfer,
     ...(transport.excursions ?? []).flatMap(visit => [visit.outbound, visit.inbound])]
     .filter((leg): leg is TransportLeg => !!leg).map(leg => [leg.id, leg]));
+  const airportLegs = new Set([transport.arrivalTransfer?.id, transport.departureTransfer?.id].filter(Boolean));
+  const visitLegs = new Set((transport.excursions ?? []).flatMap(visit => [visit.outbound.id, visit.inbound.id]));
+  const month = planningSeasonMonth(brief);
+  const food = foodDayPrice(brief.comfortTier);
   const lines: CostLineInput[] = [];
+  const drivingDays = new Set<number>();
   for (const day of days) {
     if (day.overnightCity) {
       const stay = customization?.stays[day.city];
       const hotel = day.accommodationPlaceId ? byId.get(day.accommodationPlaceId) : undefined;
-      const rooms = stay?.rooms;
       const roomPrice = stay?.nightlyRoomAmount !== undefined && stay.status !== "CHANGED_CANCELLED" ? { kind: "EXACT" as const, evidence: { amount: stay.nightlyRoomAmount, currency: stay.rateCurrency ?? brief.budget.currency, status: "KNOWN" as const, source: "Traveler-recorded room rate; not independently verified" } } : sourcedPrice(hotel, "PER_ROOM_NIGHT");
+      // Recorded or sourced room rates need the traveller's room count; estimates assume double rooms.
+      const exact = stay?.rooms && roomPrice;
       lines.push({ id: `day-${day.day}:stay`, day: day.day, category: "ACCOMMODATION",
-        description: `Stay in ${day.city}; availability and occupancy to confirm`, quantity: rooms ?? 1,
+        description: `Stay in ${day.city}; availability and occupancy to confirm`,
+        quantity: exact ? stay!.rooms! : stay?.rooms ?? Math.ceil(brief.travellerCount / 2),
         periodCount: 1, periodUnit: "NIGHT", chargingBasis: "PER_ROOM",
-        unitPrice: rooms && roomPrice ? roomPrice : unknown(brief.budget.currency,
-          "No sourced room-night price or explicit room allocation") });
+        unitPrice: exact ? roomPrice : roomNightPrice(brief.comfortTier, month) });
     }
     lines.push({ id: `day-${day.day}:food`, day: day.day, category: "FOOD",
       description: `Meals in ${day.city}`, quantity: brief.travellerCount,
-      chargingBasis: "PER_PERSON", unitPrice: unknown(brief.budget.currency, "No sourced meal price") });
+      chargingBasis: "PER_PERSON", unitPrice: food });
     for (const item of day.items) {
       if (item.category === "activity" && !item.isFreeTime) {
         const place = item.placeId ? byId.get(item.placeId) : undefined;
         lines.push({ id: `cost:${item.id}`, day: day.day,
           category: place?.category === "beach" ? "ACTIVITIES" : "ENTRY_FEES",
           description: item.label, quantity: brief.travellerCount, chargingBasis: "PER_PERSON",
-          unitPrice: sourcedPrice(place, "PER_PERSON") ?? unknown(brief.budget.currency,
-            "No sourced per-person activity or entry price") });
+          unitPrice: sourcedPrice(place, "PER_PERSON") ?? admissionPrice(place, item.label) });
       } else if (item.category === "transport") {
-        const mode = item.transportLegId ? legs.get(item.transportLegId)?.mode : undefined;
+        const leg = item.transportLegId ? legs.get(item.transportLegId) : undefined;
+        const mode = leg?.mode;
         const perPerson = mode === "TRAIN" || mode === "BUS" || mode === "PUBLIC_TRANSPORT_UNSPECIFIED";
-        lines.push({ id: `cost:${item.id}`, day: day.day, category: "TRANSPORT",
-          description: item.label, quantity: perPerson ? brief.travellerCount : 1,
-          chargingBasis: perPerson ? "PER_PERSON" : mode === "PRIVATE_DRIVER" ? "PER_VEHICLE" : "FIXED",
-          unitPrice: unknown(brief.budget.currency, "No sourced transfer fare or vehicle price") });
+        const estimate = leg ? legCost(leg, brief, { airport: airportLegs.has(leg.id), dayVisit: visitLegs.has(leg.id) }) : undefined;
+        if (mode === "PRIVATE_DRIVER") drivingDays.add(day.day);
+        lines.push({ id: `cost:${item.id}`, day: day.day, category: "TRANSPORT", description: item.label,
+          ...(estimate ?? { quantity: perPerson ? brief.travellerCount : 1,
+            chargingBasis: perPerson ? "PER_PERSON" : mode === "PRIVATE_DRIVER" ? "PER_VEHICLE" : "FIXED",
+            unitPrice: unknown(brief.budget.currency, "No sourced transfer fare or vehicle price") }) });
       }
     }
   }
-  lines.push({ id: "trip:local-transport", category: "TRANSPORT", description: "Local journeys between activities", quantity: 1, chargingBasis: "FIXED", unitPrice: unknown(brief.budget.currency, "Local transport has not been priced") });
-  lines.push({ id: "trip:miscellaneous", category: "MISCELLANEOUS", description: "Other trip expenses",
-    quantity: 1, chargingBasis: "FIXED", unitPrice: unknown(brief.budget.currency,
-      "Miscellaneous costs have not been priced") });
+  const local = localTransportCost(brief, drivingDays.size);
+  lines.push({ id: "trip:local-transport", category: "TRANSPORT", description: brief.transportPreference === "PRIVATE_DRIVER"
+    ? "Driver's non-transfer days" : "Local journeys between activities", ...local });
+  lines.push({ id: "trip:miscellaneous", category: "MISCELLANEOUS", description: "SIM cards and tips",
+    quantity: 1, chargingBasis: "FIXED", unitPrice: miscellaneousCost(brief, food) });
   return lines;
 }
 
@@ -118,8 +130,10 @@ export function buildDetailedPlanningResult(result: PlanningV2Result, selectedId
         stop.nights !== route.nights[index])) throw new Error("The selected route no longer matches its concept.");
   const transport = excursionTransport(brief, route, matrix, selected.transport, customization?.wishlist);
   const days = schedulePlanningDays(brief, route, transport, places, selections, customization?.stays);
+  const rates = [...exchangeRates, ...INDICATIVE_EXCHANGE_RATES.filter(rate =>
+    !exchangeRates.some(given => given.from === rate.from && given.to === rate.to))];
   const ledger = calculateCostLedger(buildCostLines(brief, days, places, transport, customization), brief.budget.currency,
-    brief.travellerCount, exchangeRates);
+    brief.travellerCount, rates);
   const itinerary: PlanningItineraryV2 = {
     schemaVersion: 2, id: `${route.id}:itinerary-v2`, routeConceptId: route.id,
     routeName: route.destinations.map(destination => destination.name).join(" to "),

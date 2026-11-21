@@ -147,10 +147,10 @@ export function createPlanningPDF(plan: PlanningPresentation, fonts: PlanningPDF
 
   begin("Your travel budget");
   text(`Your target: ${money(plan.brief.budget.amount)} for the whole party`, 12, true);
-  text(plan.budget.supported > 0 ? `Supported / recorded subtotal: ${money(plan.budget.supported)}. Additional unpriced costs remain.` : "No supported whole-trip price is available. Unknown costs are not zero.", 10);
+  text(plan.budget.supported > 0 ? `Estimated trip cost: ${money(Math.floor(plan.budget.supported))}${plan.budget.supportedMaximum > plan.budget.supported ? ` to ${money(Math.ceil(plan.budget.supportedMaximum))}` : ""}${plan.budget.uncovered.length ? `, plus ${plan.budget.uncovered.join(", ").toLowerCase()} still to price` : ""}. Based on published price ranges; not quotes.` : "No supported whole-trip price is available. Unknown costs are not zero.", 10);
   for (const row of plan.budget.rows) {
     ensure(24); rule(); text(row.label, 10, true);
-    text(`${!row.lineCount ? "Not included in listed plan; budget separately if needed" : row.supported || !row.gaps ? `Supported: ${money(row.supported)}${row.supportedMaximum !== row.supported ? ` to ${money(row.supportedMaximum)}` : ""}` : "Price to confirm"}${row.gaps ? "; additional costs need pricing" : ""}`, 9);
+    text(`${!row.lineCount ? "Not included in listed plan; budget separately if needed" : row.supported || !row.gaps ? `Estimated: ${money(row.supported)}${row.supportedMaximum !== row.supported ? ` to ${money(row.supportedMaximum)}` : ""}` : "Price to confirm"}${row.gaps ? "; additional costs need pricing" : ""}`, 9);
     if (row.allowance) text(`Your additional allowance: ${row.allowanceTotal === undefined ? "Incomplete; enter room quantity" : money(row.allowanceTotal)} (${row.allowance.amount} ${plan.brief.budget.currency}, ${row.allowance.basis.toLowerCase().replace(/_/g, " ")}${row.allowance.rooms ? `, ${row.allowance.rooms} rooms` : ""}). A personal planning assumption, not a market rate or quote.`, 8, false, MUTED);
   }
   if (plan.budget.rows.some(row => row.allowance)) {

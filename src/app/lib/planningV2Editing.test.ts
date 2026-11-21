@@ -1,6 +1,7 @@
 import { planningBudget } from "./planningBudget.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setIndicativePricing } from "./indicativePrices.ts";
 import { applyPlanningV2Edit, redoPlanningV2Edit, undoPlanningV2Edit } from "./planningV2Editing.ts";
 import { generatePlanningV2Itinerary } from "./planningV2Itinerary.ts";
 import { planRouteConcepts } from "./planningV2.ts";
@@ -8,6 +9,8 @@ import { returnToPlanningConcepts, selectPlanningConcept, showPlanningConcepts,
   showPlanningItinerary } from "./planningV2Session.ts";
 import type { CandidatePlace, TripBriefV1 } from "./planningTypes";
 import type { MatrixLocation, RoadLeg, TravelMatrix } from "./travelTimeMatrix";
+// This file checks sourced, recorded and allowance arithmetic on its own; estimates are tested in indicativePrices.test.ts.
+setIndicativePricing(false);
 
 const brief: TripBriefV1 = { schemaVersion: 1, durationDays: 4, travellerCount: 1,
   budget: { amount: 500, currency: "USD" }, interests: ["culture"], requestedCities: ["Kandy"],

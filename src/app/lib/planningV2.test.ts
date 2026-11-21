@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setIndicativePricing } from "./indicativePrices.ts";
 import type { TripBriefV1 } from "./planningTypes";
 import { planRouteConcepts, PlanningBriefError, type PlanningV2Services } from "./planningV2.ts";
 import { CMB_AIRPORT } from "./planningV2Locations.ts";
 import { returnToPlanningConcepts, selectPlanningConcept, selectedPlanningConcept,
   showPlanningConcepts } from "./planningV2Session.ts";
 import type { MatrixLocation, RoadLeg, TravelMatrix } from "./travelTimeMatrix.ts";
+// This file checks sourced, recorded and allowance arithmetic on its own; estimates are tested in indicativePrices.test.ts.
+setIndicativePricing(false);
 
 const base: TripBriefV1 = {
   schemaVersion: 1, durationDays: 7, travellerCount: 2,

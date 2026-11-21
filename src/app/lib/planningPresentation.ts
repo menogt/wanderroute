@@ -13,7 +13,8 @@ export const arrangementLabel = (status?: ArrangementStatus) => status === "TRAV
 export const planningMoney = (amount: number, currency: string) => `${currency} ${amount.toLocaleString("en-GB", { maximumFractionDigits: 2 })}`;
 export const planningIssueLabel = (code: string) => ({
   MUST_VISIT_UNSCHEDULED: "A must-visit destination still needs a day and transfer",
-  BUDGET_OVER: "Supported costs exceed your budget target",
+  BUDGET_OVER: "Even the low cost estimate exceeds your budget target",
+  BUDGET_RISK: "The cost estimate could exceed your budget target",
   ITEMS_OVERLAP: "Scheduled activities overlap",
   HARD_DRIVING_LIMIT_EXCEEDED: "Daily driving exceeds the planning limit",
 }[code] ?? code.toLowerCase().replace(/_/g, " ").replace(/^./, letter => letter.toUpperCase()));

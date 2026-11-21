@@ -30,7 +30,11 @@ function amountLabel(summary: AmountSummary | undefined, currency: string): stri
     return summary?.minimum ? `At least ${currency} ${summary.minimum.toLocaleString()} plus unpriced costs` : "Price to confirm";
   }
   if (summary.exact !== undefined) return `${currency} ${summary.exact.toLocaleString()}`;
-  if (summary.maximum !== undefined) return `${currency} ${summary.minimum.toLocaleString()}–${summary.maximum.toLocaleString()}`;
+  if (summary.maximum !== undefined) {
+    if (summary.maximum === 0) return "No entry fee";
+    if (summary.maximum - summary.minimum < 1) return `About ${currency} ${Math.round(summary.maximum).toLocaleString()}`;
+    return `${currency} ${Math.floor(summary.minimum).toLocaleString()}–${Math.ceil(summary.maximum).toLocaleString()} est.`;
+  }
   return "Price to confirm";
 }
 
@@ -41,6 +45,8 @@ function readableIssue(code: string): string {
     TRANSPORT_TIME_UNKNOWN: "A transfer time is unknown",
     TRANSFER_SCHEDULE_TIME_UNKNOWN: "A transfer cannot be timed yet",
     BUDGET_UNKNOWN: "Budget fit cannot be confirmed",
+    BUDGET_RISK: "The cost estimate could exceed your budget",
+    BUDGET_OVER: "Even the low cost estimate exceeds your budget",
     SEASON_UNKNOWN: "Seasonal conditions need confirmation",
     HARD_DRIVING_LIMIT_EXCEEDED: "Daily driving exceeds the hard limit",
     ITEMS_OVERLAP: "Scheduled items overlap",
@@ -55,7 +61,8 @@ function readableIssue(code: string): string {
 
 function itemCost(ledger: CostLedger, itemId: string): string {
   const line = ledger.lines.find(entry => entry.input.id === `cost:${itemId}`);
-  if (!line) return "Price to confirm";
+  // Meals and stays are costed per day, not per item.
+  if (!line) return ledger.sourceLines.some(entry => entry.unitPrice.kind === "RANGE") ? "In the day cost below" : "Price to confirm";
   return amountLabel(line.total ? { ...line.total, unknownCount: 0 } : undefined, ledger.currency);
 }
 

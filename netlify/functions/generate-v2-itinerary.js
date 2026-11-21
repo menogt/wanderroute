@@ -1,6 +1,7 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openai/gpt-oss-120b";
+const FALLBACK_MODEL = "openai/gpt-oss-20b";
 // The browser gives up after 25 s; finish every provider attempt inside that.
 const DEADLINE_MS = 22_000;
 const FIRST_PROVIDER_TIMEOUT_MS = 14_000;
@@ -54,12 +55,19 @@ function prompt(request) {
     `\nReturn JSON only: {"schemaVersion":2,"routeConceptId":"same ID","days":[{"day":1,"placeIds":["allowed ID"],"note":"short note","descriptions":[{"placeId":"allowed ID","text":"why it fits"}]}]}. Include every day exactly once. Never repeat a place on another day; leave open time when unique options run out. Select zero to ${perDay} IDs per day, never more.`;
 }
 
-/** Groq first (free tier); OpenRouter is an optional paid fallback for when Groq is rate limited or failing. */
+/**
+ * Groq first (free tier). Groq rate limits are per model, so a second Groq model absorbs bursts
+ * (several people generating in the same minute) at no cost. Set GROQ_FALLBACK_MODEL=none to disable.
+ * OpenRouter is an optional paid fallback, used only when OPENROUTER_API_KEY is set.
+ */
 function providers() {
   const list = [];
   const groq = process.env.GROQ_API_KEY?.trim();
   if (groq) list.push({ name: "groq", url: GROQ_URL, key: groq,
     extra: { model: MODEL, reasoning_effort: "low" }, errorCode: "GROQ_API_ERROR", timeoutCode: "GROQ_TIMEOUT" });
+  const backup = process.env.GROQ_FALLBACK_MODEL?.trim() || FALLBACK_MODEL;
+  if (groq && backup !== "none" && backup !== MODEL) list.push({ name: `groq:${backup}`, url: GROQ_URL, key: groq,
+    extra: { model: backup, reasoning_effort: "low" }, errorCode: "GROQ_API_ERROR", timeoutCode: "GROQ_TIMEOUT" });
   const openrouter = process.env.OPENROUTER_API_KEY?.trim();
   if (openrouter) list.push({ name: "openrouter", url: OPENROUTER_URL, key: openrouter,
     extra: { model: process.env.OPENROUTER_MODEL?.trim() || MODEL, reasoning: { effort: "low" },

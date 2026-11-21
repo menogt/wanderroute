@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setIndicativePricing } from "./indicativePrices.ts";
 import { handler } from "../../../netlify/functions/generate-v2-itinerary.js";
 import { planRouteConcepts, type PlanningV2Result } from "./planningV2.ts";
 import { generatePlanningV2Itinerary } from "./planningV2Itinerary.ts";
@@ -10,6 +11,8 @@ import { returnToPlanningConcepts, selectPlanningConcept, showPlanningConcepts,
 import { validatePlanningItinerary } from "./itineraryValidation.ts";
 import type { CandidatePlace, TripBriefV1 } from "./planningTypes";
 import type { MatrixLocation, RoadLeg, TravelMatrix } from "./travelTimeMatrix";
+// This file checks sourced, recorded and allowance arithmetic on its own; estimates are tested in indicativePrices.test.ts.
+setIndicativePricing(false);
 
 const brief: TripBriefV1 = { schemaVersion: 1, durationDays: 3, travellerCount: 1,
   budget: { amount: 800, currency: "USD" }, interests: ["culture"],
@@ -235,7 +238,8 @@ test("V2 endpoint falls back to OpenRouter only when Groq fails and a fallback k
       { day: 2, city: "Kandy", places: [] }] };
   const valid = JSON.stringify({ schemaVersion: 2, routeConceptId: "route-a",
     days: [{ day: 1, placeIds: ["temple-kandy"] }, { day: 2, placeIds: [] }] });
-  const saved = { groq: process.env.GROQ_API_KEY, openrouter: process.env.OPENROUTER_API_KEY };
+  const saved = { groq: process.env.GROQ_API_KEY, openrouter: process.env.OPENROUTER_API_KEY,
+    backup: process.env.GROQ_FALLBACK_MODEL };
   const originalFetch = globalThis.fetch;
   const calls: { url: string; body: any }[] = [];
   globalThis.fetch = (async (url: string, init: RequestInit) => {
@@ -247,11 +251,18 @@ test("V2 endpoint falls back to OpenRouter only when Groq fails and a fallback k
   try {
     process.env.GROQ_API_KEY = "test-only";
     delete process.env.OPENROUTER_API_KEY;
+    delete process.env.GROQ_FALLBACK_MODEL;
     const groqOnly = await handler({ httpMethod: "POST", body: JSON.stringify(request) });
     assert.equal(groqOnly.statusCode, 502);
     assert.equal(JSON.parse(groqOnly.body).code, "GROQ_API_ERROR");
-    assert.equal(calls.length, 1);
+    // Groq limits are per model, so the free backup model is tried before giving up.
+    assert.deepEqual(calls.map(call => call.body.model), ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]);
     assert.match(calls[0].body.messages[1].content, /Select zero to 2 IDs per day/);
+
+    process.env.GROQ_FALLBACK_MODEL = "none";
+    calls.length = 0;
+    await handler({ httpMethod: "POST", body: JSON.stringify(request) });
+    assert.equal(calls.length, 1);
 
     process.env.OPENROUTER_API_KEY = "test-only";
     calls.length = 0;
@@ -262,12 +273,47 @@ test("V2 endpoint falls back to OpenRouter only when Groq fails and a fallback k
     assert.equal(calls[1].body.model, "openai/gpt-oss-120b");
   } finally {
     globalThis.fetch = originalFetch;
-    for (const [name, value] of [["GROQ_API_KEY", saved.groq], ["OPENROUTER_API_KEY", saved.openrouter]] as const) {
+    for (const [name, value] of [["GROQ_API_KEY", saved.groq], ["OPENROUTER_API_KEY", saved.openrouter],
+      ["GROQ_FALLBACK_MODEL", saved.backup]] as const) {
       if (value === undefined) delete process.env[name]; else process.env[name] = value;
     }
   }
 });
 
+
+test("V2 endpoint serves the plan from the backup Groq model when the main model is rate limited", async () => {
+  const request = { schemaVersion: 2, routeConceptId: "route-a", interests: ["culture"], pace: "BALANCED",
+    days: [{ day: 1, city: "Kandy", places: [{ id: "temple-kandy", name: "Kandy Temple", category: "temple" }] },
+      { day: 2, city: "Kandy", places: [] }] };
+  const valid = JSON.stringify({ schemaVersion: 2, routeConceptId: "route-a",
+    days: [{ day: 1, placeIds: ["temple-kandy"] }, { day: 2, placeIds: [] }] });
+  const saved = { groq: process.env.GROQ_API_KEY, openrouter: process.env.OPENROUTER_API_KEY,
+    backup: process.env.GROQ_FALLBACK_MODEL };
+  const originalFetch = globalThis.fetch;
+  const models: string[] = [];
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    const model = JSON.parse(String(init.body)).model;
+    models.push(model);
+    return model === "openai/gpt-oss-120b"
+      ? new Response(JSON.stringify({ error: { code: "rate_limit_exceeded" } }), { status: 429 })
+      : new Response(JSON.stringify({ choices: [{ message: { content: valid } }] }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    process.env.GROQ_API_KEY = "test-only";
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.GROQ_FALLBACK_MODEL;
+    const result = await handler({ httpMethod: "POST", body: JSON.stringify(request) });
+    assert.equal(result.statusCode, 200);
+    assert.deepEqual(JSON.parse(result.body).plan.days[0].placeIds, ["temple-kandy"]);
+    assert.deepEqual(models, ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [name, value] of [["GROQ_API_KEY", saved.groq], ["OPENROUTER_API_KEY", saved.openrouter],
+      ["GROQ_FALLBACK_MODEL", saved.backup]] as const) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  }
+});
 
 test("fallback distributes distinct places, retains multiple activities and does not assign arbitrary hotels", async () => {
   const input = { ...brief, durationDays: 4, requestedCities: ["Kandy"] };

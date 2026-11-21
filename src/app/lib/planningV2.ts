@@ -5,6 +5,7 @@ import { calculateCostLedger, compareBudget, type CostLedger, type CostLineInput
 import type { RouteConceptV1, TripBriefV1 } from "./planningTypes";
 import { CMB_AIRPORT, resolvePlanningEndpoint } from "./planningV2Locations.ts";
 import { assessPlanningSeason, planningSeasonMonth, type PlanningSeason } from "./routeSeason.ts";
+import { foodDayPrice, INDICATIVE_EXCHANGE_RATES, legCost, roomNightPrice } from "./indicativePrices.ts";
 import { arrivalReadyMinute, departureDeadlineMinute, TRANSFER_POLICY } from "./routeConstraints.ts";
 import type { CandidateRoute, PlanningDestination, RouteReason } from "./routeTypes";
 import { buildTransportPlan, formatDriveTime } from "./transportPlanning.ts";
@@ -158,21 +159,25 @@ function needsRoadMatrix(brief: TripBriefV1, assignments: Record<string, Transpo
 }
 
 function defaultCostLines(brief: TripBriefV1, route: CandidateRoute, transport: TransportPlan): CostLineInput[] {
-  const unknown = { kind: "UNKNOWN" as const, currency: brief.budget.currency, reason: "No sourced price available" };
+  const unknown = { kind: "UNKNOWN" as const, currency: brief.budget.currency,
+    reason: "Activity tickets are priced once places are chosen" };
   const lines: CostLineInput[] = [
-    { id: `${route.id}:stays`, category: "ACCOMMODATION", description: "Accommodation", quantity: 1,
-      periodCount: brief.durationDays - 1, periodUnit: "NIGHT", chargingBasis: "PER_ROOM", unitPrice: unknown },
+    { id: `${route.id}:stays`, category: "ACCOMMODATION", description: "Accommodation",
+      quantity: Math.ceil(brief.travellerCount / 2), periodCount: brief.durationDays - 1, periodUnit: "NIGHT",
+      chargingBasis: "PER_ROOM", unitPrice: roomNightPrice(brief.comfortTier, planningSeasonMonth(brief)) },
     { id: `${route.id}:food`, category: "FOOD", description: "Meals", quantity: brief.travellerCount,
-      periodCount: brief.durationDays, periodUnit: "DAY", chargingBasis: "PER_PERSON", unitPrice: unknown },
+      periodCount: brief.durationDays, periodUnit: "DAY", chargingBasis: "PER_PERSON", unitPrice: foodDayPrice(brief.comfortTier) },
     { id: `${route.id}:activities`, category: "ACTIVITIES", description: "Activities", quantity: brief.travellerCount,
       chargingBasis: "PER_PERSON", unitPrice: unknown },
   ];
+  const airport = new Set([transport.arrivalTransfer?.id, transport.departureTransfer?.id].filter(Boolean));
   for (const leg of [...transport.legs, transport.arrivalTransfer, transport.departureTransfer].filter(Boolean)) {
     const perPerson = ["TRAIN", "BUS", "PUBLIC_TRANSPORT_UNSPECIFIED"].includes(leg!.mode);
-    lines.push({ id: `${route.id}:transport:${leg!.id}`, category: "TRANSPORT",
-      description: `${leg!.fromId} to ${leg!.toId}`, quantity: perPerson ? brief.travellerCount : 1,
-      chargingBasis: perPerson ? "PER_PERSON" : leg!.mode === "PRIVATE_DRIVER" ? "PER_VEHICLE" : "FIXED",
-      unitPrice: unknown });
+    const estimate = legCost(leg!, brief, { airport: airport.has(leg!.id) });
+    lines.push({ id: `${route.id}:transport:${leg!.id}`, category: "TRANSPORT", description: `${leg!.fromId} to ${leg!.toId}`,
+      ...(estimate ?? { quantity: perPerson ? brief.travellerCount : 1,
+        chargingBasis: perPerson ? "PER_PERSON" : leg!.mode === "PRIVATE_DRIVER" ? "PER_VEHICLE" : "FIXED",
+        unitPrice: { ...unknown, reason: "No sourced fare for this transport mode" } }) });
   }
   return lines;
 }
@@ -262,7 +267,7 @@ export function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix:
   const transport = buildTransportPlan(route, brief, matrix, services.assignments);
   const effectiveReasons = route.reasons.filter(reason => applicableRoadReason(reason, route, transport));
   const costLines = services.getCostLines?.(brief, route, transport) ?? defaultCostLines(brief, route, transport);
-  const ledger = calculateCostLedger(costLines, brief.budget.currency, brief.travellerCount);
+  const ledger = calculateCostLedger(costLines, brief.budget.currency, brief.travellerCount, INDICATIVE_EXCHANGE_RATES);
   const budget = compareBudget(ledger, brief.budget);
   const issues: PlanningV2Issue[] = effectiveReasons.map(reason => ({
     code: reason.code,
@@ -274,7 +279,9 @@ export function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix:
       ? "Train and bus schedules, connections and fares are not available yet."
       : "Transport mode or journey timing needs confirmation." });
   if (ledger.summary.unknownCostCount) issues.push({ code: "COST_INCOMPLETE", severity: "UNKNOWN",
-    detail: `${ledger.summary.unknownCostCount} cost ${ledger.summary.unknownCostCount === 1 ? "item needs" : "items need"} a sourced price.` });
+    detail: ledger.sourceLines.every(line => line.unitPrice.kind !== "UNKNOWN" || line.category === "ACTIVITIES")
+      ? "Rooms, meals and transfers are estimated; activity tickets are added once places are chosen."
+      : `${ledger.summary.unknownCostCount} cost ${ledger.summary.unknownCostCount === 1 ? "item needs" : "items need"} a price.` });
   else if (budget.status === "UNKNOWN") issues.push({ code: "COST_INCOMPLETE", severity: "UNKNOWN",
     detail: "The available prices are not enough to confirm the trip budget." });
   for (const issue of ledger.issues.filter(issue => issue.severity === "ERROR")) issues.push({

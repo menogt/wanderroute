@@ -34,9 +34,12 @@ export function planningBudget(detail: DetailedPlanningResult, brief: TripBriefV
     if (multiplier !== undefined) row.allowanceTotal = money(allowance.amount * multiplier);
   }
   const supported = money(rows.reduce((sum, row) => sum + row.supported, 0));
+  const supportedMaximum = money(rows.reduce((sum, row) => sum + row.supportedMaximum, 0));
   const allowanceTotal = money(rows.reduce((sum, row) => sum + (row.allowanceTotal ?? 0), 0));
-  return { rows, supported, allowanceTotal, scenarioMinimum: money(supported + allowanceTotal),
+  return { rows, supported, supportedMaximum, allowanceTotal, scenarioMinimum: money(supported + allowanceTotal),
     scenarioMaximum: money(rows.reduce((sum, row) => sum + row.supportedMaximum + (row.allowanceTotal ?? 0), 0)),
     uncovered: rows.filter(row => row.gaps && row.allowanceTotal === undefined).map(row => row.label),
-    exclusions: ["International flights", "Travel insurance", "Visa or entry authorization fees unless included in your other-cost allowance"] };
+    exclusions: ["International flights", "Travel insurance",
+      "Visa (ETA) fees: free for citizens of 40 countries, including the US, UK and Australia, since May 2026; check yours at immigration.gov.lk",
+      "Shopping and optional extras"] };
 }

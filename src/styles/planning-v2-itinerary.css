@@ -96,6 +96,11 @@
 .wr-v2-budget label { display: grid; gap: 6px; font-size: .85rem; }
 .wr-v2-budget :is(input, select) { min-height: 44px; width: 100%; min-width: 0; padding: 8px; color: var(--wr-midnight); background: var(--wr-ivory); border: 1px solid var(--wr-line-dark); }
 @media (max-width: 640px) { .wr-v2-budget__row { grid-template-columns: 1fr; } }
+.wr-v2-budget__verdict { padding: 12px 14px; border-left: 4px solid var(--wr-gold); background: var(--wr-ivory); color: var(--wr-midnight) !important; }
+.wr-v2-budget__verdict--within_budget, .wr-v2-budget__verdict--likely_within_budget { border-left-color: #2f7d5b; }
+.wr-v2-budget__verdict--over_budget { border-left-color: #b4432f; }
+.wr-v2-budget__sources { margin: 0 0 12px; padding-left: 20px; line-height: 1.8; }
+.wr-v2-budget__sources a { color: var(--wr-midnight); overflow-wrap: anywhere; }
 
 .wr-v2-detail .wr-v2__masthead { padding-block: 25px 30px; }
 .wr-v2-detail .wr-v2__masthead h1 { font-size: clamp(2rem, 4vw, 3rem); }

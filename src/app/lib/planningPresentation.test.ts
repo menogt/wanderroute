@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setIndicativePricing } from "./indicativePrices.ts";
 import { planRouteConcepts } from "./planningV2.ts";
 import { generatePlanningV2Itinerary } from "./planningV2Itinerary.ts";
 import { planningPresentation } from "./planningPresentation.ts";
@@ -7,6 +8,8 @@ import { applyPlanningV2Edit, undoPlanningV2Edit } from "./planningV2Editing.ts"
 import { customizationDraft, previewPlanningCustomization } from "./planningCustomization.ts";
 import { showPlanningConcepts, selectPlanningConcept, showPlanningItinerary } from "./planningV2Session.ts";
 import type { TripBriefV1 } from "./planningTypes";
+// This file checks sourced, recorded and allowance arithmetic on its own; estimates are tested in indicativePrices.test.ts.
+setIndicativePricing(false);
 
 async function fixture() {
   const brief: TripBriefV1 = { schemaVersion: 1, durationDays: 4, travellerCount: 2, interests: ["culture"], budget: { amount: 1000, currency: "USD" }, requestedCities: ["Kandy"], transportPreference: "PUBLIC_TRANSPORT", travelDates: { start: "2027-02-01", end: "2027-02-04" } };
