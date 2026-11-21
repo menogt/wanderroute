@@ -19,7 +19,7 @@ const MODES: { value: TransportMode; label: string }[] = [{ value: "PRIVATE_DRIV
   { value: "TRAIN", label: "Train" }, { value: "BUS", label: "Bus" }, { value: "UNASSIGNED", label: "Choose later / mixed" }];
 
 export function PlanningCustomizationPanel({ session, busy, onApply, onClose }: { session: PlanningV2Session; busy: boolean;
-  onApply: (draft: CustomizationDraft) => Promise<boolean>; onClose: () => void }) {
+  onApply: (draft: CustomizationDraft) => Promise<boolean>; onClose: (applied?: boolean) => void }) {
   const [draft, setDraft] = useState(() => customizationDraft(session));
   const initialStart = draft.brief.travelDates?.start ?? draft.brief.arrival?.dateTime?.slice(0, 10) ?? "";
   const initialEnd = draft.brief.travelDates?.end ?? draft.brief.departure?.dateTime?.slice(0, 10) ?? "";
@@ -161,8 +161,8 @@ export function PlanningCustomizationPanel({ session, busy, onApply, onClose }: 
           <label>Arrangement for {leg!.id}<select value={draft.transport[leg!.id]?.status ?? "PROPOSED"} onChange={event => change(value => ({ ...value, transport: { ...value.transport, [leg!.id]: { mode: leg!.mode, ...value.transport[leg!.id], status: event.target.value as ArrangementStatus } } }))}>{ARRANGEMENTS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         </div>)}
       </details>
-      <div className="wr-v2-detail__edit-buttons"><button type="button" disabled={dateProblem} onClick={() => setPreview(previewPlanningCustomization(session, draft))}>Preview changes</button><button type="button" onClick={onClose}>Close customization</button></div>
-      {preview && <div className="wr-v2-customize__preview" role="status"><h3>{preview.problems.length ? "Resolve these before applying" : "Review your changes"}</h3><ul>{[...preview.problems, ...preview.consequences].map((text, i) => <li key={i}>{text}</li>)}</ul>{preview.session && <button type="button" onClick={async () => { if (await onApply(draft)) onClose(); }}>Apply these changes</button>}</div>}
+      <div className="wr-v2-detail__edit-buttons"><button type="button" disabled={dateProblem} onClick={() => setPreview(previewPlanningCustomization(session, draft))}>Preview changes</button><button type="button" onClick={() => onClose()}>Cancel</button></div>
+      {preview && <div className="wr-v2-customize__preview" role="status"><h3>{preview.problems.length ? "Resolve these before applying" : "Review your changes"}</h3><ul>{[...preview.problems, ...preview.consequences].map((text, i) => <li key={i}>{text}</li>)}</ul>{preview.session && <button type="button" className="wr-button wr-button--primary" onClick={async () => { if (await onApply(draft)) onClose(true); }}>Apply and save changes</button>}</div>}
     </fieldset>{busy && <p role="status">Updating your itinerary and place choices…</p>}
   </section>;
 }

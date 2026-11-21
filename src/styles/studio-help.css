@@ -1,0 +1,30 @@
+/* Trip Studio help: tab summaries, info tips and the first-visit guide. */
+.wr-studio-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 4px 0 14px; }
+.wr-studio-bar .wr-studio__nav { flex: 1 1 520px; margin: 0; }
+.wr-studio-bar__howto { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--wr-line-dark); border-radius: 6px; background: var(--wr-ivory); color: var(--wr-midnight); font-weight: 700; cursor: pointer; }
+
+.wr-studio-help { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 10px 14px; border-left: 3px solid var(--wr-gold); background: var(--wr-ivory); }
+.wr-studio-help p { margin: 0; color: var(--wr-midnight); line-height: 1.45; }
+
+.wr-infotip { position: relative; display: inline-flex; }
+.wr-infotip__button { display: inline-grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--wr-line-dark); border-radius: 50%; background: #fff; color: var(--wr-midnight); cursor: pointer; }
+.wr-infotip__button[aria-expanded="true"] { background: var(--wr-midnight); color: var(--wr-ivory); }
+.wr-infotip__body { position: absolute; z-index: 40; top: calc(100% + 8px); right: 0; width: min(340px, calc(100vw - 40px)); padding: 12px 14px; border: 1px solid var(--wr-line-dark); border-radius: 8px; background: #fff; color: var(--wr-midnight); box-shadow: 0 10px 30px rgba(7, 26, 45, 0.18); font-size: .9rem; line-height: 1.5; }
+.wr-infotip__body ol { margin: 6px 0 0; padding-left: 18px; }
+.wr-infotip__body li + li { margin-top: 4px; }
+
+.wr-studio-guide { position: relative; margin: 0 0 18px; padding: 22px 22px 20px; border: 1px solid var(--wr-gold); border-radius: 10px; background: #fffaf0; box-shadow: 0 8px 24px rgba(7, 26, 45, 0.08); }
+.wr-studio-guide h2 { margin: 4px 0 14px; color: var(--wr-midnight); font: 700 1.45rem var(--wr-serif); outline: none; }
+.wr-studio-guide__close { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: var(--wr-midnight); cursor: pointer; }
+.wr-studio-guide__steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 0 0 14px; padding: 0; list-style: none; }
+.wr-studio-guide__steps li { display: flex; gap: 10px; }
+.wr-studio-guide__steps strong { display: inline-flex; align-items: center; gap: 6px; color: var(--wr-midnight); }
+.wr-studio-guide__steps p { margin: 4px 0 6px; color: var(--wr-ink-soft); line-height: 1.45; }
+.wr-studio-guide__number { flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--wr-midnight); color: var(--wr-ivory); font-weight: 800; }
+.wr-studio-guide__save { margin: 0 0 14px; color: var(--wr-midnight); line-height: 1.5; }
+@media (max-width: 900px) { .wr-studio-guide__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .wr-studio-guide__steps { grid-template-columns: 1fr; } .wr-studio-guide { padding: 18px 16px; } }
+
+.wr-v2-detail__edit-toolbar .wr-edit-saved { display: inline-flex; align-items: center; gap: 6px; color: #2f7d5b; font-weight: 700; }
+.wr-v2-detail__edit-toolbar .wr-edit-saved--failed { color: #b4432f; }
+.wr-v2-detail__saved-notice { margin: 0 0 14px; padding: 10px 14px; border-left: 4px solid #2f7d5b; background: #f1faf5; color: var(--wr-midnight); font-weight: 700; }
