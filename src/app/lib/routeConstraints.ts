@@ -20,7 +20,9 @@ export const TRANSFER_POLICY = {
   departureBufferMinutes: 180,
   sightseeingStartMinute: 8 * 60,
   sightseeingEndMinute: 21 * 60,
-  earliestDepartureTransferMinute: 4 * 60,
+  // A 03:00 hotel pickup is routine before an early flight; 04:00 left a 07:00 flight
+  // no transfer time at all, so even an airport-side night was rejected.
+  earliestDepartureTransferMinute: 3 * 60,
   arrivalTransferEndMinute: 24 * 60,
 } as const;
 

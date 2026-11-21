@@ -5,6 +5,7 @@ import { planningBudget } from "./planningBudget.ts";
 import { resolvePlanningEndpoint } from "./planningV2Locations.ts";
 import { knownPlanningDestinations } from "./routeCandidates.ts";
 import type { ArrangementStatus } from "./planningCustomization";
+import { formatDriveTime } from "./transportPlanning.ts";
 
 export const arrangementLabel = (status?: ArrangementStatus) => status === "TRAVELLER_BOOKED"
   ? "Traveler reports booked; not independently verified" : status === "NEEDS_BOOKING" ? "Needs booking"
@@ -55,7 +56,9 @@ export function planningPresentation(detail: DetailedPlanningResult, brief: Trip
       ...(detail.transport ?? concept.transport).departureTransfer ? [(detail.transport ?? concept.transport).departureTransfer] : [], ...(detail.transport?.excursions ?? []).flatMap(visit => [visit.outbound, visit.inbound])].map(leg => ({
       id: leg.id, from: leg.fromId.replace("CMB_AIRPORT", "CMB airport"), to: leg.toId.replace("CMB_AIRPORT", "CMB airport"),
       mode: leg.mode.replace(/_/g, " ").toLowerCase(),
-      timing: leg.durationMinutes === undefined ? "Journey time unknown; confirm the service and schedule" : `${Math.ceil(leg.durationMinutes)} min road-driving estimate; allow for stops and conditions`,
+      timing: leg.durationMinutes !== undefined ? `${Math.ceil(leg.durationMinutes)} min road-driving estimate; allow for stops and conditions`
+        : leg.roadReferenceMinutes !== undefined ? `Transport to choose; about ${formatDriveTime(leg.roadReferenceMinutes)} by car (road estimate), not a timetable`
+        : "Journey time unknown; confirm the service and schedule",
       status: arrangementLabel(detail.customization?.transport[leg.id]?.status),
     })),
     budget, costLines: detail.ledger.lines.map(line => ({ label: line.input.description, day: line.input.day,

@@ -5,8 +5,9 @@ import { calculateCostLedger, compareBudget, type CostLedger, type CostLineInput
 import type { RouteConceptV1, TripBriefV1 } from "./planningTypes";
 import { CMB_AIRPORT, resolvePlanningEndpoint } from "./planningV2Locations.ts";
 import { assessPlanningSeason, planningSeasonMonth, type PlanningSeason } from "./routeSeason.ts";
+import { arrivalReadyMinute, departureDeadlineMinute, TRANSFER_POLICY } from "./routeConstraints.ts";
 import type { CandidateRoute, PlanningDestination, RouteReason } from "./routeTypes";
-import { buildTransportPlan } from "./transportPlanning.ts";
+import { buildTransportPlan, formatDriveTime } from "./transportPlanning.ts";
 import type { TransportMode, TransportPlan } from "./transportTypes";
 import { fetchTravelMatrix, type MatrixLocation, type TravelMatrix } from "./travelTimeMatrix.ts";
 
@@ -108,6 +109,25 @@ function normalizedBrief(brief: TripBriefV1): TripBriefV1 {
     ...(brief.departure ? { departure: normalizeEndpoint(brief.departure) } : {}) };
 }
 
+/** Closest overnight base to CMB, offered when a timed early departure rules out every planned last stop. */
+const AIRPORT_NIGHT_BASE = "Negombo";
+
+function wantsAirportNight(brief: TripBriefV1): boolean {
+  return !!brief.departure?.dateTime && !!brief.departure.location &&
+    resolvePlanningEndpoint(brief.departure.location)?.id === CMB_AIRPORT.id;
+}
+
+/** The airport-side stop exists for the flight: keep it to one night and give spare nights back to the traveller's stops. */
+function withOneAirportNight(route: CandidateRoute): CandidateRoute {
+  const last = route.nights.length - 1;
+  if (last < 1 || route.nights[last] <= 1) return route;
+  const nights = [...route.nights];
+  let spare = nights[last] - 1;
+  nights[last] = 1;
+  for (let index = 0; spare > 0; index = (index + 1) % last, spare -= 1) nights[index] += 1;
+  return { ...route, nights };
+}
+
 function matrixLocations(destinations: PlanningDestination[], brief: TripBriefV1,
   available: MatrixLocation[]): MatrixLocation[] {
   const locations = [...destinations];
@@ -116,6 +136,11 @@ function matrixLocations(destinations: PlanningDestination[], brief: TripBriefV1
     const match = resolvePlanningEndpoint(location) ?? available.find(candidate =>
       candidate.id.toLowerCase() === location.toLowerCase() || candidate.name.toLowerCase() === location.toLowerCase());
     if (match && !locations.some(candidate => candidate.id === match.id)) locations.push(match as PlanningDestination);
+  }
+  // Same single matrix request: include the airport-side base so it can be checked if needed.
+  const airportBase = available.find(candidate => candidate.name === AIRPORT_NIGHT_BASE);
+  if (wantsAirportNight(brief) && airportBase && !locations.some(candidate => candidate.id === airportBase.id)) {
+    locations.push(airportBase as PlanningDestination);
   }
   return locations;
 }
@@ -127,9 +152,9 @@ function unavailableMatrix(locations: MatrixLocation[], now: () => string,
       status: from.coordinates && to.coordinates ? "UNAVAILABLE" as const : "MISSING_COORDINATES" as const }))) };
 }
 
+/** Car-road estimates help every traveller except one who has chosen public transport only. */
 function needsRoadMatrix(brief: TripBriefV1, assignments: Record<string, TransportMode>): boolean {
-  return brief.transportPreference === "PRIVATE_DRIVER" || brief.transportPreference === "TUK_TUK_SELF_DRIVE" ||
-    Object.values(assignments).includes("PRIVATE_DRIVER");
+  return brief.transportPreference !== "PUBLIC_TRANSPORT" || Object.values(assignments).includes("PRIVATE_DRIVER");
 }
 
 function defaultCostLines(brief: TripBriefV1, route: CandidateRoute, transport: TransportPlan): CostLineInput[] {
@@ -155,8 +180,10 @@ function defaultCostLines(brief: TripBriefV1, route: CandidateRoute, transport: 
 function applicableRoadReason(reason: RouteReason, route: CandidateRoute, transport: TransportPlan): boolean {
   if (!ROAD_ONLY.has(reason.code)) return true;
   if (transport.preference === "PRIVATE_DRIVER") return true;
-  if (reason.code === "ARRIVAL_CONFLICT") return transport.arrivalTransfer?.mode === "PRIVATE_DRIVER";
-  if (reason.code === "DEPARTURE_CONFLICT") return transport.departureTransfer?.mode === "PRIVATE_DRIVER";
+  // Airport transfers are almost always by car or taxi, so an unchosen mode is checked like a car.
+  const carLike = (mode?: TransportMode) => mode === "PRIVATE_DRIVER" || mode === "UNASSIGNED";
+  if (reason.code === "ARRIVAL_CONFLICT") return carLike(transport.arrivalTransfer?.mode);
+  if (reason.code === "DEPARTURE_CONFLICT") return carLike(transport.departureTransfer?.mode);
   const places = (reason.destinations ?? []).map(value => value.toLowerCase());
   const leg = route.legs.find(candidate => places.includes(candidate.fromId.toLowerCase()) &&
     places.includes(candidate.toId.toLowerCase()));
@@ -169,8 +196,37 @@ function applicableRoadReason(reason: RouteReason, route: CandidateRoute, transp
   return false;
 }
 
-function reasonDetail(reason: RouteReason): string {
-  const places = reason.destinations?.join(" to ");
+function clockText(minute: number): string {
+  const value = ((Math.round(minute) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+}
+
+const placeName = (value: string) => value === CMB_AIRPORT.id ? "CMB airport" : value;
+
+/** Plain-language airport transfer conflicts with the times a traveller can act on. */
+function transferConflictDetail(reason: RouteReason, brief?: TripBriefV1): string | undefined {
+  const minutes = Number(reason.details?.transferMinutes);
+  const [endpoint, stop] = (reason.destinations ?? []).map(placeName);
+  if (!brief || !Number.isFinite(minutes) || !endpoint || !stop) return undefined;
+  if (reason.code === "DEPARTURE_CONFLICT") {
+    const deadline = departureDeadlineMinute(brief);
+    if (deadline === undefined) return undefined;
+    const leave = deadline - minutes;
+    const flight = clockText(deadline + TRANSFER_POLICY.departureBufferMinutes);
+    return `${stop} to ${endpoint} is about ${formatDriveTime(minutes)} by car. To arrive ${TRANSFER_POLICY.departureBufferMinutes / 60} hours before your ${flight} flight you would leave at ${clockText(leave)}${leave < 0 ? " the night before" : ""}. Spend your last night nearer the airport, such as ${AIRPORT_NIGHT_BASE}.`;
+  }
+  if (reason.code === "ARRIVAL_CONFLICT") {
+    const ready = arrivalReadyMinute(brief);
+    if (ready === undefined) return undefined;
+    return `${endpoint} to ${stop} is about ${formatDriveTime(minutes)} by car after you clear the airport around ${clockText(ready)}. Spend your first night nearer the airport, such as ${AIRPORT_NIGHT_BASE}.`;
+  }
+  return undefined;
+}
+
+function reasonDetail(reason: RouteReason, brief?: TripBriefV1): string {
+  const conflict = transferConflictDetail(reason, brief);
+  if (conflict) return conflict;
+  const places = reason.destinations?.map(placeName).join(" to ");
   const names: Record<string, string> = {
     REQUESTED_CITY_UNAVAILABLE: "A requested destination has no trusted coordinates",
     REQUESTED_CITY_OMITTED: "A requested destination does not fit this route",
@@ -211,7 +267,7 @@ export function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix:
   const issues: PlanningV2Issue[] = effectiveReasons.map(reason => ({
     code: reason.code,
     severity: reason.severity === "REJECTION" ? "ERROR" : reason.severity === "UNCERTAIN" ? "UNKNOWN" : "WARNING",
-    detail: reasonDetail(reason),
+    detail: reasonDetail(reason, brief),
   }));
   if (transport.readiness.status !== "SUPPORTED") issues.push({ code: "TRANSPORT_CONFIRMATION", severity: "UNKNOWN",
     detail: transport.readiness.reasons.includes("PUBLIC_SCHEDULE_UNAVAILABLE")
@@ -234,7 +290,10 @@ export function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix:
   const knownDrivingMinutes = knownDriverLegs.length ? knownDriverLegs.reduce((sum, leg) => sum + leg.durationMinutes!, 0) : undefined;
   const longestKnownDrivingLegMinutes = knownDriverLegs.length ? Math.max(...knownDriverLegs.map(leg => leg.durationMinutes!)) : undefined;
   const stopIds = route.destinations.map(destination => `${route.id}:${destination.id}`);
-  const recommendation = route.destinations.length === 1 ? "One base keeps this trip simple." :
+  const lastStop = route.destinations[route.destinations.length - 1];
+  const recommendation = wantsAirportNight(brief) && lastStop?.name === AIRPORT_NIGHT_BASE && !lastStop.requested
+    ? `Ends with a night in ${AIRPORT_NIGHT_BASE}, close to CMB, so your departure flight is within reach.` :
+    route.destinations.length === 1 ? "One base keeps this trip simple." :
     route.destinations.filter(destination => destination.requested).length === brief.requestedCities.length &&
       brief.requestedCities.length ? "Keeps all requested destinations." :
       "Balances destination coverage with the available days.";
@@ -250,11 +309,11 @@ export function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix:
     seasonalAssessment: { status: effectiveReasons.some(reason => reason.code === "SEASON_AVOID") ? "UNSUITABLE" :
       effectiveReasons.some(reason => reason.code === "SEASON_CAUTION") ? "CAUTION" :
         effectiveReasons.some(reason => reason.code === "SEASON_UNKNOWN") ? "UNKNOWN" : "SUITABLE",
-      reasons: effectiveReasons.filter(reason => reason.code.startsWith("SEASON_")).map(reasonDetail) },
+      reasons: effectiveReasons.filter(reason => reason.code.startsWith("SEASON_")).map(reason => reasonDetail(reason, brief)) },
     tradeoffs: issues.map(issue => issue.detail).filter((value): value is string => !!value),
     constraintResults: effectiveReasons.map(reason => ({ constraint: reason.code,
       satisfied: reason.severity === "REJECTION" ? false : reason.severity === "UNCERTAIN" ? null : true,
-      explanation: reasonDetail(reason) })),
+      explanation: reasonDetail(reason, brief) })),
     explanation: recommendation, generatedAt: services.now?.() ?? new Date().toISOString(),
     generatorVersion: "planning-v2-route-1",
   };
@@ -284,7 +343,18 @@ export async function planRouteConcepts(rawBrief: TripBriefV1,
   const month = planningSeasonMonth(brief);
   const seasons = new Map(destinations.map(destination => [destination.id,
     assessPlanningSeason(destination.name, month)] as [string, PlanningSeason]));
-  const candidates = generateRouteCandidates(brief, destinations, matrix, seasons);
+  let candidates = generateRouteCandidates(brief, destinations, matrix, seasons);
+  // When the flight time rules out every planned last stop, offer the same trip ending near CMB.
+  const airportBase = available.find(candidate => candidate.name === AIRPORT_NIGHT_BASE);
+  if (wantsAirportNight(brief) && airportBase && !destinations.some(stop => stop.id === airportBase.id) &&
+      candidates.length && candidates.every(candidate => candidate.reasons.some(reason => reason.code === "DEPARTURE_CONFLICT"))) {
+    const extended = generateRouteCandidates(brief, [...destinations, { ...airportBase, requested: false }], matrix, seasons)
+      .filter(candidate => candidate.destinations[candidate.destinations.length - 1]?.id === airportBase.id &&
+        !candidates.some(existing => existing.id === candidate.id));
+    // Prefer endings that keep every requested place; drop-a-place variants only if nothing else fits.
+    const complete = extended.filter(candidate => !candidate.reasons.some(reason => reason.code === "REQUESTED_CITY_OMITTED"));
+    candidates = [...candidates, ...(complete.length ? complete : extended).map(withOneAirportNight)];
+  }
   const all = candidates.map(candidate => createConcept(brief, candidate, matrix, services));
   const roadRanking = brief.transportPreference === "PRIVATE_DRIVER";
   all.sort((a, b) => Number(a.readiness === "INVALID") - Number(b.readiness === "INVALID") ||

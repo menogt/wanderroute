@@ -18,6 +18,7 @@ import type { PlanningRouteConcept } from "../../lib/planningV2";
 import type { TripBriefV1 } from "../../lib/planningTypes";
 import type { CostLedger, AmountSummary } from "../../lib/costLedger";
 import type { TransportLeg } from "../../lib/transportTypes";
+import { formatDriveTime } from "../../lib/transportPlanning";
 import "../../../styles/planning-v2.css";
 import "../../../styles/planning-v2-itinerary.css";
 
@@ -173,8 +174,10 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
               return <li key={item.id} className={selectedItemId === item.id ? "is-selected" : undefined}>
                 <span className="wr-v2-detail__time">{item.plannedStart ?? item.time}</span>
                 <div><button type="button" className="wr-v2-detail__activity-name" aria-pressed={selectedItemId === item.id} onClick={() => { setSelectedItemId(item.id); }}>{item.label}</button><p>{item.detail}</p>
-                  {leg && <small>{leg.mode.replace(/_/g, " ").toLowerCase()} · {leg.durationMinutes === undefined ?
-                    "journey time unknown" : `${Math.ceil(leg.durationMinutes)} min road-driving estimate`}</small>}
+                  {leg && <small>{leg.mode === "UNASSIGNED" ? "transport to choose" : leg.mode.replace(/_/g, " ").toLowerCase()} · {leg.durationMinutes !== undefined
+                    ? `${Math.ceil(leg.durationMinutes)} min road-driving estimate`
+                    : leg.roadReferenceMinutes !== undefined ? `about ${formatDriveTime(leg.roadReferenceMinutes)} by car (road estimate)`
+                    : "journey time unknown"}</small>}
                   {item.category === "activity" && !item.isFreeTime && <small>{item.durationMinutes} min visit estimate · Opening hours {detail.places.find(place => place.databaseId === item.placeId)?.openingHours ? "to check" : "unknown"}</small>}
                   <small>{item.isFreeTime ? "Personal time; include any spending in your allowances." : itemCost(ledger, item.id)}</small>
                   {editing && item.category === "activity" && <div className="wr-v2-detail__item-editor">

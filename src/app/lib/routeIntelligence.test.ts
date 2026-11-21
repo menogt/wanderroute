@@ -168,7 +168,9 @@ test("late arrival and early departure windows use conservative ends", () => {
   };
   assert.equal(arrivalDayUsableMinutes(brief), 0);
   assert.equal(departureDayUsableMinutes(brief), 0);
-  assert.equal(departureTransferBudgetMinutes(brief), 120);
+  // 09:00 flight − 3 h airport buffer − 03:00 earliest hotel pickup = 3 h of transfer time.
+  assert.equal(departureTransferBudgetMinutes(brief), 180);
+  assert.equal(departureTransferBudgetMinutes({ ...base, departure: { dateTime: "07:00" } }), 60);
   assert.ok(maximumPlanningBases(brief) < maximumPlanningBases(base));
 });
 

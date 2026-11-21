@@ -15,6 +15,14 @@ export function transportCapability(mode: TransportMode): TransportCapability {
   };
 }
 
+/** "3 h 54 min", "45 min": readable driving time for travellers. */
+export function formatDriveTime(minutes: number): string {
+  const total = Math.max(1, Math.round(minutes / 5) * 5);
+  const hours = Math.floor(total / 60);
+  const rest = total % 60;
+  return hours ? `${hours} h${rest ? ` ${rest} min` : ""}` : `${rest} min`;
+}
+
 export function transportLegId(fromId: string, toId: string): string {
   return `${fromId}>${toId}`;
 }
@@ -38,6 +46,11 @@ export function transportLegFromRoad(road: RoadLeg | undefined, mode: TransportM
   }
   if ((mode === "TUK_TUK_SELF_DRIVE" || mode === "SELF_DRIVE") && road?.source === "OSRM_TABLE" && road.distanceKm !== undefined) {
     return { ...base, roadReferenceDistanceKm: road.distanceKm, routingSource: "OSRM_TABLE" };
+  }
+  // No mode chosen yet: keep the journey time unknown, but show how far it is by car.
+  if (mode === "UNASSIGNED" && road?.source === "OSRM_TABLE" && road.durationMinutes !== undefined) {
+    return { ...base, roadReferenceMinutes: road.durationMinutes, routingSource: "OSRM_TABLE",
+      ...(road.distanceKm !== undefined ? { roadReferenceDistanceKm: road.distanceKm } : {}) };
   }
   return base;
 }

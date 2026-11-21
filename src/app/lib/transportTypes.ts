@@ -16,6 +16,8 @@ export type TransportLeg = {
   distanceKm?: number;
   /** A car-road reference for slower/different vehicles, not that mode's journey distance. */
   roadReferenceDistanceKm?: number;
+  /** Car-road estimate shown for reference while no transport is chosen; never that leg's journey time. */
+  roadReferenceMinutes?: number;
   routingSource?: "OSRM_TABLE";
   durationEvidence: TransportValueEvidence;
   distanceEvidence: TransportValueEvidence;

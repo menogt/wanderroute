@@ -137,13 +137,59 @@ test("late CMB arrival uses a distinct airport endpoint and reduces usable first
   assert.equal(result.concepts[0].candidate.firstDayUsableMinutes, 0);
 });
 
-test("early airport departure can reject a distant final stop", async () => {
+test("early airport departure rejects a distant final stop and offers a last night near CMB", async () => {
   const brief: TripBriefV1 = { ...base, requestedCities: ["Ella"],
     departure: { location: "CMB", dateTime: "2026-10-13T09:00" } };
   const result = await planRouteConcepts(brief, services({ "Ella>CMB_AIRPORT": 330 }));
+  assert.ok(result.concepts.length > 0);
+  assert.ok(result.concepts.every(item => item.candidate.destinations.slice(-1)[0]?.name === "Negombo"));
+  assert.ok(result.concepts.every(item => item.candidate.destinations.some(stop => stop.name === "Ella")));
+  assert.match(result.concepts[0].recommendation, /Negombo, close to CMB/);
+  const conflict = result.rejected.flatMap(item => item.issues).find(issue => issue.code === "DEPARTURE_CONFLICT")!;
+  assert.match(conflict.detail!, /Ella to CMB airport is about 5 h 30 min by car/);
+  assert.match(conflict.detail!, /leave at 00:30/);
+});
+
+test("when even the airport-side base cannot reach an early flight, no route is offered", async () => {
+  const brief: TripBriefV1 = { ...base, requestedCities: ["Ella"],
+    departure: { location: "CMB", dateTime: "2026-10-13T09:00" } };
+  const result = await planRouteConcepts(brief, services({ "Ella>CMB_AIRPORT": 330, "Negombo>CMB_AIRPORT": 300 }));
   assert.equal(result.concepts.length, 0);
-  assert.ok(result.rejected.some(item => item.issues.some(issue => issue.code === "DEPARTURE_CONFLICT")));
   assert.ok(result.issues.some(issue => issue.code === "NO_FEASIBLE_CONCEPTS"));
+});
+
+test("a 07:00 flight with a private driver keeps the requested stops and ends beside the airport", async () => {
+  const brief: TripBriefV1 = { ...base, durationDays: 10, requestedCities: ["Kandy", "Ella"],
+    departure: { location: "CMB", dateTime: "2026-12-19T07:00" } };
+  const result = await planRouteConcepts(brief, services({ "Kandy>CMB_AIRPORT": 120, "Ella>CMB_AIRPORT": 234, "Negombo>CMB_AIRPORT": 30 }));
+  const first = result.concepts[0];
+  assert.ok(first, "a usable route is offered");
+  assert.deepEqual(first.candidate.destinations.map(stop => stop.name).filter(name => name !== "Negombo").sort(), ["Ella", "Kandy"]);
+  assert.equal(first.candidate.destinations.slice(-1)[0]?.name, "Negombo");
+  assert.equal(first.candidate.nights.slice(-1)[0], 1, "the airport stop is one night");
+  assert.equal(first.candidate.nights.reduce((sum, nights) => sum + nights, 0), 9);
+  assert.ok(!first.issues.some(issue => issue.code === "DEPARTURE_CONFLICT"));
+});
+
+test("with no transport chosen, the final transfer is still checked against the flight", async () => {
+  const brief: TripBriefV1 = { ...base, durationDays: 10, requestedCities: ["Kandy", "Ella"], transportPreference: undefined,
+    departure: { location: "CMB", dateTime: "2026-12-19T07:00" } };
+  let requests = 0;
+  const result = await planRouteConcepts(brief, { getMatrix: async locations => { requests += 1;
+    return matrix(locations, { "Kandy>CMB_AIRPORT": 120, "Ella>CMB_AIRPORT": 234, "Negombo>CMB_AIRPORT": 30 }); } });
+  assert.equal(requests, 1);
+  assert.ok(result.concepts.length > 0);
+  assert.ok(result.concepts.every(item => item.candidate.destinations.slice(-1)[0]?.name === "Negombo"));
+  assert.ok(result.rejected.some(item => item.issues.some(issue => issue.code === "DEPARTURE_CONFLICT")));
+});
+
+test("unassigned legs carry a labelled car reference but never claim a journey time", async () => {
+  const result = await planRouteConcepts({ ...base, transportPreference: undefined }, services({ "Kandy>Ella": 150 }));
+  const legs = result.concepts.flatMap(item => item.transport.legs);
+  assert.ok(legs.length > 0);
+  assert.ok(legs.every(leg => leg.mode === "UNASSIGNED" && leg.durationMinutes === undefined && leg.roadReferenceMinutes !== undefined));
+  assert.ok(legs.some(leg => leg.id === "Kandy>Ella" && leg.roadReferenceMinutes === 150));
+  assert.ok(result.concepts.every(item => item.knownDrivingMinutes === undefined));
 });
 
 test("selection preserves the brief and stable concept identity; invalid routes cannot be selected", async () => {

@@ -5,6 +5,7 @@ import type { CandidatePlace, PlanningDayV2, PlanningItemV2, TripBriefV1 } from 
 import { arrivalReadyMinute, departureDeadlineMinute } from "./routeConstraints.ts";
 import type { CandidateRoute } from "./routeTypes";
 import type { TransportLeg, TransportPlan } from "./transportTypes";
+import { formatDriveTime } from "./transportPlanning.ts";
 import { eligibleActivityPlaces } from "./planningV2Places.ts";
 
 
@@ -50,7 +51,9 @@ function transportItem(day: number, leg: TransportLeg, label: string,
   const plannedEnd = canSchedule ? format(start! + Math.ceil(leg.durationMinutes!)) : undefined;
   return { id: `day-${day}:transfer:${leg.id}`, city: leg.toId,
     time: plannedStart ?? "Time to confirm", icon: "↗", label,
-    detail: leg.durationMinutes === undefined ? "Journey time and service need confirmation." :
+    detail: leg.durationMinutes === undefined ? (leg.roadReferenceMinutes !== undefined
+      ? `Transport to choose. About ${formatDriveTime(leg.roadReferenceMinutes)} by car (road estimate); not a booking or timetable.`
+      : "Journey time and service need confirmation.") :
       `${Math.ceil(leg.durationMinutes)} min road-driving estimate; timing is not a booking.`,
     category: "transport", transportLegId: leg.id,
     ...(leg.durationMinutes !== undefined ? { durationMinutes: Math.ceil(leg.durationMinutes), durationEvidence: "ESTIMATED" as const } : {}),
@@ -126,6 +129,17 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
         items.push(transportItem(dayNumber, leg, `Departure transfer from ${city}`, start));
         if (start === undefined) scheduleKnown = false;
         else activityEnd = Math.min(activityEnd, start - 60);
+        // Tell the traveller when to leave, using the driver estimate or the car reference.
+        const carMinutes = leg.durationMinutes ?? leg.roadReferenceMinutes;
+        if (deadline !== undefined && carMinutes !== undefined) {
+          // Round down to 5 minutes: a slightly earlier, readable "leave by" time.
+          const leave = Math.floor((deadline - Math.ceil(carMinutes)) / 5) * 5;
+          const wrap = (minute: number) => clock(((minute % 1440) + 1440) % 1440);
+          const leaveText = leave < 0 ? `${wrap(leave)} the night before` : wrap(leave);
+          warnings.push(leave < 3 * 60
+            ? `Flight timing: ${city} to the airport is about ${formatDriveTime(carMinutes)} by car, so you would leave at ${leaveText} to be at CMB by ${wrap(deadline)}. Consider spending your last night closer to the airport.`
+            : `Flight timing: leave ${city} by about ${leaveText} to be at CMB by ${wrap(deadline)}, 3 hours before your flight (about ${formatDriveTime(carMinutes)} by car).`);
+        }
       } else if (deadline === undefined) scheduleKnown = false;
       else activityEnd = Math.min(activityEnd, deadline);
     }
