@@ -3,9 +3,13 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "start": "node server.mjs",
     "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
