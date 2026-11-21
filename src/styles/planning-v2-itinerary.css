@@ -4,6 +4,8 @@
 .wr-v2-detail__overview p { max-width: 600px; margin: 0; color: var(--wr-ink-soft); line-height: 1.55; }
 .wr-v2-detail__actions { display: grid; justify-items: end; gap: 8px; }
 .wr-v2-detail__actions .wr-button { display: inline-flex; align-items: center; gap: 8px; min-height: 46px; }
+.wr-v2-detail__day-note { margin: 10px 0 0; padding: 10px 12px; border-left: 3px solid var(--wr-gold); background: var(--wr-ivory); color: var(--wr-midnight); font-size: .92rem; line-height: 1.5; }
+.wr-v2-detail__day-note span { display: block; margin-bottom: 2px; color: #8a6418; font: 700 .68rem/1.2 "JetBrains Mono", monospace; letter-spacing: .08em; text-transform: uppercase; }
 /* The shared gold button style is scoped to the home and planner pages; give the plan page the same main action. */
 .wr-v2 .wr-button--primary { padding: 10px 18px; border: 1px solid var(--wr-gold); border-radius: 6px; background: var(--wr-gold); color: var(--wr-midnight); text-decoration: none; }
 .wr-v2 .wr-button--primary:not(:disabled):hover { background: #e0b75f; border-color: #e0b75f; }

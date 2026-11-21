@@ -167,7 +167,8 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
       <div className={`wr-v2-detail__grid is-${mobilePane}`}>
         <article className="wr-v2-detail__day">
           <header><p className="wr-kicker">Day {String(day.day).padStart(2, "0")}{day.date ? ` · ${day.date}` : ""}</p>
-            <h2 ref={editHeading} tabIndex={-1}>{day.visitCity ? `${day.visitCity} · visit from ${day.city}` : day.city}</h2><p>{day.overnightCity ? `Overnight in ${day.overnightCity}` : "Departure day"}</p></header>
+            <h2 ref={editHeading} tabIndex={-1}>{day.visitCity ? `${day.visitCity} · visit from ${day.city}` : day.city}</h2><p>{day.overnightCity ? `Overnight in ${day.overnightCity}` : "Departure day"}</p>
+            {day.localTip && <p className="wr-v2-detail__day-note"><span>{detail.generationMode === "AI" ? "Day theme" : "Day note"}</span>{day.localTip}</p>}</header>
           <ol className="wr-v2-detail__timeline">
             {day.items.map(item => {
               const leg = item.transportLegId ? legs.get(item.transportLegId) : undefined;
