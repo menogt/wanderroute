@@ -322,6 +322,18 @@ export default function App({ openStudio = false, recoveredTrip }: { openStudio?
     </>
   );
 
+  const currentPlan = (() => {
+    const detail = v2Session.detailed;
+    if (!detail || !selectedPlanningConcept(v2Session)) return undefined;
+    const trip = detail.ledger.summary.trip; const currency = detail.ledger.currency;
+    const cost = trip.unknownCount ? trip.minimum ? `From ${currency} ${Math.floor(trip.minimum).toLocaleString()}` : "Price to confirm"
+      : trip.maximum !== undefined && trip.maximum - trip.minimum >= 1
+        ? `${currency} ${Math.floor(trip.minimum).toLocaleString()}–${Math.ceil(trip.maximum).toLocaleString()} est.`
+        : `${currency} ${Math.round(trip.minimum).toLocaleString()}`;
+    return { name: detail.itinerary.routeName, cities: detail.itinerary.cities, days: detail.itinerary.totalDays,
+      people: detail.itinerary.totalPeople, cost, viewing: screen === "planning-v2" && v2Session.view === "itinerary" };
+  })();
+
   return (
     <div className={`wr-app wr-breakpoint-${bp}`}>
       <a className="wr-skip-link" href="#main-content">Skip to main content</a>
@@ -370,6 +382,8 @@ export default function App({ openStudio = false, recoveredTrip }: { openStudio?
         onClose={() => setDrawerOpen(false)}
         onSelectTrip={handleSelectTrip}
         currentTripId={itinerary?.id ?? null}
+        currentPlan={currentPlan}
+        onOpenCurrentPlan={() => { setV2Session(previous => previous.detailed ? { ...previous, view: "itinerary" } : previous); navigate(PRIMARY_PLANNER_SCREEN); }}
       />
     </div>
   );

@@ -1715,6 +1715,8 @@
 .wr-trip-row--tight { border-left-color: #b77a25; }
 .wr-trip-row--over { border-left-color: #a33f3f; }
 .wr-trip-row.is-active { border-color: #b8862c; border-left-color: var(--wr-gold-local); }
+.wr-trip-row--current { border-left-color: var(--wr-gold-local); margin-bottom: 0.8rem; }
+.wr-trip-row--current .wr-trip-row__style { text-transform: none; letter-spacing: 0; }
 .wr-trip-row__select { align-items: start; background: transparent; border: 0; color: inherit; display: grid; gap: 0.8rem; grid-template-columns: 1.7rem 1fr; padding: 1rem 1rem 0.8rem; text-align: left; width: 100%; }
 .wr-trip-row__number { color: #9a6e1e; font-family: "JetBrains Mono", monospace; font-size: 0.61rem; padding-top: 0.2rem; }
 .wr-trip-row__main { display: flex; flex-direction: column; min-width: 0; }

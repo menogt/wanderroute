@@ -16,16 +16,23 @@ import { deleteTrip, loadTrips } from "../../lib/tripsDb";
 import { CURRENCY_SYMBOLS } from "./data";
 import "../../../styles/core-ui.css";
 
+/** The main planner keeps one working draft in this browser; it is listed above Classic Planner trips. */
+export type CurrentPlanSummary = { name: string; cities: string[]; days: number; people: number; cost: string; viewing: boolean };
+
 export function TripsDrawer({
   isOpen,
   onClose,
   onSelectTrip,
   currentTripId,
+  currentPlan,
+  onOpenCurrentPlan,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSelectTrip: (trip: GeneratedItinerary) => void;
   currentTripId: string | null;
+  currentPlan?: CurrentPlanSummary;
+  onOpenCurrentPlan?: () => void;
 }) {
   const [trips, setTrips] = useState<GeneratedItinerary[]>([]);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -125,6 +132,7 @@ export function TripsDrawer({
   };
 
   const symbolFor = (trip: GeneratedItinerary) => CURRENCY_SYMBOLS[trip.currency] ?? "$";
+  const total = trips.length + (currentPlan ? 1 : 0);
 
   return (
     <>
@@ -162,21 +170,53 @@ export function TripsDrawer({
           <div className="wr-trips__heading">
             <p className="wr-kicker">Saved journeys</p>
             <h2 id="saved-trips-title">Your travel atlas</h2>
-            <p>{loading ? "Loading your trips…" : `${trips.length} ${trips.length === 1 ? "route" : "routes"} saved on this device`}</p>
+            <p>{loading ? "Loading your trips…" : `${total} ${total === 1 ? "route" : "routes"} saved on this device`}</p>
           </div>
         </header>
 
         <div className="wr-trips__body" aria-live="polite" aria-busy={loading}>
+          {currentPlan && (
+            <article className={`wr-trip-row wr-trip-row--current${currentPlan.viewing ? " is-active" : ""}`}>
+              <button
+                type="button"
+                className="wr-trip-row__select"
+                onClick={() => { onOpenCurrentPlan?.(); onClose(); }}
+                aria-label={`Open your current plan, ${currentPlan.name}, ${currentPlan.days} days, ${currentPlan.cost}`}
+                aria-current={currentPlan.viewing ? "true" : undefined}
+              >
+                <span className="wr-trip-row__number" aria-hidden="true"><Bookmark size={15} /></span>
+                <span className="wr-trip-row__main">
+                  <span className="wr-trip-row__titleline">
+                    <strong>{currentPlan.name}</strong>
+                    {currentPlan.viewing && <small><Check size={11} aria-hidden="true" /> Viewing</small>}
+                  </span>
+                  <span className="wr-trip-row__cities">
+                    <MapPin size={13} strokeWidth={1.8} aria-hidden="true" />
+                    {currentPlan.cities.join(" — ")}
+                  </span>
+                  <span className="wr-trip-row__meta">
+                    <span><CalendarDays size={13} aria-hidden="true" /> {currentPlan.days} days</span>
+                    <span><Users size={13} aria-hidden="true" /> {currentPlan.people}</span>
+                    <span><WalletCards size={13} aria-hidden="true" /> {currentPlan.cost}</span>
+                  </span>
+                </span>
+              </button>
+              <footer className="wr-trip-row__footer">
+                <span className="wr-trip-row__date"><Clock3 size={12} aria-hidden="true" /> Your current plan</span>
+                <span className="wr-trip-row__style">A new plan replaces it; download the PDF to keep a copy</span>
+              </footer>
+            </article>
+          )}
           {loading && trips.length === 0 ? (
             <div className="wr-trips__loading" role="status">
               <span className="wr-sr-only">Loading saved trips</span>
               {[0, 1, 2].map((item) => <i key={item} />)}
             </div>
-          ) : trips.length === 0 ? (
+          ) : trips.length === 0 ? (currentPlan ? null :
             <div className="wr-trips__empty">
               <span aria-hidden="true"><Bookmark size={25} strokeWidth={1.5} /></span>
               <h3>No saved routes yet</h3>
-              <p>Your generated itinerary will appear here automatically, ready to reopen.</p>
+              <p>Create a plan and it will appear here automatically, ready to reopen.</p>
             </div>
           ) : (
             <div className="wr-trips__list">
