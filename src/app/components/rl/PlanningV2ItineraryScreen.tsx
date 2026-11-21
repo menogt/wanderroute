@@ -145,7 +145,8 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
       {editError && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {editError}</div>}
       {customizing && <div hidden={panel !== "journey"}><PlanningCustomizationPanel key={editorRevision} session={session} busy={busy} onApply={onCustomize} onClose={() => { setCustomizing(false); setStudio(false); }} /></div>}
       {brief.requestedCities.some(city => !coveredCities.has(city)) && <section className="wr-v2__alert"><strong>Visits still to arrange</strong><p>{brief.requestedCities.filter(city => !coveredCities.has(city)).join(", ")} have not been scheduled. Keep these requests in view while adjusting your bases and trip length.</p></section>}
-      {(editing || studio) && <div className="wr-v2-detail__edit-toolbar" aria-label="Activity editing history">
+      {/* Kept visible after Apply closes the Studio, so a change can always be undone where it was made. */}
+      {(editing || studio || canUndo || canRedo) && <div className="wr-v2-detail__edit-toolbar" aria-label="Activity editing history">
         <p>Changes are kept in this browser when storage is available. Times, costs and feasibility are recalculated after each edit.</p>
         <div><button type="button" onClick={() => { onUndo(); setEditorRevision(value => value + 1); editHeading.current?.focus(); }} disabled={busy || !canUndo}><Undo2 size={16} aria-hidden="true" /> Undo</button>
           <button type="button" onClick={() => { onRedo(); setEditorRevision(value => value + 1); editHeading.current?.focus(); }} disabled={busy || !canRedo}><Redo2 size={16} aria-hidden="true" /> Redo</button></div>

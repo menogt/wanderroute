@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { compareBudget } from "./costLedger.ts";
-import { admissionPrice, foodDayPrice, legCost, localTransportCost, roomNightPrice } from "./indicativePrices.ts";
+import { admissionPrice, foodDayPrice, legCost, localTransportCost, quickTripEstimate, roomNightPrice } from "./indicativePrices.ts";
 import { planRouteConcepts } from "./planningV2.ts";
 import { generatePlanningV2Itinerary } from "./planningV2Itinerary.ts";
 import { routeDayCities } from "./planningV2Scheduling.ts";
@@ -82,6 +82,29 @@ test("a 10-day December plan for two is fully estimated and gets a budget verdic
   const fit = compareBudget(detail.ledger, trip.budget);
   assert.ok(["LIKELY_WITHIN_BUDGET", "BUDGET_RISK", "OVER_BUDGET"].includes(fit.status));
   assert.ok(detail.ledger.sourceLines.every(line => line.unitPrice.kind !== "RANGE" || line.unitPrice.provenance.source));
+});
+
+test("the homepage rough guide uses the same tables and grows with comfort, days and people", () => {
+  const base = quickTripEstimate({ days: 10, people: 2, tier: "comfort", month: 12, stops: 5 });
+  assert.equal(base.rows.length, 5);
+  assert.equal(base.min, base.rows.reduce((sum, row) => sum + row.min, 0));
+  // Nine December comfort nights in one double room, exactly as the planner prices them.
+  assert.deepEqual([base.rows[0].min, base.rows[0].max], [324, 936]);
+  assert.ok(base.max > base.min);
+  assert.ok(quickTripEstimate({ days: 10, people: 2, tier: "luxury", month: 12, stops: 5 }).min > base.min);
+  assert.ok(quickTripEstimate({ days: 14, people: 4, tier: "comfort", month: 12, stops: 5 }).max > base.max);
+});
+
+test("a budget below the estimates still gives a plan, with a warning rather than a blocking error", async () => {
+  const tight = { ...trip, budget: { amount: 300, currency: "USD" as const } };
+  const result = await planRouteConcepts(tight, { getMatrix: async locations => matrix(locations), now: () => "2026-11-21T00:00:00Z" });
+  assert.ok(result.concepts.length > 0);
+  const over = result.concepts[0].issues.find(issue => issue.code === "BUDGET_OVER");
+  assert.equal(over?.severity, "WARNING");
+  const detail = await generatePlanningV2Itinerary(result, result.concepts[0].routeConcept.id, { getPlaces: async () => places,
+    getAiPlan: async () => { throw new Error("offline"); } });
+  assert.ok(!detail.validation.errors.some(issue => issue.code === "BUDGET_OVER"));
+  assert.ok(detail.validation.warnings.some(issue => issue.code === "BUDGET_OVER"));
 });
 
 test("a budget in LKR is converted at the dated reference rate", async () => {

@@ -4,6 +4,10 @@
 .wr-v2-detail__overview p { max-width: 600px; margin: 0; color: var(--wr-ink-soft); line-height: 1.55; }
 .wr-v2-detail__actions { display: grid; justify-items: end; gap: 8px; }
 .wr-v2-detail__actions .wr-button { display: inline-flex; align-items: center; gap: 8px; min-height: 46px; }
+/* The shared gold button style is scoped to the home and planner pages; give the plan page the same main action. */
+.wr-v2 .wr-button--primary { padding: 10px 18px; border: 1px solid var(--wr-gold); border-radius: 6px; background: var(--wr-gold); color: var(--wr-midnight); text-decoration: none; }
+.wr-v2 .wr-button--primary:not(:disabled):hover { background: #e0b75f; border-color: #e0b75f; }
+.wr-v2 .wr-button--primary:disabled { opacity: .55; cursor: not-allowed; }
 .wr-v2-detail__edit-toggle, .wr-v2-detail__edit-toolbar button, .wr-v2-detail__edit-buttons button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 9px 13px; border: 1px solid var(--wr-line-dark); border-radius: 5px; background: #fffdf8; color: var(--wr-midnight); font: inherit; font-weight: 700; cursor: pointer; }
 .wr-v2-detail__edit-toggle:hover, .wr-v2-detail__edit-toolbar button:hover:not(:disabled), .wr-v2-detail__edit-buttons button:hover:not(:disabled) { border-color: var(--wr-ocean); background: var(--wr-cream); }
 .wr-v2-detail :is(button, select):focus-visible { outline: 3px solid var(--wr-gold); outline-offset: 2px; }

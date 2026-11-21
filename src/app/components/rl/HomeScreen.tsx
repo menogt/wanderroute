@@ -26,6 +26,7 @@ import type { LucideIcon } from "lucide-react";
 import hillCountryImage from "../../../assets/wanderroute-hill-country.jpg";
 import { CURRENCY_SYMBOLS, POPULAR_ROUTES, generateItinerary } from "./data";
 import { SELECTABLE_CITIES } from "../../lib/cityPlan";
+import { quickTripEstimate } from "../../lib/indicativePrices";
 import { DestinationHint } from "./DestinationHint";
 import { MONTH_NAMES } from "../../lib/seasonData";
 import type { Interest, Screen, TravelStyle, TripInputs } from "./types";
@@ -103,16 +104,18 @@ export function HomeScreen({
     );
 
   const previewDay = preview.days[0];
-  const breakdownTotal = Object.values(preview.costBreakdown).reduce((sum, value) => sum + value, 0);
   const currencySymbol = CURRENCY_SYMBOLS[preview.currency];
-
-  const budgetRows = [
-    { label: "Accommodation", value: preview.costBreakdown.hotels, tone: "navy" },
-    { label: "Food", value: preview.costBreakdown.food, tone: "gold" },
-    { label: "Transport", value: preview.costBreakdown.transport, tone: "blue" },
-    { label: "Activities", value: preview.costBreakdown.activities, tone: "tea" },
-    { label: "Entry fees & misc.", value: preview.costBreakdown.entryFees + preview.costBreakdown.misc, tone: "sand" },
-  ];
+  // Same published price tables as the planner, so the homepage and the plan never disagree in kind.
+  const estimate = useMemo(() => quickTripEstimate({ days, people, tier: travelStyle,
+    month: travelMonth ?? undefined, stops: preview.cities.length }), [days, people, travelStyle, travelMonth, preview.cities.length]);
+  const money = (value: number) => `${currencySymbol}${value.toLocaleString()}`;
+  const estimateText = `${money(estimate.min)}–${estimate.max.toLocaleString()}`;
+  const fit = estimate.min > budget ? "over" : estimate.max > budget ? "risk" : "fits";
+  const breakdownTotal = estimate.rows.reduce((sum, row) => sum + (row.min + row.max) / 2, 0);
+  const ROW_LABELS = { stays: ["Accommodation", "navy"], food: ["Food", "gold"], transport: ["Transport", "blue"],
+    activities: ["Sights and entry fees", "tea"], misc: ["SIM, tips and extras", "sand"] } as const;
+  const budgetRows = estimate.rows.map(row => ({ label: ROW_LABELS[row.key][0], tone: ROW_LABELS[row.key][1],
+    value: (row.min + row.max) / 2, text: `${money(row.min)}–${row.max.toLocaleString()}` }));
 
   const handleLogoTap = () => {
     if (bp !== "mobile") return;
@@ -224,7 +227,7 @@ export function HomeScreen({
             </div>
             <div className="wr-home-hero__preview-meta">
               <span><Users size={15} aria-hidden="true" /> {preview.totalPeople}</span>
-              <span><WalletCards size={15} aria-hidden="true" /> {currencySymbol}{preview.estimatedTotalCost.toLocaleString()}</span>
+              <span><WalletCards size={15} aria-hidden="true" /> {estimateText}</span>
               <span><Navigation size={15} aria-hidden="true" /> {preview.travelStyle}</span>
             </div>
           </div>
@@ -452,31 +455,32 @@ export function HomeScreen({
           <p className="wr-kicker">Cost intelligence</p>
           <h2 id="budget-preview-title">See where the money goes — before it goes.</h2>
           <p>
-            The estimate stays connected to the route, number of travellers and travel style you choose above.
+            A rough guide from published Sri Lanka price ranges for your days, travellers, travel style and month.
+            Your plan then prices each stay, transfer and ticket, with sources.
           </p>
           <dl>
             <div>
               <dt>Trip budget</dt>
-              <dd>{currencySymbol}{preview.inputBudget.toLocaleString()}</dd>
+              <dd>{money(budget)}</dd>
             </div>
             <div>
-              <dt>Route estimate</dt>
-              <dd>{currencySymbol}{preview.estimatedTotalCost.toLocaleString()}</dd>
+              <dt>Rough estimate</dt>
+              <dd>{estimateText}</dd>
             </div>
-            <div className={preview.remainingBudget < 0 ? "is-over" : ""}>
-              <dt>{preview.remainingBudget < 0 ? "Over budget" : "Remaining"}</dt>
-              <dd>{currencySymbol}{Math.abs(preview.remainingBudget).toLocaleString()}</dd>
+            <div className={fit === "over" ? "is-over" : ""}>
+              <dt>Budget fit</dt>
+              <dd>{fit === "fits" ? "Likely fits" : fit === "risk" ? "Could go over" : "Over budget"}</dd>
             </div>
           </dl>
         </div>
         <div className="wr-home-budget__ledger" aria-label="Estimated cost categories">
-          {budgetRows.map(({ label, value, tone }) => {
+          {budgetRows.map(({ label, value, tone, text }) => {
             const percent = breakdownTotal > 0 ? Math.round((value / breakdownTotal) * 100) : 0;
             return (
               <div key={label} className={`is-${tone}`}>
                 <span><strong>{label}</strong><small>{percent}%</small></span>
                 <i><b style={{ width: `${percent}%` }} /></i>
-                <output>{currencySymbol}{value.toLocaleString()}</output>
+                <output>{text}</output>
               </div>
             );
           })}
@@ -549,7 +553,7 @@ export function HomeScreen({
           <div className="wr-home-pdf__document-grid">
             <span><small>Days</small><strong>{preview.totalDays}</strong></span>
             <span><small>People</small><strong>{preview.totalPeople}</strong></span>
-            <span><small>Estimate</small><strong>{currencySymbol}{preview.estimatedTotalCost.toLocaleString()}</strong></span>
+            <span><small>Estimate</small><strong>{estimateText}</strong></span>
           </div>
           <div className="wr-home-pdf__document-lines"><i /><i /><i /><i /></div>
         </div>

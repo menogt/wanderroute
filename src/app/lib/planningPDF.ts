@@ -180,7 +180,7 @@ export function createPlanningPDF(plan: PlanningPresentation, fonts: PlanningPDF
   heading("Plan checks"); for (const issue of plan.checks) text(`- ${issue}`, 8, false, MUTED);
   heading("Sources and use");
   text("Place records and the WanderRoute landmark guide provide suggestions, not verified availability or opening hours. Confirm current information directly with the provider. OSRM car-road routing, where present, supplies driving estimates only. This plan has no live disruption monitoring.", 8, false, MUTED);
-  text("PDF overview: Natural Earth 1:50m, public domain (naturalearthdata.com/about/terms-of-use/). No website map tiles were exported. Typeface: Bitstream Vera, copyright 2003 Bitstream, Inc.; bundled license at wanderroute.netlify.app/pdf/bitstream-vera-license.txt.", 8, false, MUTED);
+  text("PDF overview: Natural Earth 1:50m, public domain (naturalearthdata.com/about/terms-of-use/). No website map tiles were exported. Typeface: Bitstream Vera, copyright 2003 Bitstream, Inc.; bundled license at wanderroute.vercel.app/pdf/bitstream-vera-license.txt.", 8, false, MUTED);
   if (missing.size) text(`Some characters are outside this PDF font's coverage. They are preserved as Unicode codes in brackets: ${[...missing].join(", ")}. Read the full original text in the website itinerary.`, 8, false, MUTED);
   const total = doc.getNumberOfPages();
   for (let i = 1; i <= total; i++) {

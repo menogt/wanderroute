@@ -81,7 +81,7 @@ export async function geocodePlace(placeName: string): Promise<[number, number] 
       headers: {
         // Browsers forbid overriding User-Agent and will ignore it, but it is
         // harmless and documents intent for non-browser callers.
-        "User-Agent": "WanderRoute/1.0 (wanderroute.netlify.app)",
+        "User-Agent": "WanderRoute/1.0 (wanderroute.vercel.app)",
         "Accept": "application/json",
       },
     });

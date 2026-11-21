@@ -1,7 +1,7 @@
 import { planningCalendarProblems } from "./planningCalendar.ts";
 import type { Currency, Interest } from "../components/rl/types";
 import { buildCandidateDestinations, generateRouteCandidates, knownPlanningDestinations } from "./routeCandidates.ts";
-import { calculateCostLedger, compareBudget, type CostLedger, type CostLineInput } from "./costLedger.ts";
+import { calculateCostLedger, compareBudget, firmCostExceedsBudget, type CostLedger, type CostLineInput } from "./costLedger.ts";
 import type { RouteConceptV1, TripBriefV1 } from "./planningTypes";
 import { CMB_AIRPORT, resolvePlanningEndpoint } from "./planningV2Locations.ts";
 import { assessPlanningSeason, planningSeasonMonth, type PlanningSeason } from "./routeSeason.ts";
@@ -286,8 +286,10 @@ export function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix:
     detail: "The available prices are not enough to confirm the trip budget." });
   for (const issue of ledger.issues.filter(issue => issue.severity === "ERROR")) issues.push({
     code: `COST_${issue.code}`, severity: "ERROR", detail: "A supplied cost line is invalid." });
-  if (budget.status === "OVER_BUDGET") issues.push({ code: "BUDGET_OVER", severity: "ERROR",
-    detail: "The minimum known cost exceeds the total budget." });
+  if (budget.status === "OVER_BUDGET") issues.push(firmCostExceedsBudget(ledger, brief.budget)
+    ? { code: "BUDGET_OVER", severity: "ERROR", detail: "The minimum known cost exceeds the total budget." }
+    : { code: "BUDGET_OVER", severity: "WARNING",
+      detail: "Even the low cost estimate is above your budget. Budget stays, fewer days or buses and trains bring it down." });
   else if (budget.status === "BUDGET_RISK") issues.push({ code: "BUDGET_RISK", severity: "WARNING",
     detail: "The estimated cost range crosses the total budget." });
   const readiness: ConceptReadiness = issues.some(issue => issue.severity === "ERROR") ? "INVALID" :

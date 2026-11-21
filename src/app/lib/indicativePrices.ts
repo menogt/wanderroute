@@ -147,6 +147,35 @@ export function miscellaneousCost(brief: TripBriefV1, food: UnitPrice): UnitPric
     note: `Tourist SIM card each and 10–15% tips (${SRC.tipping}). Visa/ETA, insurance and shopping not included.` });
 }
 
+export type QuickEstimateRow = { key: "stays" | "food" | "transport" | "activities" | "misc"; min: number; max: number };
+/**
+ * Whole-trip rough guide for the homepage, built from the same tables as the planner so the two agree in kind.
+ * Activities assume about one paid sight per person per day, from small temple tickets to Sigiriya.
+ */
+export function quickTripEstimate(input: { days: number; people: number; tier?: Tier; month?: number; stops: number }) {
+  const days = Math.max(1, Math.round(input.days)); const people = Math.max(1, Math.round(input.people));
+  const rooms = Math.ceil(people / 2); const nights = Math.max(0, days - 1);
+  const bounds = (price: UnitPrice) => price.kind === "RANGE" ? [price.minimum, price.maximum] : [0, 0];
+  const [roomLow, roomHigh] = bounds(roomNightPrice(input.tier, input.month));
+  const [foodLow, foodHigh] = bounds(foodDayPrice(input.tier));
+  const car = bounds(driverDay(people).price);
+  const vehicles = driverDay(people).vehicles;
+  const legs = Math.max(0, input.stops - 1);
+  const tuktuk = [usd(1_000), usd(2_000)].map(value => value * Math.ceil(people / 3) * days);
+  const sim = [usd(1_399), usd(2_450)].map(value => value * people);
+  const raw: QuickEstimateRow[] = [
+    { key: "stays", min: roomLow * rooms * nights, max: roomHigh * rooms * nights },
+    { key: "food", min: foodLow * people * days, max: foodHigh * people * days },
+    // Two airport taxis plus each intercity leg, from bus fares up to a car with driver.
+    { key: "transport", min: 2 * usd(AIRPORT_TAXI.negombo) + legs * usd(500) * people + tuktuk[0],
+      max: 2 * car[1] * vehicles + legs * car[1] * vehicles + tuktuk[1] },
+    { key: "activities", min: usd(1_000) * people * days * 0.5, max: 35 * people * days * 0.6 },
+    { key: "misc", min: sim[0] + foodLow * people * days * 0.10, max: sim[1] + foodHigh * people * days * 0.15 },
+  ];
+  const rows = raw.map(row => ({ ...row, min: Math.floor(row.min), max: Math.ceil(row.max) }));
+  return { rows, min: rows.reduce((sum, row) => sum + row.min, 0), max: rows.reduce((sum, row) => sum + row.max, 0) };
+}
+
 type Ticket = { match: RegExp; min: number; max: number; source: string; note?: string; perGroupOfTwo?: boolean };
 const TICKETS: Ticket[] = [
   { match: /sigiriya (rock|fortress)|lion rock/, min: 35, max: 35, source: SRC.ccf },

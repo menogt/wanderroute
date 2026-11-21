@@ -196,6 +196,14 @@ export function calculateCostLedger(sourceLines: CostLineInput[], currency: Curr
   return { currency, travellers, sourceLines, exchangeRates, lines, summary, issues };
 }
 
+/**
+ * An overrun blocks a plan only when firm prices (recorded or sourced, not estimated ranges) alone exceed the budget.
+ * An overrun that depends on estimates is a warning the traveller can act on.
+ */
+export function firmCostExceedsBudget(ledger: CostLedger, budget: { amount: number }): boolean {
+  return ledger.summary.trip.minimum - ledger.summary.byProvenance.ESTIMATED.minimum > budget.amount;
+}
+
 export function compareBudget(ledger: CostLedger, budget: { amount: number; currency: Currency }): BudgetAssessment {
   const base = { budget: budget.amount, currency: budget.currency,
     minimum: ledger.summary.trip.minimum, maximum: ledger.summary.trip.maximum,

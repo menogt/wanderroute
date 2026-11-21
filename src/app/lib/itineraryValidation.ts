@@ -4,7 +4,7 @@ import type { CandidateRoute } from "./routeTypes";
 import { arrivalReadyMinute, arrivalTransferBudgetMinutes, departureDeadlineMinute,
   departureTransferBudgetMinutes, drivingLimits } from "./routeConstraints.ts";
 import { assessPlanningSeason, planningSeasonMonth } from "./routeSeason.ts";
-import { calculateCostLedger, compareBudget, type BudgetAssessment, type CostLedger } from "./costLedger.ts";
+import { calculateCostLedger, compareBudget, firmCostExceedsBudget, type BudgetAssessment, type CostLedger } from "./costLedger.ts";
 import { assessTransportReadiness, transportLegId } from "./transportPlanning.ts";
 import type { TransportLeg, TransportPlan, TransportReadiness } from "./transportTypes";
 import { matrixLeg, type TravelMatrix } from "./travelTimeMatrix.ts";
@@ -341,7 +341,7 @@ export function validatePlanningItinerary(input: ValidationInput): ValidationRes
     { itemId: issue.lineId });
   if (ledger.travellers !== brief.travellerCount) add("TRAVELLER_COUNT_MISMATCH", "ERROR");
   const budget = compareBudget(recalculated, brief.budget);
-  if (budget.status === "OVER_BUDGET") add("BUDGET_OVER", "ERROR");
+  if (budget.status === "OVER_BUDGET") add("BUDGET_OVER", firmCostExceedsBudget(recalculated, brief.budget) ? "ERROR" : "WARNING");
   else if (budget.status === "BUDGET_RISK") add("BUDGET_RISK", "WARNING");
   else if (budget.status === "UNKNOWN") add("BUDGET_UNKNOWN", "UNKNOWN");
   const accommodation = recalculated.sourceLines.filter(line => line.category === "ACCOMMODATION");

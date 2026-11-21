@@ -371,7 +371,7 @@ export async function downloadItineraryPDF(itinerary: GeneratedItinerary) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6.5);
     textColor(doc, GRAY);
-    doc.text("wanderroute.netlify.app", ML, PH - 4);
+    doc.text("wanderroute.vercel.app", ML, PH - 4);
     doc.text(`Page ${p} of ${totalPages}`, PW / 2, PH - 4, { align: "center" });
     doc.text(`Generated ${new Date().toLocaleDateString()}`, PW - MR, PH - 4, { align: "right" });
   }
