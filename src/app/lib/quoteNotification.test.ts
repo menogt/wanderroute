@@ -31,6 +31,7 @@ async function withMockServices(
   const originalEnv = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   const calls: string[] = [];
   const logs: string[] = [];
+  const emails: string[] = [];
   process.env.SUPABASE_URL = "https://example.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-key";
   if (useNewSecret) process.env.SUPABASE_SECRET_KEY = "sb_secret_test";
@@ -51,6 +52,7 @@ async function withMockServices(
     assert.equal(String(url), "https://api.resend.com/emails");
     calls.push("email");
     const body = JSON.parse(String(options?.body));
+    emails.push(body.text);
     assert.ok(body.text.includes(quote.email));
     assert.ok(body.text.includes(requestId));
     return new Response("{}", { status: emailStatus });
@@ -59,7 +61,7 @@ async function withMockServices(
     const response = await handler({ httpMethod: "POST", body: JSON.stringify({
       requestId, fullName: "Unstored Name", email: "unstored@example.test",
     }) });
-    return { response, payload: JSON.parse(response.body), calls, logs };
+    return { response, payload: JSON.parse(response.body), calls, logs, emails };
   } finally {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
@@ -100,6 +102,24 @@ test("email failure leaves the stored request intact", async () => {
   assert.equal(response.statusCode, 200);
   assert.equal(payload.emailed, false);
   assert.deepEqual(calls, ["lookup", "email"]);
+});
+
+test("a main-planner request emails the driver brief with the estimate as a range", async () => {
+  const planned = { ...quote, itinerary_json: { kind: "planning-v2", reference: "ABCD1234",
+    request: { service: "WHOLE_TRIP", vehicle: "CAR" },
+    arrival: { location: "CMB_AIRPORT", dateTime: "2026-12-10T10:00" }, departure: { location: "CMB_AIRPORT", dateTime: "2026-12-19T07:00" },
+    stops: [{ name: "Ella", nights: 4 }, { name: "Kandy", nights: 4 }, { name: "Negombo", nights: 1 }],
+    transfers: [{ from: "Kandy", to: "Negombo", timing: "about 3 h by car (road estimate)" }],
+    estimate: { min: 1322, max: 2684, currency: "USD", checked: "2026-11-21" }, comfort: "comfort", pace: "BALANCED" } };
+  const { payload, emails, logs } = await withMockServices([planned]);
+  assert.equal(payload.emailed, true);
+  const text = emails[0];
+  for (const expected of ["Car with driver-guide for the whole trip", "Car (up to 3 travellers)", "CMB airport 2026-12-10 10:00",
+    "Ella 4n → Kandy 4n → Negombo 1n", "1,322–2,684 USD", "not a quote", "Kandy to Negombo: about 3 h by car", "ABCD1234"]) {
+    assert.ok(text.includes(expected), `email should include ${expected}`);
+  }
+  assert.equal(text.includes("Est. total"), false);
+  assert.equal(logs.join(" ").includes(quote.email), false);
 });
 
 test("invalid receipt cannot reach Supabase or email", async () => {

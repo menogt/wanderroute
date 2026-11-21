@@ -4,8 +4,39 @@
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const QUOTE_COLUMNS = [
   "id", "full_name", "email", "whatsapp", "start_date", "travellers", "note",
-  "route_name", "cities", "total_days", "travel_style", "estimated_total", "currency",
+  "route_name", "cities", "total_days", "travel_style", "estimated_total", "currency", "itinerary_json",
 ].join(",");
+
+const SERVICES = { WHOLE_TRIP: "Car with driver-guide for the whole trip", AIRPORT_TRANSFERS: "Airport transfers only", NOT_SURE: "Not sure yet; please advise" };
+const VEHICLES = { CAR: "Car (up to 3 travellers)", VAN: "Van (up to 6 travellers)", NOT_SURE: "Not sure; please advise" };
+const text = (value, max = 160) => typeof value === "string" ? value.slice(0, max) : "";
+const flight = (point) => point && typeof point === "object"
+  ? `${text(point.location, 40).replace("CMB_AIRPORT", "CMB airport") || "location to confirm"}${point.dateTime ? ` ${text(point.dateTime, 16).replace("T", " ")}` : ""}` : "—";
+
+/** Extra lines for a main-planner request: what the driver needs to quote this exact route. */
+function plannerLines(snapshot) {
+  if (!snapshot || typeof snapshot !== "object" || snapshot.kind !== "planning-v2") return [];
+  const stops = Array.isArray(snapshot.stops) ? snapshot.stops.slice(0, 12)
+    .map(stop => `${text(stop?.name, 40)} ${Number(stop?.nights) || "?"}n`).join(" → ") : "";
+  const transfers = Array.isArray(snapshot.transfers) ? snapshot.transfers.slice(0, 20)
+    .map(leg => `  - ${text(leg?.from, 40)} to ${text(leg?.to, 40)}: ${text(leg?.timing, 120)}`) : [];
+  const estimate = snapshot.estimate && typeof snapshot.estimate === "object"
+    ? `${Number(snapshot.estimate.min).toLocaleString("en-US")}–${Number(snapshot.estimate.max).toLocaleString("en-US")} ${text(snapshot.estimate.currency, 3)} (published-price estimate, checked ${text(snapshot.estimate.checked, 10)}; not a quote)`
+    : "not available";
+  return [
+    `Service:    ${SERVICES[snapshot.request?.service] ?? "—"}`,
+    `Vehicle:    ${VEHICLES[snapshot.request?.vehicle] ?? "—"}`,
+    `Flight in:  ${flight(snapshot.arrival)}`,
+    `Flight out: ${flight(snapshot.departure)}`,
+    `Stops:      ${stops || "—"}`,
+    `Comfort:    ${text(snapshot.comfort, 20) || "not chosen"} · Pace: ${text(snapshot.pace, 20) || "balanced"}`,
+    `Estimate:   ${estimate}`,
+    `Plan ref:   ${text(snapshot.reference, 12)}`,
+    "Transfers:",
+    ...(transfers.length ? transfers : ["  - none listed"]),
+    "",
+  ];
+}
 
 function json(statusCode, payload) {
   return { statusCode, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) };
@@ -75,9 +106,11 @@ export const handler = async (event) => {
     "",
     `Route:      ${route}`,
     `Days:       ${quote.total_days}`,
-    `Style:      ${quote.travel_style}`,
-    `Est. total: ${quote.estimated_total} ${quote.currency}`,
-    "",
+    ...(quote.itinerary_json?.kind === "planning-v2" ? plannerLines(quote.itinerary_json) : [
+      `Style:      ${quote.travel_style}`,
+      `Est. total: ${quote.estimated_total} ${quote.currency}`,
+      "",
+    ]),
     `Note:       ${quote.note || "—"}`,
   ].join("\n");
 

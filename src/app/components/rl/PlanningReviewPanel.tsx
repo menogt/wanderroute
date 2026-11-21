@@ -4,9 +4,9 @@ import type { PlanningRouteConcept } from "../../lib/planningV2";
 import type { TripBriefV1 } from "../../lib/planningTypes";
 import { planningMoney, planningPresentation } from "../../lib/planningPresentation";
 
-export function PlanningReviewPanel({ detail, brief, concept, busy, approvedRevision, onFinalize }: {
+export function PlanningReviewPanel({ detail, brief, concept, busy, approvedRevision, onFinalize, onRequestQuote }: {
   detail: DetailedPlanningResult; brief: TripBriefV1; concept: PlanningRouteConcept; busy: boolean;
-  approvedRevision?: string; onFinalize: (revision: string) => void;
+  approvedRevision?: string; onFinalize: (revision: string) => void; onRequestQuote?: () => void;
 }) {
   const plan = useMemo(() => planningPresentation(detail, brief, concept), [detail, brief, concept]);
   const current = useRef(plan.revision); current.current = plan.revision;
@@ -52,8 +52,8 @@ export function PlanningReviewPanel({ detail, brief, concept, busy, approvedRevi
       {plan.conflicts.length > 0 && <div role="alert"><strong>Resolve before finalizing</strong><ul>{plan.conflicts.map(item => <li key={item}>{item}</li>)}</ul></div>}
       <label className="wr-v2-review__ack"><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />I prefer this draft and understand that unconfirmed times, prices, availability and arrangements still need checking.</label>
       <button type="button" disabled={busy || !acknowledged || !!plan.conflicts.length || approved} onClick={() => onFinalize(plan.revision)}>{approved ? "Preferred draft saved" : "Finalize my preferred draft"}</button>
-      <h3>Quote or trip assistance</h3><p>Online assistance requests are not available for this planner yet. No request has been sent. Download your current PDF to discuss the trip with a provider.</p>
-      <button type="button" disabled>Request trip assistance · unavailable</button>
+      <h3>Quote or trip assistance</h3><p>Send this route to WanderRoute and we&rsquo;ll match it with a local driver-guide for a quote. Free and no obligation.</p>
+      <button type="button" onClick={onRequestQuote}>Get a driver quote</button>
       <p><small>A preferred draft is not a reservation, payment or confirmation of availability. Independently booked arrangements are traveler reports.</small></p>
     </div>}
   </section>;

@@ -28,28 +28,49 @@ export type QuoteSubmissionDependencies = {
   deviceId: () => string | null;
 };
 
+/** What a quote row records about the trip, from either planner. */
+export type QuoteTrip = {
+  id: string;
+  routeName: string;
+  cities: string[];
+  totalDays: number;
+  travellers?: number;
+  travelStyle?: string | null;
+  estimatedTotal?: number | null;
+  currency: string;
+  snapshot: object;
+};
+
+function toQuoteTrip(trip: GeneratedItinerary | QuoteTrip): QuoteTrip {
+  if ("snapshot" in trip) return trip;
+  return { id: trip.id, routeName: trip.routeName, cities: trip.cities ?? [], totalDays: trip.totalDays,
+    travellers: trip.totalPeople, travelStyle: trip.travelStyle, estimatedTotal: trip.estimatedTotalCost,
+    currency: trip.currency, snapshot: trip as unknown as object };
+}
+
 function buildRow(
   input: QuoteRequestInput,
-  itinerary: GeneratedItinerary,
+  source: GeneratedItinerary | QuoteTrip,
   requestId: string,
   deviceId: string | null,
 ) {
+  const trip = toQuoteTrip(source);
   return {
     id: requestId,
     full_name: input.fullName.trim(),
     email: input.email.trim().toLowerCase(),
     whatsapp: input.whatsapp?.trim() || null,
     start_date: input.startDate || null,
-    travellers: input.travellers ?? itinerary.totalPeople ?? null,
+    travellers: input.travellers ?? trip.travellers ?? null,
     note: input.note?.trim() || null,
-    trip_id: itinerary.id,
-    route_name: itinerary.routeName,
-    cities: itinerary.cities ?? [],
-    total_days: itinerary.totalDays,
-    travel_style: itinerary.travelStyle,
-    estimated_total: itinerary.estimatedTotalCost,
-    currency: itinerary.currency,
-    itinerary_json: itinerary as unknown as object,
+    trip_id: trip.id,
+    route_name: trip.routeName,
+    cities: trip.cities,
+    total_days: trip.totalDays,
+    travel_style: trip.travelStyle ?? null,
+    estimated_total: trip.estimatedTotal ?? null,
+    currency: trip.currency,
+    itinerary_json: trip.snapshot,
     device_id: deviceId,
     user_agent: typeof navigator === "undefined" ? null : navigator.userAgent.slice(0, 300),
   };
@@ -92,7 +113,7 @@ function isExistingRequest(error: StoreError | null): boolean {
 // Supabase project or a real notification endpoint.
 export async function submitQuoteRequestWithDependencies(
   input: QuoteRequestInput,
-  itinerary: GeneratedItinerary,
+  itinerary: GeneratedItinerary | QuoteTrip,
   requestId: string,
   deps: QuoteSubmissionDependencies,
 ): Promise<QuoteRequestResult> {
@@ -126,7 +147,7 @@ export async function submitQuoteRequestWithDependencies(
 
 export async function submitQuoteRequest(
   input: QuoteRequestInput,
-  itinerary: GeneratedItinerary,
+  itinerary: GeneratedItinerary | QuoteTrip,
   requestId: string,
 ): Promise<QuoteRequestResult> {
   const [{ supabase }, { getDeviceId }] = await Promise.all([

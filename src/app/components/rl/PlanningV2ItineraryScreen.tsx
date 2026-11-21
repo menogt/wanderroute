@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, Clock3, MapPin, Pencil, Redo2,
+import { AlertTriangle, ArrowLeft, CarFront, ChevronDown, ChevronUp, Clock3, MapPin, Pencil, Redo2,
   RefreshCw, Trash2, Undo2, WalletCards } from "lucide-react";
 import { StudioNavigation, type StudioPanel } from "../tripStudio/StudioNavigation";
 import "../../../styles/trip-studio.css";
@@ -10,6 +10,7 @@ import { PlanningCustomizationPanel } from "./PlanningCustomizationPanel";
 import type { PlanningV2Session } from "../../lib/planningV2Session";
 import type { CustomizationDraft } from "../../lib/planningCustomization";
 import { PlanningBudgetPanel } from "./PlanningBudgetPanel";
+import { PlanningQuotePanel } from "./PlanningQuotePanel";
 import { PlanningItineraryMap } from "./PlanningItineraryMap";
 import type { DetailedPlanningResult } from "../../lib/planningV2Itinerary";
 import type { PlanningV2Edit } from "../../lib/planningV2Editing";
@@ -106,6 +107,7 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
   const [mobilePane, setMobilePane] = useState("itinerary");
   const [search, setSearch] = useState("");
   const [announcement, setAnnouncement] = useState("");
+  const [quoteSignal, setQuoteSignal] = useState(0);
   const editHeading = useRef<HTMLHeadingElement>(null);
   const commitEdit = (edit: PlanningV2Edit) => { onEdit(edit); setAnnouncement("Edit checked. Review your itinerary and any messages shown."); if (edit.type === "remove" || edit.type === "move") editHeading.current?.focus(); };
   const { itinerary, ledger, validation } = detail;
@@ -134,6 +136,7 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
         <div className="wr-v2-detail__actions">
           {detail.generationMode === "LIMITED_DRAFT" && !canUndo && !canRedo && <button type="button" className="wr-button wr-button--primary" onClick={onRetry} disabled={busy}>
             <RefreshCw size={16} /> {busy ? "Retrying…" : "Retry suggestions"}</button>}
+          <button type="button" className="wr-button wr-button--primary" onClick={() => setQuoteSignal(value => value + 1)}><CarFront size={16} aria-hidden="true" /> Get a driver quote</button>
           {!studio && <button type="button" className="wr-button wr-button--primary" disabled={busy} onClick={() => openPanel("journey")}>Edit in Trip Studio</button>}
           {!studio && <button type="button" className="wr-v2__text-link" onClick={() => openPanel("places")}>Edit activities</button>}
           {studio && <a href="/trip-studio?manual">Open manual Studio draft</a>}
@@ -245,7 +248,8 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
       </div>
       <PlanningBudgetPanel detail={detail} brief={brief} onAllowance={(group, allowance) => commitEdit({ type: "allowance", group, allowance })} />
       </div>
-      <PlanningReviewPanel detail={detail} brief={brief} concept={concept} busy={busy} approvedRevision={session.preferredRevision} onFinalize={onFinalize} />
+      <PlanningQuotePanel detail={detail} brief={brief} concept={concept} openSignal={quoteSignal} />
+      <PlanningReviewPanel detail={detail} brief={brief} concept={concept} busy={busy} approvedRevision={session.preferredRevision} onFinalize={onFinalize} onRequestQuote={() => setQuoteSignal(value => value + 1)} />
       <p className="wr-v2-detail__footer"><Clock3 size={16} /> Activity durations are estimates. Train, bus and other unverified transfers have no invented timetable.</p>
     </div>
   </section>;
