@@ -24,7 +24,7 @@ Everything lives in `src/app`. `App.tsx` owns screen state, the current itinerar
 
 AI keys are server-only (`GROQ_API_KEY`); nothing AI-related is in the browser bundle. AI failures show in the Vercel function logs, and V2 then shows a "Limited draft".
 
-V2 asks Groq `openai/gpt-oss-120b`, then the backup `openai/gpt-oss-20b` (separate free limit; `GROQ_FALLBACK_MODEL=none` disables it), then OpenRouter only if `OPENROUTER_API_KEY` is set (paid; leave unset). The prompt's per-day place limit must match `validateModel` in the same file.
+V2 asks Groq `openai/gpt-oss-120b`, then the free backups `openai/gpt-oss-20b` and `qwen/qwen3.8-27b` (each has its own 8K tokens/min limit, so about 3 full plans a minute in total; `GROQ_FALLBACK_MODEL` takes `none` or a comma-separated list), then OpenRouter only if `OPENROUTER_API_KEY` is set (paid; leave unset). Llama 3.x and Qwen3-32B were shut down by Groq in 2026; check console.groq.com/docs/deprecations before adding models. Reasoning options are per model (`groqOptions`). A successful reply carries an `X-WanderRoute-Model` header naming the model. The prompt's per-day place limit must match `validateModel` in the same file.
 
 ## Route rules (benchmarked against 24 Sri Lankan operator itineraries, Nov 2026)
 - `lib/routeStayPolicy.ts`: typical maximum nights per base (2 inland, 3 at Sigiriya or the beach, 4 at the beach on 13+ day trips, +1 for slower paces) and the 210-minute limit for first/last airport drives. Extra nights become `LONG_STAY` penalties; long airport drives become `LONG_AIRPORT_DRIVE`.

@@ -1,7 +1,9 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openai/gpt-oss-120b";
-const FALLBACK_MODEL = "openai/gpt-oss-20b";
+// Free Groq backups, tried in order. Each model has its own free limit (8K tokens a minute, checked
+// 21 Nov 2026), so each adds about one full plan a minute. Llama 3.x and Qwen3-32B were shut down in 2026.
+const FALLBACK_MODELS = ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
 // The browser gives up after 25 s; finish every provider attempt inside that.
 const DEADLINE_MS = 22_000;
 const FIRST_PROVIDER_TIMEOUT_MS = 14_000;
@@ -94,19 +96,30 @@ function prompt(request) {
     `\nReturn JSON only: {"schemaVersion":2,"routeConceptId":"same ID","days":[{"day":1,"placeIds":["allowed ID"],"note":"short note","descriptions":[{"placeId":"allowed ID","text":"why it fits"}]}]}. Include every day exactly once. Never repeat a place on another day; leave open time when unique options run out. Select zero to ${perDay} IDs per day, never more.`;
 }
 
+/** Model-specific options: gpt-oss takes low/medium/high; Qwen takes "none" and needs hidden reasoning for JSON mode. */
+function groqOptions(model) {
+  return model.startsWith("qwen/") ? { model, reasoning_effort: "none", reasoning_format: "hidden" }
+    : { model, reasoning_effort: "low" };
+}
+
+/** GROQ_FALLBACK_MODEL: unset for the defaults, "none" to disable, or a comma-separated list of models. */
+function groqBackups() {
+  const configured = process.env.GROQ_FALLBACK_MODEL?.trim();
+  if (configured === "none") return [];
+  const models = configured ? configured.split(",").map(model => model.trim()).filter(Boolean) : FALLBACK_MODELS;
+  return [...new Set(models)].filter(model => model !== MODEL);
+}
+
 /**
- * Groq first (free tier). Groq rate limits are per model, so a second Groq model absorbs bursts
- * (several people generating in the same minute) at no cost. Set GROQ_FALLBACK_MODEL=none to disable.
+ * Groq first (free tier). Groq rate limits are per model, so backup Groq models absorb bursts
+ * (several people generating in the same minute) at no cost.
  * OpenRouter is an optional paid fallback, used only when OPENROUTER_API_KEY is set.
  */
 function providers() {
   const list = [];
   const groq = process.env.GROQ_API_KEY?.trim();
-  if (groq) list.push({ name: "groq", url: GROQ_URL, key: groq,
-    extra: { model: MODEL, reasoning_effort: "low" }, errorCode: "GROQ_API_ERROR", timeoutCode: "GROQ_TIMEOUT" });
-  const backup = process.env.GROQ_FALLBACK_MODEL?.trim() || FALLBACK_MODEL;
-  if (groq && backup !== "none" && backup !== MODEL) list.push({ name: `groq:${backup}`, url: GROQ_URL, key: groq,
-    extra: { model: backup, reasoning_effort: "low" }, errorCode: "GROQ_API_ERROR", timeoutCode: "GROQ_TIMEOUT" });
+  if (groq) for (const model of [MODEL, ...groqBackups()]) list.push({ name: model === MODEL ? "groq" : `groq:${model}`,
+    url: GROQ_URL, key: groq, extra: groqOptions(model), errorCode: "GROQ_API_ERROR", timeoutCode: "GROQ_TIMEOUT" });
   const openrouter = process.env.OPENROUTER_API_KEY?.trim();
   if (openrouter) list.push({ name: "openrouter", url: OPENROUTER_URL, key: openrouter,
     extra: { model: process.env.OPENROUTER_MODEL?.trim() || MODEL, reasoning: { effort: "low" },
@@ -161,17 +174,22 @@ export const handler = async event => {
   if (!list.length) return json(500, { code: "SERVER_CONFIGURATION", error: "Itinerary service is not configured." });
   const started = Date.now();
   let result;
+  let servedBy;
   for (const [index, provider] of list.entries()) {
     const remaining = DEADLINE_MS - (Date.now() - started);
     if (remaining < 3_000) break;
     const isLast = index === list.length - 1;
     result = await attempt(provider, request, isLast ? remaining : Math.min(FIRST_PROVIDER_TIMEOUT_MS, remaining));
     if (result.status === 200) {
+      servedBy = provider.extra.model;
       if (index > 0) console.info("[generate-v2] served by fallback", { provider: provider.name });
       break;
     }
     console.warn("[generate-v2] provider failed", { provider: provider.name, code: result.payload.code,
       ...(result.upstream ? { upstream: result.upstream } : {}) });
   }
-  return json(result?.status ?? 504, result?.payload ?? { code: "GROQ_TIMEOUT", ...unavailable });
+  const response = json(result?.status ?? 504, result?.payload ?? { code: "GROQ_TIMEOUT", ...unavailable });
+  // Which model answered, for checking bursts in the browser's network panel. Not secret.
+  if (result?.status === 200 && servedBy) response.headers["X-WanderRoute-Model"] = servedBy;
+  return response;
 };

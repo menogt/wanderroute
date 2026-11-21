@@ -290,9 +290,20 @@ test("V2 endpoint falls back to OpenRouter only when Groq fails and a fallback k
     const groqOnly = await handler({ httpMethod: "POST", body: JSON.stringify(request) });
     assert.equal(groqOnly.statusCode, 502);
     assert.equal(JSON.parse(groqOnly.body).code, "GROQ_API_ERROR");
-    // Groq limits are per model, so the free backup model is tried before giving up.
-    assert.deepEqual(calls.map(call => call.body.model), ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]);
+    // Groq limits are per model, so the free backup models are tried before giving up.
+    assert.deepEqual(calls.map(call => call.body.model), ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]);
     assert.match(calls[0].body.messages[1].content, /Select zero to 2 IDs per day/);
+    // Each model gets reasoning settings it accepts.
+    assert.equal(calls[1].body.reasoning_effort, "low");
+    assert.equal(calls[1].body.reasoning_format, undefined);
+    assert.equal(calls[2].body.reasoning_effort, "none");
+    assert.equal(calls[2].body.reasoning_format, "hidden");
+    assert.equal(groqOnly.headers["X-WanderRoute-Model"], undefined);
+
+    process.env.GROQ_FALLBACK_MODEL = "qwen/qwen3.8-27b, openai/gpt-oss-120b";
+    calls.length = 0;
+    await handler({ httpMethod: "POST", body: JSON.stringify(request) });
+    assert.deepEqual(calls.map(call => call.body.model), ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"]);
 
     process.env.GROQ_FALLBACK_MODEL = "none";
     calls.length = 0;
@@ -341,6 +352,7 @@ test("V2 endpoint serves the plan from the backup Groq model when the main model
     assert.equal(result.statusCode, 200);
     assert.deepEqual(JSON.parse(result.body).plan.days[0].placeIds, ["temple-kandy"]);
     assert.deepEqual(models, ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]);
+    assert.equal(result.headers["X-WanderRoute-Model"], "openai/gpt-oss-20b");
   } finally {
     globalThis.fetch = originalFetch;
     for (const [name, value] of [["GROQ_API_KEY", saved.groq], ["OPENROUTER_API_KEY", saved.openrouter],
