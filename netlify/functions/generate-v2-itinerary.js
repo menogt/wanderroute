@@ -1,6 +1,9 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "openai/gpt-oss-120b";
-const TIMEOUT_MS = 20_000;
+// The browser gives up after 25 s; finish every provider attempt inside that.
+const DEADLINE_MS = 22_000;
+const FIRST_PROVIDER_TIMEOUT_MS = 14_000;
 const MAX_BODY_BYTES = 100_000;
 const MAX_PLACES = 15;
 
@@ -44,9 +47,56 @@ function validateModel(value, request) {
 }
 
 function prompt(request) {
+  // Must match the per-day limit enforced by validateModel and the client.
+  const perDay = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[request.pace ?? "BALANCED"];
   return `Select activities for a Sri Lanka trip. You must use only place IDs listed for each day. The fixed route and days must not change. Do not invent opening hours, transport times, prices, bookings or availability. Do not schedule times. Keep notes and descriptions concise. Interests: ${request.interests.join(", ")}. Pace: ${request.pace ?? "BALANCED"}.\n` +
     JSON.stringify({ routeConceptId: request.routeConceptId, days: request.days }) +
-    '\nReturn JSON only: {"schemaVersion":2,"routeConceptId":"same ID","days":[{"day":1,"placeIds":["allowed ID"],"note":"short note","descriptions":[{"placeId":"allowed ID","text":"why it fits"}]}]}. Include every day exactly once. Never repeat a place on another day; leave open time when unique options run out. Select zero to three IDs per day.';
+    `\nReturn JSON only: {"schemaVersion":2,"routeConceptId":"same ID","days":[{"day":1,"placeIds":["allowed ID"],"note":"short note","descriptions":[{"placeId":"allowed ID","text":"why it fits"}]}]}. Include every day exactly once. Never repeat a place on another day; leave open time when unique options run out. Select zero to ${perDay} IDs per day, never more.`;
+}
+
+/** Groq first (free tier); OpenRouter is an optional paid fallback for when Groq is rate limited or failing. */
+function providers() {
+  const list = [];
+  const groq = process.env.GROQ_API_KEY?.trim();
+  if (groq) list.push({ name: "groq", url: GROQ_URL, key: groq,
+    extra: { model: MODEL, reasoning_effort: "low" }, errorCode: "GROQ_API_ERROR", timeoutCode: "GROQ_TIMEOUT" });
+  const openrouter = process.env.OPENROUTER_API_KEY?.trim();
+  if (openrouter) list.push({ name: "openrouter", url: OPENROUTER_URL, key: openrouter,
+    extra: { model: process.env.OPENROUTER_MODEL?.trim() || MODEL, reasoning: { effort: "low" },
+      provider: { sort: "throughput", require_parameters: true } },
+    headers: { "X-Title": "WanderRoute" }, errorCode: "AI_PROVIDER_ERROR", timeoutCode: "AI_PROVIDER_TIMEOUT" });
+  return list;
+}
+
+const unavailable = { error: "Itinerary suggestions are unavailable." };
+
+async function attempt(provider, request, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetch(provider.url, { method: "POST", signal: controller.signal,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.key}`, ...(provider.headers ?? {}) },
+      body: JSON.stringify({ ...provider.extra, temperature: 0.2, max_tokens: 3000,
+        response_format: { type: "json_object" }, messages: [
+          { role: "system", content: "Return one valid JSON object using only supplied place IDs." },
+          { role: "user", content: prompt(request) },
+        ] }) });
+  } catch (error) {
+    return error?.name === "AbortError"
+      ? { status: 504, payload: { code: provider.timeoutCode, ...unavailable } }
+      : { status: 502, payload: { code: provider.errorCode, ...unavailable } };
+  } finally { clearTimeout(timeout); }
+  if (!response.ok) return { status: 502, payload: { code: provider.errorCode, ...unavailable }, upstream: response.status };
+  let payload;
+  try { payload = await response.json(); }
+  catch { return { status: 502, payload: { code: "MODEL_OUTPUT_INVALID", error: "The itinerary response was malformed." } }; }
+  let model;
+  try { model = JSON.parse(payload?.choices?.[0]?.message?.content ?? ""); }
+  catch { return { status: 502, payload: { code: "MODEL_OUTPUT_INVALID", error: "The itinerary response was malformed." } }; }
+  if (!validateModel(model, request)) return { status: 502,
+    payload: { code: "MODEL_OUTPUT_INVALID", error: "The itinerary response used invalid days or places." } };
+  return { status: 200, payload: { plan: model } };
 }
 
 export const handler = async event => {
@@ -58,31 +108,21 @@ export const handler = async event => {
   try { request = JSON.parse(event.body); }
   catch { return json(400, { code: "INVALID_INPUT", error: "Invalid JSON request." }); }
   if (!validateRequest(request)) return json(400, { code: "INVALID_INPUT", error: "Invalid route or candidate places." });
-  const key = process.env.GROQ_API_KEY?.trim();
-  if (!key) return json(500, { code: "SERVER_CONFIGURATION", error: "Itinerary service is not configured." });
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(GROQ_URL, { method: "POST", signal: controller.signal,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: MODEL, temperature: 0.2, max_tokens: 3000, reasoning_effort: "low",
-        response_format: { type: "json_object" }, messages: [
-          { role: "system", content: "Return one valid JSON object using only supplied place IDs." },
-          { role: "user", content: prompt(request) },
-        ] }) });
-  } catch (error) {
-    return json(error?.name === "AbortError" ? 504 : 502,
-      { code: error?.name === "AbortError" ? "GROQ_TIMEOUT" : "GROQ_API_ERROR", error: "Itinerary suggestions are unavailable." });
-  } finally { clearTimeout(timeout); }
-  if (!response.ok) return json(502, { code: "GROQ_API_ERROR", error: "Itinerary suggestions are unavailable." });
-  let payload;
-  try { payload = await response.json(); }
-  catch { return json(502, { code: "MODEL_OUTPUT_INVALID", error: "The itinerary response was malformed." }); }
-  let model;
-  try { model = JSON.parse(payload?.choices?.[0]?.message?.content ?? ""); }
-  catch { return json(502, { code: "MODEL_OUTPUT_INVALID", error: "The itinerary response was malformed." }); }
-  if (!validateModel(model, request)) return json(502,
-    { code: "MODEL_OUTPUT_INVALID", error: "The itinerary response used invalid days or places." });
-  return json(200, { plan: model });
+  const list = providers();
+  if (!list.length) return json(500, { code: "SERVER_CONFIGURATION", error: "Itinerary service is not configured." });
+  const started = Date.now();
+  let result;
+  for (const [index, provider] of list.entries()) {
+    const remaining = DEADLINE_MS - (Date.now() - started);
+    if (remaining < 3_000) break;
+    const isLast = index === list.length - 1;
+    result = await attempt(provider, request, isLast ? remaining : Math.min(FIRST_PROVIDER_TIMEOUT_MS, remaining));
+    if (result.status === 200) {
+      if (index > 0) console.info("[generate-v2] served by fallback", { provider: provider.name });
+      break;
+    }
+    console.warn("[generate-v2] provider failed", { provider: provider.name, code: result.payload.code,
+      ...(result.upstream ? { upstream: result.upstream } : {}) });
+  }
+  return json(result?.status ?? 504, result?.payload ?? { code: "GROQ_TIMEOUT", ...unavailable });
 };

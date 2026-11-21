@@ -229,6 +229,45 @@ test("V2 endpoint rejects malformed JSON and invented place IDs without touching
   }
 });
 
+test("V2 endpoint falls back to OpenRouter only when Groq fails and a fallback key is configured", async () => {
+  const request = { schemaVersion: 2, routeConceptId: "route-a", interests: ["culture"], pace: "BALANCED",
+    days: [{ day: 1, city: "Kandy", places: [{ id: "temple-kandy", name: "Kandy Temple", category: "temple" }] },
+      { day: 2, city: "Kandy", places: [] }] };
+  const valid = JSON.stringify({ schemaVersion: 2, routeConceptId: "route-a",
+    days: [{ day: 1, placeIds: ["temple-kandy"] }, { day: 2, placeIds: [] }] });
+  const saved = { groq: process.env.GROQ_API_KEY, openrouter: process.env.OPENROUTER_API_KEY };
+  const originalFetch = globalThis.fetch;
+  const calls: { url: string; body: any }[] = [];
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    calls.push({ url, body: JSON.parse(String(init.body)) });
+    return url.includes("groq.com")
+      ? new Response(JSON.stringify({ error: { code: "rate_limit_exceeded" } }), { status: 429 })
+      : new Response(JSON.stringify({ choices: [{ message: { content: valid } }] }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    process.env.GROQ_API_KEY = "test-only";
+    delete process.env.OPENROUTER_API_KEY;
+    const groqOnly = await handler({ httpMethod: "POST", body: JSON.stringify(request) });
+    assert.equal(groqOnly.statusCode, 502);
+    assert.equal(JSON.parse(groqOnly.body).code, "GROQ_API_ERROR");
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].body.messages[1].content, /Select zero to 2 IDs per day/);
+
+    process.env.OPENROUTER_API_KEY = "test-only";
+    calls.length = 0;
+    const withFallback = await handler({ httpMethod: "POST", body: JSON.stringify(request) });
+    assert.equal(withFallback.statusCode, 200);
+    assert.deepEqual(JSON.parse(withFallback.body).plan.days[0].placeIds, ["temple-kandy"]);
+    assert.deepEqual(calls.map(call => new URL(call.url).hostname), ["api.groq.com", "openrouter.ai"]);
+    assert.equal(calls[1].body.model, "openai/gpt-oss-120b");
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [name, value] of [["GROQ_API_KEY", saved.groq], ["OPENROUTER_API_KEY", saved.openrouter]] as const) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  }
+});
+
 
 test("fallback distributes distinct places, retains multiple activities and does not assign arbitrary hotels", async () => {
   const input = { ...brief, durationDays: 4, requestedCities: ["Kandy"] };
