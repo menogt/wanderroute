@@ -47,6 +47,45 @@ function validateModel(value, request) {
   });
 }
 
+const clip = (text, max = 240) => text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+
+/**
+ * Keeps the usable part of a model reply instead of discarding it for one slip: drops unknown,
+ * repeated or surplus place IDs, clips long text and fills missing days with open time.
+ * Returns null when too little is left to be worth showing, so the next provider can try.
+ */
+function repairModel(value, request) {
+  if (!object(value) || !Array.isArray(value.days)) return null;
+  const perDay = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[request.pace ?? "BALANCED"];
+  const sameLength = value.days.length === request.days.length;
+  const used = new Set();
+  let repairs = 0, missing = 0, kept = 0;
+  const days = request.days.map((requested, index) => {
+    const found = value.days.find(day => object(day) && day.day === index + 1) ?? (sameLength && object(value.days[index]) ? value.days[index] : undefined);
+    if (!found) { missing++; repairs++; return { day: index + 1, placeIds: [] }; }
+    const allowed = new Set(requested.places.map(place => place.id));
+    const raw = Array.isArray(found.placeIds) ? found.placeIds : [];
+    const placeIds = [];
+    for (const id of raw) {
+      if (typeof id === "string" && allowed.has(id) && !used.has(id) && placeIds.length < perDay) { placeIds.push(id); used.add(id); }
+    }
+    repairs += raw.length - placeIds.length; kept += placeIds.length;
+    const day = { day: index + 1, placeIds };
+    if (typeof found.note === "string" && found.note.trim()) { day.note = clip(found.note.trim()); if (day.note !== found.note.trim()) repairs++; }
+    if (Array.isArray(found.descriptions)) {
+      const described = new Set();
+      day.descriptions = found.descriptions.filter(item => object(item) && typeof item.text === "string" && item.text.trim() &&
+        placeIds.includes(item.placeId) && !described.has(item.placeId) && described.add(item.placeId))
+        .slice(0, 3).map(item => ({ placeId: item.placeId, text: clip(item.text.trim()) }));
+      repairs += found.descriptions.length - day.descriptions.length;
+    }
+    return day;
+  });
+  const offered = request.days.some(day => day.places.length);
+  if (missing * 2 > request.days.length || (offered && kept === 0)) return null;
+  return { plan: { schemaVersion: 2, routeConceptId: request.routeConceptId, days }, repairs };
+}
+
 function prompt(request) {
   // Must match the per-day limit enforced by validateModel and the client.
   const perDay = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[request.pace ?? "BALANCED"];
@@ -102,9 +141,11 @@ async function attempt(provider, request, timeoutMs) {
   let model;
   try { model = JSON.parse(payload?.choices?.[0]?.message?.content ?? ""); }
   catch { return { status: 502, payload: { code: "MODEL_OUTPUT_INVALID", error: "The itinerary response was malformed." } }; }
-  if (!validateModel(model, request)) return { status: 502,
+  const repaired = repairModel(model, request);
+  if (!repaired || !validateModel(repaired.plan, request)) return { status: 502,
     payload: { code: "MODEL_OUTPUT_INVALID", error: "The itinerary response used invalid days or places." } };
-  return { status: 200, payload: { plan: model } };
+  if (repaired.repairs) console.info("[generate-v2] repaired model reply", { provider: provider.name, repairs: repaired.repairs });
+  return { status: 200, payload: { plan: repaired.plan } };
 }
 
 export const handler = async event => {

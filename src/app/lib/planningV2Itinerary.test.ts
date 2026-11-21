@@ -232,6 +232,41 @@ test("V2 endpoint rejects malformed JSON and invented place IDs without touching
   }
 });
 
+test("V2 endpoint keeps the valid part of a flawed model reply instead of discarding it", async () => {
+  const places = (city: string, ids: string[]) => ids.map(id => ({ id, name: id, category: "attraction" }));
+  const request = { schemaVersion: 2, routeConceptId: "route-a", interests: ["culture"], pace: "BALANCED",
+    days: [{ day: 1, city: "Kandy", places: places("Kandy", ["k1", "k2", "k3"]) },
+      { day: 2, city: "Kandy", places: places("Kandy", ["k1", "k2", "k3"]) },
+      { day: 3, city: "Ella", places: places("Ella", ["e1"]) }] };
+  const reply = { schemaVersion: 2, routeConceptId: "route-typo", days: [
+    { day: 1, placeIds: ["k1", "invented", "k2", "k3"], note: "x".repeat(300),
+      descriptions: [{ placeId: "k1", text: "Lovely" }, { placeId: "invented", text: "Made up" }] },
+    { day: 2, placeIds: ["k1", "k3"] },
+  ] };
+  const saved = { groq: process.env.GROQ_API_KEY, openrouter: process.env.OPENROUTER_API_KEY, backup: process.env.GROQ_FALLBACK_MODEL };
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => { calls++; return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }), { status: 200 }); }) as typeof fetch;
+  try {
+    process.env.GROQ_API_KEY = "test-only";
+    delete process.env.OPENROUTER_API_KEY; delete process.env.GROQ_FALLBACK_MODEL;
+    const response = await handler({ httpMethod: "POST", body: JSON.stringify(request) });
+    assert.equal(response.statusCode, 200);
+    assert.equal(calls, 1);
+    const plan = JSON.parse(response.body).plan;
+    assert.equal(plan.routeConceptId, "route-a");
+    assert.deepEqual(plan.days.map((day: { placeIds: string[] }) => day.placeIds), [["k1", "k2"], ["k3"], []]);
+    assert.equal(plan.days[0].note.length, 240);
+    assert.deepEqual(plan.days[0].descriptions, [{ placeId: "k1", text: "Lovely" }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [name, value] of [["GROQ_API_KEY", saved.groq], ["OPENROUTER_API_KEY", saved.openrouter],
+      ["GROQ_FALLBACK_MODEL", saved.backup]] as const) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  }
+});
+
 test("V2 endpoint falls back to OpenRouter only when Groq fails and a fallback key is configured", async () => {
   const request = { schemaVersion: 2, routeConceptId: "route-a", interests: ["culture"], pace: "BALANCED",
     days: [{ day: 1, city: "Kandy", places: [{ id: "temple-kandy", name: "Kandy Temple", category: "temple" }] },
