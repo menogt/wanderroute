@@ -1,8 +1,9 @@
 import { planningCalendarProblems } from "./planningCalendar.ts";
 import type { Currency, Interest } from "../components/rl/types";
 import { buildCandidateDestinations, generateRouteCandidates, knownPlanningDestinations } from "./routeCandidates.ts";
-import { fillAroundRequested } from "./routeFill.ts";
+import { fillAroundRequested, splitLongLegs } from "./routeFill.ts";
 import { snapshotMatrix } from "./roadSnapshotMatrix.ts";
+import { withSriLankaRoadTimes } from "./roadTimeCorrection.ts";
 import { calculateCostLedger, compareBudget, firmCostExceedsBudget, type CostLedger, type CostLineInput } from "./costLedger.ts";
 import type { RouteConceptV1, TripBriefV1 } from "./planningTypes";
 import { CMB_AIRPORT, resolvePlanningEndpoint } from "./planningV2Locations.ts";
@@ -264,7 +265,9 @@ function reasonDetail(reason: RouteReason, brief?: TripBriefV1): string {
 function neutralRank(route: CandidateRoute): number {
   return route.score.components.requestedCoverage + route.score.components.season +
     route.score.components.switching + route.score.components.backtracking +
-    route.score.components.stays + route.score.components.airportDrive -
+    route.score.components.stays + route.score.components.airportDrive +
+    // Long days on the road tire every traveller, whatever the transport, so they count here too.
+    route.score.components.preferredDriving -
     route.reasons.filter(reason => reason.code === "REQUESTED_CITY_UNAVAILABLE" ||
       reason.code === "ENDPOINT_UNKNOWN").length * 20;
 }
@@ -348,7 +351,8 @@ export async function planRouteConcepts(rawBrief: TripBriefV1,
   const available = knownPlanningDestinations();
   // Chosen cities are must-sees; the classic loop fills any nights they cannot carry at operator stay lengths.
   const chosen = buildCandidateDestinations(brief, available);
-  const destinations = services.exactCities ? chosen : fillAroundRequested(brief, chosen, available, maximumPlanningBases(brief));
+  const destinations = services.exactCities ? chosen
+    : splitLongLegs(brief, fillAroundRequested(brief, chosen, available, maximumPlanningBases(brief)), available, maximumPlanningBases(brief));
   if (!destinations.length) throw new PlanningBriefError([{ code: "NO_DESTINATIONS", severity: "ERROR",
     detail: "No destinations are available for this brief." }]);
   const locations = matrixLocations(destinations, brief, [...available, CMB_AIRPORT]);
@@ -364,6 +368,8 @@ export async function planRouteConcepts(rawBrief: TripBriefV1,
     try { matrix = await fetchTravelMatrix(locations, { timeoutMs: 7000 }); }
     catch { matrix = unavailableMatrix(locations, now, "NETWORK_ERROR"); }
     if (matrix.source === "UNAVAILABLE") matrix = snapshotMatrix(locations) ?? matrix;
+    // OSRM assumes free-flowing roads; convert to realistic Sri Lankan car times (hill roads especially).
+    matrix = withSriLankaRoadTimes(matrix);
   }
   const month = planningSeasonMonth(brief);
   const seasons = new Map(destinations.map(destination => [destination.id,

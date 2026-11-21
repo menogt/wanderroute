@@ -30,9 +30,12 @@ function matrix(locations: MatrixLocation[], overrides: Record<string, number | 
   return { locations, legs, source: failure ? "UNAVAILABLE" : "OSRM_TABLE",
     generatedAt: "2026-10-13T00:00:00Z", ...(failure ? { failure } : {}) };
 }
+// These tests use synthetic road times on a fixed city set; loop filling and leg splitting judge
+// real geography, so they are exercised with stored road data in routeOperatorPatterns.test.ts.
 const services = (overrides: Record<string, number | null> = {}): PlanningV2Services => ({
   getMatrix: async locations => matrix(locations, overrides),
   now: () => "2026-10-13T00:00:00Z",
+  exactCities: true,
 });
 
 test("valid versioned brief produces distinct ranked concepts, best first without over-long stays", async () => {
@@ -167,7 +170,7 @@ test("when even the airport-side base cannot reach an early flight, no route is 
 test("a 07:00 flight with a private driver keeps the requested stops, fills the loop and ends beside the airport", async () => {
   const brief: TripBriefV1 = { ...base, durationDays: 10, requestedCities: ["Kandy", "Ella"],
     departure: { location: "CMB", dateTime: "2026-12-19T07:00" } };
-  const result = await planRouteConcepts(brief, services({ "Kandy>CMB_AIRPORT": 120, "Ella>CMB_AIRPORT": 234, "Negombo>CMB_AIRPORT": 30 }));
+  const result = await planRouteConcepts(brief, { ...services({ "Kandy>CMB_AIRPORT": 120, "Ella>CMB_AIRPORT": 234, "Negombo>CMB_AIRPORT": 30 }), exactCities: false });
   const first = result.concepts[0];
   assert.ok(first, "a usable route is offered");
   const names = first.candidate.destinations.map(stop => stop.name);

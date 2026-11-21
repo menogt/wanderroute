@@ -31,6 +31,11 @@ V2 asks Groq `openai/gpt-oss-120b`, then the backup `openai/gpt-oss-20b` (separa
 - `lib/routeFill.ts`: chosen cities are must-sees. When they cannot carry the nights, classic-loop stops are added (`requested: false`): a coastal finish within reach of CMB first, then the stops operators use most. `services.exactCities` turns this off.
 - Scoring prefers the canonical loop direction (Cultural Triangle → hills → coast); a last night in Negombo closes the loop. Alternatives with long stays or airport drives are shown only to keep a choice of two.
 - `lib/roadTimeSnapshot.ts` (generated) and `lib/roadSnapshotMatrix.ts`: OSRM road times stored on 2026-11-21 for every planner town and CMB, used only when the live OSRM demo server fails (the plan says so).
+- `lib/roadTimeCorrection.ts`: OSRM assumes free-flowing roads (about 48 km/h in the hills). Live and stored matrices are converted to realistic Sri Lankan car times (hills 27 km/h, hill↔lowland 42, Kandy↔lowland 38, lowland 45, expressway legs OSRM +5%; never faster than OSRM), calibrated on transfer-operator times. Only the default road provider is corrected; tests that pass `getMatrix` supply their own times.
+- `splitLongLegs` (in `routeFill.ts`) adds an in-between loop stop with place data when a leg exceeds the preferred driving day (Kandy → Nuwara Eliya → Ella). Neutral ranking now counts long driving days for every traveller.
+
+## Trip Studio
+The generated trip's Studio lives inside `PlanningV2ItineraryScreen` (tabs from `tripStudio/StudioNavigation`, help in `rl/StudioHelp.tsx`). `/trip-studio` opens it when a draft exists; the standalone `tripStudio/TripStudio` is only the blank build-from-scratch studio and must not be linked from a generated trip.
 
 ## Prices
 `lib/indicativePrices.ts` gives every V2 cost line an ESTIMATED USD range with a source URL and check date (rooms by comfort tier and season, meals, car with driver, CMB taxi fares, train and bus fares, tickets, tuk-tuks, SIM and tips). The homepage "Rough estimate" uses `quickTripEstimate` from the same tables. Traveller-recorded and sourced place prices still win. Ranges were checked 2026-11-21; refresh `PRICES_CHECKED` and the tables every few months. Only USD and LKR budgets convert; other currencies stay "Price to confirm". Test files that check recorded/allowance arithmetic call `setIndicativePricing(false)`.

@@ -18,6 +18,8 @@ export type TravelMatrix = {
   failure?: "NO_COORDINATES" | "HTTP_ERROR" | "TIMEOUT" | "NETWORK_ERROR" | "INVALID_RESPONSE";
   /** Date of the stored OSRM table used because the live service failed; absent for live data. */
   snapshot?: string;
+  /** Set when OSRM free-flow times were converted to realistic Sri Lankan road times. */
+  roadTimes?: string;
 };
 
 type TableResponse = {

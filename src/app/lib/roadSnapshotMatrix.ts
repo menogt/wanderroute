@@ -1,12 +1,15 @@
 import type { MatrixLocation, RoadLeg, TravelMatrix } from "./travelTimeMatrix";
 import { ROAD_SNAPSHOT_CHECKED, ROAD_SNAPSHOT_IDS, ROAD_SNAPSHOT_KM, ROAD_SNAPSHOT_MINUTES } from "./roadTimeSnapshot.ts";
+import { correctedRoadMinutes } from "./roadTimeCorrection.ts";
 
 const INDEX = new Map(ROAD_SNAPSHOT_IDS.map((id, position) => [id.toLowerCase(), position]));
 
-/** Stored OSRM driving minutes between two planner places, if both are in the snapshot. */
+/** Realistic driving minutes between two planner places (stored OSRM data, hill-road corrected). */
 export function snapshotRoadMinutes(fromId: string, toId: string): number | undefined {
   const from = INDEX.get(fromId.toLowerCase()); const to = INDEX.get(toId.toLowerCase());
-  return from === undefined || to === undefined ? undefined : ROAD_SNAPSHOT_MINUTES[from][to] ?? undefined;
+  if (from === undefined || to === undefined) return undefined;
+  const minutes = ROAD_SNAPSHOT_MINUTES[from][to];
+  return minutes === null ? undefined : from === to ? 0 : correctedRoadMinutes(fromId, toId, minutes, ROAD_SNAPSHOT_KM[from][to] ?? undefined);
 }
 
 /**

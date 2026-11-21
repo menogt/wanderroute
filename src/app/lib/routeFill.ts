@@ -1,4 +1,5 @@
-import { autoSelectCities } from "./cityPlan.ts";
+import { autoSelectCities, CANONICAL_CITY_ORDER, SELECTABLE_CITIES } from "./cityPlan.ts";
+import { drivingLimits } from "./routeConstraints.ts";
 import { cityInterestAffinity } from "./planningActivityChoices.ts";
 import type { TripBriefV1 } from "./planningTypes";
 import { snapshotRoadMinutes } from "./roadSnapshotMatrix.ts";
@@ -50,6 +51,37 @@ export function fillAroundRequested(brief: TripBriefV1, destinations: PlanningDe
       detour(a) - detour(b) || a.name.localeCompare(b.name))[0];
     if (!next) break;
     add(next);
+  }
+  return result;
+}
+
+const loopRank = (name: string) => CANONICAL_CITY_ORDER.findIndex(city => city.toLowerCase() === name.toLowerCase());
+
+/**
+ * Operators break a drive longer than the traveller's preferred day with a night on the way
+ * (Kandy → Nuwara Eliya → Ella rather than 5 hours in one go). Adds such an in-between loop stop
+ * when days and bases allow and both halves fit the preferred drive. Only towns with place data qualify.
+ */
+export function splitLongLegs(brief: TripBriefV1, destinations: PlanningDestination[],
+  available: MatrixLocation[], maxBases: number): PlanningDestination[] {
+  const nights = Math.max(0, brief.durationDays - 1);
+  const limit = drivingLimits(brief).preferredMinutes;
+  const result = [...destinations];
+  const drive = (from: string, to: string) => snapshotRoadMinutes(from, to) ?? Number.POSITIVE_INFINITY;
+  const towns = SELECTABLE_CITIES.map(name => available.find(place => place.name === name)).filter((place): place is MatrixLocation => !!place);
+  let changed = true;
+  while (changed && result.length < maxBases && result.length < nights) {
+    changed = false;
+    const ordered = result.filter(stop => loopRank(stop.name) >= 0).sort((a, b) => loopRank(a.name) - loopRank(b.name));
+    for (let index = 1; index < ordered.length && !changed; index++) {
+      const [from, to] = [ordered[index - 1], ordered[index]];
+      if (drive(from.id, to.id) <= limit) continue;
+      const between = towns.filter(town => !result.some(stop => stop.id === town.id) &&
+        loopRank(town.name) > loopRank(from.name) && loopRank(town.name) < loopRank(to.name) &&
+        drive(from.id, town.id) <= limit && drive(town.id, to.id) <= limit)
+        .sort((a, b) => drive(from.id, a.id) + drive(a.id, to.id) - drive(from.id, b.id) - drive(b.id, to.id))[0];
+      if (between) { result.push({ ...between, requested: false }); changed = true; }
+    }
   }
   return result;
 }

@@ -3,12 +3,13 @@ import { test } from "node:test";
 import { planRouteConcepts } from "./planningV2.ts";
 import { snapshotMatrix, snapshotRoadMinutes } from "./roadSnapshotMatrix.ts";
 import { spreadNights } from "./routeCandidates.ts";
+import { correctedRoadMinutes, withSriLankaRoadTimes } from "./roadTimeCorrection.ts";
 import { AIRPORT_DRIVE_MAX_MINUTES, typicalMaxNights } from "./routeStayPolicy.ts";
 import type { TripBriefV1 } from "./planningTypes";
 import type { MatrixLocation } from "./travelTimeMatrix";
 
 // Stored OSRM road times keep these tests offline and realistic.
-const roads = { getMatrix: async (locations: MatrixLocation[]) => snapshotMatrix(locations)!, now: () => "2026-11-21T00:00:00Z" };
+const roads = { getMatrix: async (locations: MatrixLocation[]) => withSriLankaRoadTimes(snapshotMatrix(locations)!), now: () => "2026-11-21T00:00:00Z" };
 const base: TripBriefV1 = { schemaVersion: 1, durationDays: 10, travellerCount: 2, budget: { amount: 2000, currency: "USD" },
   interests: ["culture", "wildlife", "beaches"], requestedCities: [], travelMonth: 12 };
 const stays = (result: Awaited<ReturnType<typeof planRouteConcepts>>) =>
@@ -79,4 +80,38 @@ test("stored road times are real routed legs and unknown places stay unknown", (
   assert.ok(matrix.legs[0][1].durationMinutes! > 60);
   assert.equal(matrix.legs[0][2].status, "UNAVAILABLE");
   assert.equal(snapshotMatrix([{ id: "Somewhere", name: "Somewhere" }]), undefined);
+});
+
+test("hill-road times match sourced Sri Lankan transfer times, and OSRM is never made faster", () => {
+  // OSRM 95 min / 76 km; transfer operators and a 2026 driving guide: 2.5–3 h.
+  const kandyNuwaraEliya = correctedRoadMinutes("Kandy", "Nuwara Eliya", 95.4, 76);
+  assert.ok(kandyNuwaraEliya >= 150 && kandyNuwaraEliya <= 180, String(kandyNuwaraEliya));
+  // OSRM 69 min / 54 km; sources: 2–2.5 h.
+  const nuwaraEliyaElla = correctedRoadMinutes("Nuwara Eliya", "Ella", 68.5, 54.4);
+  assert.ok(nuwaraEliyaElla >= 115 && nuwaraEliyaElla <= 150, String(nuwaraEliyaElla));
+  // OSRM 234 min / 208 km; sources: 4.5–5.6 h.
+  const airportElla = correctedRoadMinutes("CMB_AIRPORT", "Ella", 234.1, 207.5);
+  assert.ok(airportElla >= 270 && airportElla <= 336, String(airportElla));
+  // Expressway (CMB–Galle at 74 km/h on OSRM) stays close to OSRM; sources: about 2.2 h.
+  assert.equal(correctedRoadMinutes("CMB_AIRPORT", "Galle", 123.6, 151.5), 129.8);
+  assert.equal(correctedRoadMinutes("Negombo", "Sigiriya", 300, 148), 300, "never faster than OSRM");
+  assert.equal(correctedRoadMinutes("Kandy", "Ella", 100), 100, "no distance, no correction");
+});
+
+test("corrected matrices are labelled and only routed legs change", () => {
+  const raw = snapshotMatrix([{ id: "Kandy", name: "Kandy", coordinates: { latitude: 7.29, longitude: 80.63 } },
+    { id: "Ella", name: "Ella", coordinates: { latitude: 6.87, longitude: 81.05 } }])!;
+  const corrected = withSriLankaRoadTimes(raw);
+  assert.ok(corrected.roadTimes);
+  assert.ok(corrected.legs[0][1].durationMinutes! > raw.legs[0][1].durationMinutes! * 1.5);
+  assert.equal(corrected.legs[0][0].durationMinutes, 0);
+  assert.equal(withSriLankaRoadTimes(corrected), corrected, "applied once");
+});
+
+test("a drive longer than the preferred day is split with a night on the way, as operators do", async () => {
+  const result = await planRouteConcepts({ ...base, requestedCities: ["Kandy", "Ella"] }, roads);
+  const names = result.concepts[0].candidate.destinations.map(stop => stop.name);
+  assert.ok(names.indexOf("Kandy") < names.indexOf("Nuwara Eliya") && names.indexOf("Nuwara Eliya") < names.indexOf("Ella"), names.join(" > "));
+  const longest = Math.max(...result.concepts[0].candidate.legs.map(leg => leg.durationMinutes ?? 0));
+  assert.ok(longest <= 270, "no day of driving over 4.5 hours: " + longest);
 });
