@@ -16,6 +16,8 @@ export type TravelMatrix = {
   source: "OSRM_TABLE" | "UNAVAILABLE";
   generatedAt: string;
   failure?: "NO_COORDINATES" | "HTTP_ERROR" | "TIMEOUT" | "NETWORK_ERROR" | "INVALID_RESPONSE";
+  /** Date of the stored OSRM table used because the live service failed; absent for live data. */
+  snapshot?: string;
 };
 
 type TableResponse = {

@@ -24,7 +24,7 @@ function matrix(locations: MatrixLocation[]): TravelMatrix {
     fromId: from.id, toId: to.id, status: "ROUTED", source: "OSRM_TABLE", durationMinutes: from.id === to.id ? 0 : 60, distanceKm: from.id === to.id ? 0 : 40 }))) };
 }
 async function original() {
-  const result = await planRouteConcepts(brief, { getMatrix: async locations => matrix(locations) });
+  const result = await planRouteConcepts(brief, { getMatrix: async locations => matrix(locations), exactCities: true });
   const id = result.concepts[0].routeConcept.id;
   const detailed = await generatePlanningV2Itinerary(result, id, { getPlaces: async () => places, getAiPlan: async () => ({
     schemaVersion: 2, routeConceptId: id, days: [{ day: 1, placeIds: ["a"] }, { day: 2, placeIds: ["b"] }, { day: 3, placeIds: [] }, { day: 4, placeIds: [] }] }) });

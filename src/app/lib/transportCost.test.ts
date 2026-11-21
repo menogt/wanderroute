@@ -19,7 +19,7 @@ const route: CandidateRoute = {
   nights: [1, 1], legs: [road], reasons: [], feasibility: "FEASIBLE",
   score: { rankValue: 0, rankable: true,
     components: { requestedCoverage: 0, driving: 0, preferredDriving: 0, longestLeg: 0,
-      season: 0, backtracking: 0, switching: 0, uncertainty: 0 } },
+      season: 0, backtracking: 0, switching: 0, uncertainty: 0, stays: 0, airportDrive: 0 } },
 };
 const matrix: TravelMatrix = { locations: route.destinations, legs: [
   [{ fromId: "Kandy", toId: "Kandy", status: "ROUTED", durationMinutes: 0, distanceKm: 0 }, road],

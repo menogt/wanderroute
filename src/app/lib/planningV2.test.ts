@@ -35,10 +35,12 @@ const services = (overrides: Record<string, number | null> = {}): PlanningV2Serv
   now: () => "2026-10-13T00:00:00Z",
 });
 
-test("valid versioned brief produces three distinct ranked concepts", async () => {
+test("valid versioned brief produces distinct ranked concepts, best first without over-long stays", async () => {
   const result = await planRouteConcepts({ ...base, requestedCities: ["Ella", "Kandy", "Galle"] }, services());
-  assert.equal(result.concepts.length, 3);
-  assert.equal(new Set(result.concepts.map(item => item.routeConcept.id)).size, 3);
+  // Alternatives with stays longer than operators plan are shown only to keep a choice of two.
+  assert.ok(result.concepts.length >= 2 && result.concepts.length <= 3);
+  assert.equal(new Set(result.concepts.map(item => item.routeConcept.id)).size, result.concepts.length);
+  assert.ok(!result.concepts[0].candidate.reasons.some(reason => reason.code === "LONG_STAY"));
   assert.ok(result.concepts.every(item => item.routeConcept.schemaVersion === 1 && item.candidate.routingBasis === "ROAD_DRIVING"));
   assert.ok(result.concepts.every(item => item.routeConcept.stops.reduce((sum, stop) => sum + stop.nights, 0) === 6));
 });
@@ -143,7 +145,8 @@ test("late CMB arrival uses a distinct airport endpoint and reduces usable first
 test("early airport departure rejects a distant final stop and offers a last night near CMB", async () => {
   const brief: TripBriefV1 = { ...base, requestedCities: ["Ella"],
     departure: { location: "CMB", dateTime: "2026-10-13T09:00" } };
-  const result = await planRouteConcepts(brief, services({ "Ella>CMB_AIRPORT": 330 }));
+  // Exact cities isolate the airport-night fallback from loop filling, which would add a coastal finish.
+  const result = await planRouteConcepts(brief, { ...services({ "Ella>CMB_AIRPORT": 330 }), exactCities: true });
   assert.ok(result.concepts.length > 0);
   assert.ok(result.concepts.every(item => item.candidate.destinations.slice(-1)[0]?.name === "Negombo"));
   assert.ok(result.concepts.every(item => item.candidate.destinations.some(stop => stop.name === "Ella")));
@@ -156,22 +159,26 @@ test("early airport departure rejects a distant final stop and offers a last nig
 test("when even the airport-side base cannot reach an early flight, no route is offered", async () => {
   const brief: TripBriefV1 = { ...base, requestedCities: ["Ella"],
     departure: { location: "CMB", dateTime: "2026-10-13T09:00" } };
-  const result = await planRouteConcepts(brief, services({ "Ella>CMB_AIRPORT": 330, "Negombo>CMB_AIRPORT": 300 }));
+  const result = await planRouteConcepts(brief, { ...services({ "Ella>CMB_AIRPORT": 330, "Negombo>CMB_AIRPORT": 300 }), exactCities: true });
   assert.equal(result.concepts.length, 0);
   assert.ok(result.issues.some(issue => issue.code === "NO_FEASIBLE_CONCEPTS"));
 });
 
-test("a 07:00 flight with a private driver keeps the requested stops and ends beside the airport", async () => {
+test("a 07:00 flight with a private driver keeps the requested stops, fills the loop and ends beside the airport", async () => {
   const brief: TripBriefV1 = { ...base, durationDays: 10, requestedCities: ["Kandy", "Ella"],
     departure: { location: "CMB", dateTime: "2026-12-19T07:00" } };
   const result = await planRouteConcepts(brief, services({ "Kandy>CMB_AIRPORT": 120, "Ella>CMB_AIRPORT": 234, "Negombo>CMB_AIRPORT": 30 }));
   const first = result.concepts[0];
   assert.ok(first, "a usable route is offered");
-  assert.deepEqual(first.candidate.destinations.map(stop => stop.name).filter(name => name !== "Negombo").sort(), ["Ella", "Kandy"]);
-  assert.equal(first.candidate.destinations.slice(-1)[0]?.name, "Negombo");
+  const names = first.candidate.destinations.map(stop => stop.name);
+  assert.ok(names.includes("Kandy") && names.includes("Ella"));
+  assert.ok(names.indexOf("Kandy") < names.indexOf("Ella"), "runs the operators' loop direction");
+  assert.ok(first.candidate.destinations.some(stop => !stop.requested && stop.name !== "Negombo"), "adds a loop stop around the chosen cities");
+  assert.equal(names.slice(-1)[0], "Negombo");
   assert.equal(first.candidate.nights.slice(-1)[0], 1, "the airport stop is one night");
   assert.equal(first.candidate.nights.reduce((sum, nights) => sum + nights, 0), 9);
   assert.ok(!first.issues.some(issue => issue.code === "DEPARTURE_CONFLICT"));
+  assert.ok(!first.candidate.reasons.some(reason => reason.code === "LONG_STAY"));
 });
 
 test("with no transport chosen, the final transfer is still checked against the flight", async () => {

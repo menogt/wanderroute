@@ -35,7 +35,7 @@ function matrix(locations: MatrixLocation[]): TravelMatrix {
 
 async function session() {
   const result = await planRouteConcepts(brief, { getMatrix: async locations => matrix(locations),
-    now: () => "2026-10-16T00:00:00Z" });
+    now: () => "2026-10-16T00:00:00Z", exactCities: true });
   const selectedId = result.concepts[0].routeConcept.id;
   const detail = await generatePlanningV2Itinerary(result, selectedId, { getPlaces: async () => places,
     getAiPlan: async () => ({ schemaVersion: 2, routeConceptId: selectedId, days: [

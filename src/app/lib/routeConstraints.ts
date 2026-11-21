@@ -1,6 +1,7 @@
 import type { TripBriefV1, TravelPace } from "./planningTypes";
 import { matrixLeg, type RoadLeg, type TravelMatrix } from "./travelTimeMatrix.ts";
 import type { PlanningDestination, RouteReason } from "./routeTypes";
+import { AIRPORT_DRIVE_MAX_MINUTES } from "./routeStayPolicy.ts";
 
 /** Planning V2 policy only. V1 itinerary generation does not read these values. */
 export const PACE_POLICY: Record<TravelPace, {
@@ -127,14 +128,32 @@ function transferReason(
     : [];
 }
 
+/** A first or last day with a long airport drive; operators start and finish within about 3.5 hours. */
+function airportDriveReason(
+  brief: TripBriefV1, matrix: TravelMatrix, stop: PlanningDestination, kind: "ARRIVAL" | "DEPARTURE"
+): RouteReason[] {
+  // International trips start and end at CMB unless the traveller says otherwise.
+  const location = (kind === "ARRIVAL" ? brief.arrival?.location : brief.departure?.location) || "CMB_AIRPORT";
+  const id = endpointId(matrix, location);
+  if (!id || id === stop.id) return [];
+  const leg = kind === "ARRIVAL" ? matrixLeg(matrix, id, stop.id) : matrixLeg(matrix, stop.id, id);
+  if (leg?.durationMinutes === undefined || leg.durationMinutes <= AIRPORT_DRIVE_MAX_MINUTES) return [];
+  return [{ code: "LONG_AIRPORT_DRIVE", severity: "PENALTY", destinations: [location, stop.name],
+    details: { direction: kind, transferMinutes: leg.durationMinutes } }];
+}
+
 export function assessRouteConstraints(
   brief: TripBriefV1, stops: PlanningDestination[], legs: RoadLeg[], matrix: TravelMatrix
 ): RouteReason[] {
   if (stops.length === 0) return [{ code: "INSUFFICIENT_DAYS", severity: "REJECTION" }];
   const limits = drivingLimits(brief);
+  const arrival = transferReason(brief, matrix, stops[0], "ARRIVAL");
+  const departure = transferReason(brief, matrix, stops[stops.length - 1], "DEPARTURE");
   const reasons: RouteReason[] = [
-    ...transferReason(brief, matrix, stops[0], "ARRIVAL"),
-    ...transferReason(brief, matrix, stops[stops.length - 1], "DEPARTURE"),
+    ...arrival, ...departure,
+    // A flight-time conflict already says the drive does not fit; don't repeat it as a penalty.
+    ...(arrival.some(reason => reason.code === "ARRIVAL_CONFLICT") ? [] : airportDriveReason(brief, matrix, stops[0], "ARRIVAL")),
+    ...(departure.some(reason => reason.code === "DEPARTURE_CONFLICT") ? [] : airportDriveReason(brief, matrix, stops[stops.length - 1], "DEPARTURE")),
   ];
   const usableDays = brief.durationDays - (arrivalDayUsableMinutes(brief) === 0 ? 1 : 0) -
     (departureDayUsableMinutes(brief) === 0 ? 1 : 0);

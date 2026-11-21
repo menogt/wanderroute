@@ -13,7 +13,7 @@ setIndicativePricing(false);
 
 async function fixture() {
   const brief: TripBriefV1 = { schemaVersion: 1, durationDays: 4, travellerCount: 2, interests: ["culture"], budget: { amount: 1000, currency: "USD" }, requestedCities: ["Kandy"], transportPreference: "PUBLIC_TRANSPORT", travelDates: { start: "2027-02-01", end: "2027-02-04" } };
-  const result = await planRouteConcepts(brief, { getMatrix: async locations => ({ locations, source: "UNAVAILABLE", generatedAt: "2026-10-22", legs: locations.map(from => locations.map(to => ({ fromId: from.id, toId: to.id, status: "UNAVAILABLE" }))) }) });
+  const result = await planRouteConcepts(brief, { getMatrix: async locations => ({ locations, source: "UNAVAILABLE", generatedAt: "2026-10-22", legs: locations.map(from => locations.map(to => ({ fromId: from.id, toId: to.id, status: "UNAVAILABLE" }))) }), exactCities: true });
   const id = result.concepts[0].routeConcept.id;
   const detail = await generatePlanningV2Itinerary(result, id, { getPlaces: async () => [
     { databaseId: "a", name: "A first visit", city: "Kandy", category: "attraction" },

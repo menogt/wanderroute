@@ -5,6 +5,7 @@ import type { TripBriefV1 } from "./planningTypes";
 import { arrivalDayUsableMinutes, departureDayUsableMinutes, assessRouteConstraints, drivingLimits, maximumPlanningBases } from "./routeConstraints.ts";
 import { assessPlanningSeason, planningSeasonMonth, type PlanningSeason } from "./routeSeason.ts";
 import { scoreRoute } from "./routeScoring.ts";
+import { typicalMaxNights } from "./routeStayPolicy.ts";
 import type { CandidateRoute, PlanningDestination, RouteReason } from "./routeTypes";
 import { matrixLeg, type MatrixLocation, type RoadLeg, type TravelMatrix } from "./travelTimeMatrix.ts";
 
@@ -99,7 +100,7 @@ function subsetsFor(destinations: PlanningDestination[], limit: number, matrix: 
 }
 
 function allocateNights(
-  brief: TripBriefV1, stops: PlanningDestination[], legs: RoadLeg[]
+  brief: TripBriefV1, stops: PlanningDestination[], legs: RoadLeg[], finalNights?: number
 ): number[] {
   const totalNights = Math.max(0, brief.durationDays - 1);
   const minimum = drivingLimits(brief).minimumNightsPerBase;
@@ -107,7 +108,11 @@ function allocateNights(
   if (nights.length * minimum > totalNights) {
     return stops.map((_, index) => index < totalNights ? 1 : 0);
   }
-  let spare = totalNights - nights.length * minimum;
+  // An airport-side last stop exists for the flight: it keeps exactly its nights and the rest go to the trip.
+  const fixedLast = finalNights !== undefined && stops.length > 1 &&
+    totalNights - (stops.length - 1) * minimum >= finalNights;
+  if (fixedLast) nights[stops.length - 1] = finalNights;
+  const spare = totalNights - nights.reduce((sum, value) => sum + value, 0);
   // First/last absorb constrained arrival/departure days. Longer inbound drives
   // then earn recovery time; stable index resolves ties.
   const priorities = stops.map((stop, index) => ({
@@ -116,13 +121,35 @@ function allocateNights(
       (index === stops.length - 1 && departureDayUsableMinutes(brief) === 0 ? 200 : 0) +
       cityInterestAffinity(stop.name, brief) * 35 + (legs[index - 1]?.durationMinutes ?? 0) + (index === 0 || index === stops.length - 1 ? 30 : 0),
   })).sort((a, b) => b.weight - a.weight || a.index - b.index);
+  return spreadNights(nights, spare, priorities.map(item => item.index).filter(index => !fixedLast || index !== stops.length - 1),
+    stops.map(stop => typicalMaxNights(stop.name, brief)));
+}
+
+/**
+ * Hands out spare nights in priority order without passing a stop's typical maximum. Only when every
+ * stop is full does a stop go over, starting with the one allowed most nights (usually the beach).
+ */
+export function spreadNights(nights: number[], spare: number, order: number[], caps: number[]): number[] {
+  const result = [...nights];
   let cursor = 0;
-  while (spare > 0) {
-    nights[priorities[cursor % priorities.length].index] += 1;
+  while (spare > 0 && order.length) {
+    const open = order.findIndex((_, step) => result[order[(cursor + step) % order.length]] < caps[order[(cursor + step) % order.length]]);
+    const index = open >= 0 ? order[(cursor + open) % order.length]
+      : [...order].sort((a, b) => (result[a] - caps[a]) - (result[b] - caps[b]) || caps[b] - caps[a])[0];
+    result[index] += 1;
     spare -= 1;
-    cursor += 1;
+    cursor = open >= 0 ? (cursor + open + 1) % order.length : cursor;
   }
-  return nights;
+  return result;
+}
+
+/** Nights beyond what tour operators typically give one base. */
+function longStayReasons(brief: TripBriefV1, stops: PlanningDestination[], nights: number[]): RouteReason[] {
+  return stops.flatMap((stop, index) => {
+    const typical = typicalMaxNights(stop.name, brief);
+    return nights[index] > typical ? [{ code: "LONG_STAY" as const, severity: "PENALTY" as const, destinations: [stop.name],
+      details: { nights: nights[index], typicalMaximum: typical, excess: nights[index] - typical } }] : [];
+  });
 }
 
 function routeLegs(order: PlanningDestination[], matrix: TravelMatrix): RoadLeg[] {
@@ -149,7 +176,8 @@ export function generateRouteCandidates(
   brief: TripBriefV1,
   suppliedDestinations: PlanningDestination[],
   matrix: TravelMatrix,
-  seasonAssessments?: Map<string, PlanningSeason>
+  seasonAssessments?: Map<string, PlanningSeason>,
+  options: { finalNights?: number } = {}
 ): CandidateRoute[] {
   const requestedNames = new Set(brief.requestedCities.map(name => name.trim().toLowerCase()));
   const destinations = (suppliedDestinations.length ? suppliedDestinations : buildCandidateDestinations(brief))
@@ -174,7 +202,7 @@ export function generateRouteCandidates(
       if (seen.has(id)) continue;
       seen.add(id);
       const legs = routeLegs(order, matrix);
-      const nights = allocateNights(brief, order, legs);
+      const nights = allocateNights(brief, order, legs, options.finalNights);
       const omitted = destinations.filter(destination => destination.requested &&
         !order.some(stop => stop.id === destination.id));
       const reasons: RouteReason[] = [
@@ -189,6 +217,7 @@ export function generateRouteCandidates(
           destinations: [destination.name],
         })),
         ...assessRouteConstraints(brief, order, legs, matrix),
+        ...longStayReasons(brief, order, nights),
         ...seasonalReasons(order, planningSeasonMonth(brief), seasonAssessments),
       ];
       const scored = scoreRoute(brief, order, legs, reasons);

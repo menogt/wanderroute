@@ -8,7 +8,7 @@ export type RouteReasonCode =
   | "ROUTING_UNKNOWN" | "SEASON_AVOID" | "SEASON_CAUTION" | "SEASON_UNKNOWN"
   | "ARRIVAL_CONFLICT" | "DEPARTURE_CONFLICT" | "ARRIVAL_TIME_UNKNOWN"
   | "DEPARTURE_TIME_UNKNOWN" | "ENDPOINT_UNKNOWN" | "BACKTRACKING"
-  | "DESTINATION_SWITCHING" | "ROUTE_REDUCED";
+  | "DESTINATION_SWITCHING" | "ROUTE_REDUCED" | "LONG_STAY" | "LONG_AIRPORT_DRIVE";
 export type RouteReason = {
   code: RouteReasonCode;
   severity: RouteReasonSeverity;
@@ -39,6 +39,10 @@ export type RouteScore = {
     backtracking: number;
     switching: number;
     uncertainty: number;
+    /** Nights beyond what tour operators typically give one base. */
+    stays: number;
+    /** First or last airport drives longer than operators plan. */
+    airportDrive: number;
   };
   /** Internal ordering only; never display as a percentage. */
   rankable: boolean;

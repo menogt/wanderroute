@@ -1,12 +1,14 @@
 import { planningCalendarProblems } from "./planningCalendar.ts";
 import type { Currency, Interest } from "../components/rl/types";
 import { buildCandidateDestinations, generateRouteCandidates, knownPlanningDestinations } from "./routeCandidates.ts";
+import { fillAroundRequested } from "./routeFill.ts";
+import { snapshotMatrix } from "./roadSnapshotMatrix.ts";
 import { calculateCostLedger, compareBudget, firmCostExceedsBudget, type CostLedger, type CostLineInput } from "./costLedger.ts";
 import type { RouteConceptV1, TripBriefV1 } from "./planningTypes";
 import { CMB_AIRPORT, resolvePlanningEndpoint } from "./planningV2Locations.ts";
 import { assessPlanningSeason, planningSeasonMonth, type PlanningSeason } from "./routeSeason.ts";
 import { foodDayPrice, INDICATIVE_EXCHANGE_RATES, legCost, roomNightPrice } from "./indicativePrices.ts";
-import { arrivalReadyMinute, departureDeadlineMinute, TRANSFER_POLICY } from "./routeConstraints.ts";
+import { arrivalReadyMinute, departureDeadlineMinute, maximumPlanningBases, TRANSFER_POLICY } from "./routeConstraints.ts";
 import type { CandidateRoute, PlanningDestination, RouteReason } from "./routeTypes";
 import { buildTransportPlan, formatDriveTime } from "./transportPlanning.ts";
 import type { TransportMode, TransportPlan } from "./transportTypes";
@@ -43,6 +45,8 @@ export type PlanningV2Services = {
   getCostLines?: (brief: TripBriefV1, route: CandidateRoute, transport: TransportPlan) => CostLineInput[];
   assignments?: Record<string, TransportMode>;
   now?: () => string;
+  /** Use only the traveller's chosen cities; no classic-loop stops are added around them. */
+  exactCities?: boolean;
 };
 
 const INTERESTS: Interest[] = ["beaches", "culture", "wildlife", "hiking", "food", "temples", "adventure", "photography"];
@@ -118,17 +122,6 @@ function wantsAirportNight(brief: TripBriefV1): boolean {
     resolvePlanningEndpoint(brief.departure.location)?.id === CMB_AIRPORT.id;
 }
 
-/** The airport-side stop exists for the flight: keep it to one night and give spare nights back to the traveller's stops. */
-function withOneAirportNight(route: CandidateRoute): CandidateRoute {
-  const last = route.nights.length - 1;
-  if (last < 1 || route.nights[last] <= 1) return route;
-  const nights = [...route.nights];
-  let spare = nights[last] - 1;
-  nights[last] = 1;
-  for (let index = 0; spare > 0; index = (index + 1) % last, spare -= 1) nights[index] += 1;
-  return { ...route, nights };
-}
-
 function matrixLocations(destinations: PlanningDestination[], brief: TripBriefV1,
   available: MatrixLocation[]): MatrixLocation[] {
   const locations = [...destinations];
@@ -138,6 +131,8 @@ function matrixLocations(destinations: PlanningDestination[], brief: TripBriefV1
       candidate.id.toLowerCase() === location.toLowerCase() || candidate.name.toLowerCase() === location.toLowerCase());
     if (match && !locations.some(candidate => candidate.id === match.id)) locations.push(match as PlanningDestination);
   }
+  // The first and last airport drives are checked even without flight details: trips start and end at CMB.
+  if (!locations.some(candidate => candidate.id === CMB_AIRPORT.id)) locations.push(CMB_AIRPORT as PlanningDestination);
   // Same single matrix request: include the airport-side base so it can be checked if needed.
   const airportBase = available.find(candidate => candidate.name === AIRPORT_NIGHT_BASE);
   if (wantsAirportNight(brief) && airportBase && !locations.some(candidate => candidate.id === airportBase.id)) {
@@ -207,6 +202,7 @@ function clockText(minute: number): string {
 }
 
 const placeName = (value: string) => value === CMB_AIRPORT.id ? "CMB airport" : value;
+const listNames = (names: string[]) => names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 
 /** Plain-language airport transfer conflicts with the times a traveller can act on. */
 function transferConflictDetail(reason: RouteReason, brief?: TripBriefV1): string | undefined {
@@ -231,6 +227,16 @@ function transferConflictDetail(reason: RouteReason, brief?: TripBriefV1): strin
 function reasonDetail(reason: RouteReason, brief?: TripBriefV1): string {
   const conflict = transferConflictDetail(reason, brief);
   if (conflict) return conflict;
+  if (reason.code === "LONG_STAY" && reason.destinations?.[0]) {
+    return `${reason.destinations[0]}: ${reason.details?.nights} nights. Local tour operators usually plan at most ${reason.details?.typicalMaximum} here and add another stop or day trips instead.`;
+  }
+  const airportMinutes = Number(reason.details?.transferMinutes);
+  if (reason.code === "LONG_AIRPORT_DRIVE" && reason.destinations?.[1] && Number.isFinite(airportMinutes)) {
+    const [endpoint, stop] = reason.destinations.map(placeName);
+    return reason.details?.direction === "ARRIVAL"
+      ? `${stop} is about ${formatDriveTime(airportMinutes)} by car from ${endpoint}, a long first day after a flight. Local operators usually spend the first night within about 3.5 hours of the airport.`
+      : `${stop} is about ${formatDriveTime(airportMinutes)} by car from ${endpoint}, a long drive on departure day. Local operators usually finish within about 3.5 hours of the airport, often on the south-west coast.`;
+  }
   const places = reason.destinations?.map(placeName).join(" to ");
   const names: Record<string, string> = {
     REQUESTED_CITY_UNAVAILABLE: "A requested destination has no trusted coordinates",
@@ -257,7 +263,8 @@ function reasonDetail(reason: RouteReason, brief?: TripBriefV1): string {
 
 function neutralRank(route: CandidateRoute): number {
   return route.score.components.requestedCoverage + route.score.components.season +
-    route.score.components.switching + route.score.components.backtracking -
+    route.score.components.switching + route.score.components.backtracking +
+    route.score.components.stays + route.score.components.airportDrive -
     route.reasons.filter(reason => reason.code === "REQUESTED_CITY_UNAVAILABLE" ||
       reason.code === "ENDPOINT_UNKNOWN").length * 20;
 }
@@ -304,7 +311,9 @@ export function createConcept(brief: TripBriefV1, route: CandidateRoute, matrix:
     ? `Ends with a night in ${AIRPORT_NIGHT_BASE}, close to CMB, so your departure flight is within reach.` :
     route.destinations.length === 1 ? "One base keeps this trip simple." :
     route.destinations.filter(destination => destination.requested).length === brief.requestedCities.length &&
-      brief.requestedCities.length ? "Keeps all requested destinations." :
+      brief.requestedCities.length ? (route.destinations.some(destination => !destination.requested)
+        ? `Keeps all your chosen places and adds ${listNames(route.destinations.filter(destination => !destination.requested).map(destination => destination.name))} to complete the loop, as local tour operators plan it.`
+        : "Keeps all requested destinations.") :
       "Balances destination coverage with the available days.";
   const routeConcept: RouteConceptV1 = {
     schemaVersion: 1, id: route.id, tripBriefVersion: 1,
@@ -337,7 +346,9 @@ export async function planRouteConcepts(rawBrief: TripBriefV1,
   if (validation.length) throw new PlanningBriefError(validation);
   const brief = normalizedBrief(rawBrief);
   const available = knownPlanningDestinations();
-  const destinations = buildCandidateDestinations(brief, available);
+  // Chosen cities are must-sees; the classic loop fills any nights they cannot carry at operator stay lengths.
+  const chosen = buildCandidateDestinations(brief, available);
+  const destinations = services.exactCities ? chosen : fillAroundRequested(brief, chosen, available, maximumPlanningBases(brief));
   if (!destinations.length) throw new PlanningBriefError([{ code: "NO_DESTINATIONS", severity: "ERROR",
     detail: "No destinations are available for this brief." }]);
   const locations = matrixLocations(destinations, brief, [...available, CMB_AIRPORT]);
@@ -345,9 +356,14 @@ export async function planRouteConcepts(rawBrief: TripBriefV1,
   const assignments = services.assignments ?? {};
   let matrix: TravelMatrix;
   if (!needsRoadMatrix(brief, assignments)) matrix = unavailableMatrix(locations, now);
-  else {
-    try { matrix = await (services.getMatrix ?? ((items) => fetchTravelMatrix(items, { timeoutMs: 7000 })))(locations); }
+  else if (services.getMatrix) {
+    try { matrix = await services.getMatrix(locations); }
     catch { matrix = unavailableMatrix(locations, now, "NETWORK_ERROR"); }
+  } else {
+    // The live public OSRM service is free but not guaranteed; fall back to the same data stored on a known date.
+    try { matrix = await fetchTravelMatrix(locations, { timeoutMs: 7000 }); }
+    catch { matrix = unavailableMatrix(locations, now, "NETWORK_ERROR"); }
+    if (matrix.source === "UNAVAILABLE") matrix = snapshotMatrix(locations) ?? matrix;
   }
   const month = planningSeasonMonth(brief);
   const seasons = new Map(destinations.map(destination => [destination.id,
@@ -357,12 +373,21 @@ export async function planRouteConcepts(rawBrief: TripBriefV1,
   const airportBase = available.find(candidate => candidate.name === AIRPORT_NIGHT_BASE);
   if (wantsAirportNight(brief) && airportBase && !destinations.some(stop => stop.id === airportBase.id) &&
       candidates.length && candidates.every(candidate => candidate.reasons.some(reason => reason.code === "DEPARTURE_CONFLICT"))) {
-    const extended = generateRouteCandidates(brief, [...destinations, { ...airportBase, requested: false }], matrix, seasons)
-      .filter(candidate => candidate.destinations[candidate.destinations.length - 1]?.id === airportBase.id &&
-        !candidates.some(existing => existing.id === candidate.id));
+    const base = { ...airportBase, requested: false };
+    const endsAtBase = (candidate: CandidateRoute) => candidate.destinations[candidate.destinations.length - 1]?.id === airportBase.id;
+    // The same routes with one airport-side night appended keep their loop order; the general search adds other shapes.
+    const oneNight = { finalNights: 1 };
+    const appended = candidates.slice(0, 8).flatMap(route => {
+      const order = [...route.destinations, base];
+      const id = `route:${order.map(stop => encodeURIComponent(stop.id)).join(">")}`;
+      return generateRouteCandidates(brief, order, matrix, seasons, oneNight).filter(candidate => candidate.id === id);
+    });
+    const extended = [...new Map([...appended, ...generateRouteCandidates(brief, [...destinations, base], matrix, seasons, oneNight)]
+      .filter(candidate => endsAtBase(candidate) && !candidates.some(existing => existing.id === candidate.id))
+      .map(candidate => [candidate.id, candidate])).values()];
     // Prefer endings that keep every requested place; drop-a-place variants only if nothing else fits.
     const complete = extended.filter(candidate => !candidate.reasons.some(reason => reason.code === "REQUESTED_CITY_OMITTED"));
-    candidates = [...candidates, ...(complete.length ? complete : extended).map(withOneAirportNight)];
+    candidates = [...candidates, ...(complete.length ? complete : extended)];
   }
   const all = candidates.map(candidate => createConcept(brief, candidate, matrix, services));
   const roadRanking = brief.transportPreference === "PRIVATE_DRIVER";
@@ -373,16 +398,24 @@ export async function planRouteConcepts(rawBrief: TripBriefV1,
   const valid = all.filter(concept => concept.readiness !== "INVALID");
   const distinctSets = new Set<string>();
   const selected: PlanningRouteConcept[] = [];
-  for (const concept of valid) {
-    const key = concept.candidate.destinations.map(destination => destination.id).sort().join("|");
-    if (distinctSets.has(key)) continue;
-    selected.push(concept);
-    distinctSets.add(key);
-    if (selected.length === 3) break;
+  // Options with stays or airport drives operators would not plan are shown only to keep a choice of two.
+  const flagged = (concept: PlanningRouteConcept) => concept.candidate.reasons.some(reason =>
+    reason.code === "LONG_STAY" || reason.code === "LONG_AIRPORT_DRIVE");
+  for (const [pass, limit] of [[false, 3], [true, 2]] as const) {
+    for (const concept of valid) {
+      if (selected.length >= limit) break;
+      if (flagged(concept) !== pass) continue;
+      const key = concept.candidate.destinations.map(destination => destination.id).sort().join("|");
+      if (distinctSets.has(key)) continue;
+      selected.push(concept);
+      distinctSets.add(key);
+    }
   }
   const issues: PlanningV2Issue[] = [];
   if (matrix.failure) issues.push({ code: matrix.failure === "TIMEOUT" ? "ROUTING_TIMEOUT" : "ROUTING_UNAVAILABLE",
     severity: "UNKNOWN", detail: "Road routing is unavailable. Retry to check driving estimates." });
+  if (matrix.snapshot) issues.push({ code: "ROUTING_STORED", severity: "WARNING",
+    detail: `The live road service did not respond, so driving times come from the same service's data stored on ${matrix.snapshot}.` });
   if (destinations.some(destination => !destination.coordinates)) issues.push({ code: "COORDINATES_MISSING",
     severity: "UNKNOWN", detail: "Some requested destinations have no trusted coordinates." });
   if (!selected.length) issues.push({ code: "NO_FEASIBLE_CONCEPTS", severity: "ERROR",

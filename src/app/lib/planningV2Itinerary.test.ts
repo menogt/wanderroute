@@ -366,7 +366,7 @@ test("fallback distributes distinct places, retains multiple activities and does
 test("23:00 arrival permits a nearby overnight transfer with explicit next-day clocks and recovery", async () => {
   const input: TripBriefV1 = { ...brief, durationDays: 7, requestedCities: ["Negombo"],
     arrival: { location: "CMB", dateTime: "2027-02-01T23:00" }, departure: { location: "CMB", dateTime: "2027-02-07T18:00" } };
-  const result = await planRouteConcepts(input, { getMatrix: async locations => matrix(locations, 45) });
+  const result = await planRouteConcepts(input, { getMatrix: async locations => matrix(locations, 45), exactCities: true });
   assert.ok(result.concepts.length);
   assert.equal(result.concepts[0].knownDrivingMinutes, 90);
   const detail = await generatePlanningV2Itinerary(result, result.concepts[0].routeConcept.id, { getPlaces: async () => [] });

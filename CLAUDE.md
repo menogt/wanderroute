@@ -26,6 +26,12 @@ AI keys are server-only (`GROQ_API_KEY`); nothing AI-related is in the browser b
 
 V2 asks Groq `openai/gpt-oss-120b`, then the backup `openai/gpt-oss-20b` (separate free limit; `GROQ_FALLBACK_MODEL=none` disables it), then OpenRouter only if `OPENROUTER_API_KEY` is set (paid; leave unset). The prompt's per-day place limit must match `validateModel` in the same file.
 
+## Route rules (benchmarked against 24 Sri Lankan operator itineraries, Nov 2026)
+- `lib/routeStayPolicy.ts`: typical maximum nights per base (2 inland, 3 at Sigiriya or the beach, 4 at the beach on 13+ day trips, +1 for slower paces) and the 210-minute limit for first/last airport drives. Extra nights become `LONG_STAY` penalties; long airport drives become `LONG_AIRPORT_DRIVE`.
+- `lib/routeFill.ts`: chosen cities are must-sees. When they cannot carry the nights, classic-loop stops are added (`requested: false`): a coastal finish within reach of CMB first, then the stops operators use most. `services.exactCities` turns this off.
+- Scoring prefers the canonical loop direction (Cultural Triangle → hills → coast); a last night in Negombo closes the loop. Alternatives with long stays or airport drives are shown only to keep a choice of two.
+- `lib/roadTimeSnapshot.ts` (generated) and `lib/roadSnapshotMatrix.ts`: OSRM road times stored on 2026-11-21 for every planner town and CMB, used only when the live OSRM demo server fails (the plan says so).
+
 ## Prices
 `lib/indicativePrices.ts` gives every V2 cost line an ESTIMATED USD range with a source URL and check date (rooms by comfort tier and season, meals, car with driver, CMB taxi fares, train and bus fares, tickets, tuk-tuks, SIM and tips). The homepage "Rough estimate" uses `quickTripEstimate` from the same tables. Traveller-recorded and sourced place prices still win. Ranges were checked 2026-11-21; refresh `PRICES_CHECKED` and the tables every few months. Only USD and LKR budgets convert; other currencies stay "Price to confirm". Test files that check recorded/allowance arithmetic call `setIndicativePricing(false)`.
 

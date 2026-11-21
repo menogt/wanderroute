@@ -4,10 +4,15 @@ import { drivingLimits } from "./routeConstraints.ts";
 import type { PlanningDestination, RouteReason, RouteScore } from "./routeTypes";
 import type { RoadLeg } from "./travelTimeMatrix";
 
+/** Loop positions; a final night back beside the airport closes the loop rather than reversing it. */
+function loopRanks(destinations: PlanningDestination[]): number[] {
+  return destinations.map((destination, index) => index > 0 && index === destinations.length - 1 &&
+    destination.name.toLowerCase() === "negombo" ? CANONICAL_CITY_ORDER.length : CANONICAL_CITY_ORDER.findIndex(
+    city => city.toLowerCase() === destination.name.toLowerCase())).filter(rank => rank >= 0);
+}
+
 function backtrackCount(destinations: PlanningDestination[]): number {
-  const ranks = destinations.map(destination => CANONICAL_CITY_ORDER.findIndex(
-    city => city.toLowerCase() === destination.name.toLowerCase()
-  )).filter(rank => rank >= 0);
+  const ranks = loopRanks(destinations);
   let previousDirection = 0;
   let reversals = 0;
   for (let i = 1; i < ranks.length; i += 1) {
@@ -16,6 +21,12 @@ function backtrackCount(destinations: PlanningDestination[]): number {
     if (direction) previousDirection = direction;
   }
   return reversals;
+}
+
+/** 23 of 24 benchmarked operator itineraries run the canonical loop: Cultural Triangle, hills, then the coast. */
+function runsAgainstLoop(destinations: PlanningDestination[]): boolean {
+  const ranks = loopRanks(destinations);
+  return ranks.length > 1 && ranks.slice(1).reduce((sum, rank, index) => sum + Math.sign(rank - ranks[index]), 0) < 0;
 }
 
 /** Signed, inspectable components for internal ranking only. */
@@ -40,9 +51,13 @@ export function scoreRoute(
     longestLeg: -longest / 40,
     season: -reasons.filter(reason => reason.code === "SEASON_AVOID").length * 35 -
       reasons.filter(reason => reason.code === "SEASON_CAUTION").length * 12,
-    backtracking: -reversals * 30,
+    backtracking: -reversals * 30 - (runsAgainstLoop(destinations) ? 15 : 0),
     switching: -Math.max(0, destinations.length - 1) * switchingWeight,
     uncertainty: -reasons.filter(reason => reason.severity === "UNCERTAIN").length * 20,
+    stays: -reasons.filter(reason => reason.code === "LONG_STAY")
+      .reduce((sum, reason) => sum + Number(reason.details?.excess ?? 1), 0) * 25,
+    airportDrive: -reasons.filter(reason => reason.code === "LONG_AIRPORT_DRIVE")
+      .reduce((sum, reason) => sum + 40 + (Number(reason.details?.transferMinutes ?? 0) - 210) / 10, 0),
   };
   const rejected = scoredReasons.some(reason => reason.severity === "REJECTION");
   return {
