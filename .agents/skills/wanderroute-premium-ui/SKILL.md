@@ -204,6 +204,18 @@ Design intentional mobile interactions:
 * collapsed summaries
 * large touch targets
 
+Judges and most travellers use phones, so check every change at 360, 390 and 768 px (and 320 for overflow).
+
+Mobile checklist (adapted from the open-source UI UX Pro Max guidelines, Nov 2026):
+
+* Touch targets at least 40-44 px, with at least 8 px between neighbours. Icon-only buttons need an `aria-label`.
+* No sideways swiping for primary controls: a sticky bar must fit on one line at 360 px (shrink labels or padding, hide secondary states) and the page itself never scrolls horizontally. Chip rows inside a map or day picker may scroll.
+* Names (towns, places, headings) never break mid-word: use `overflow-wrap: break-word`, not `anywhere`, and give long names their own line with controls underneath.
+* Don't stack fixed bars. On the planner the bottom navigation is slim and hides while scrolling down (`BottomNav` `useCompactNav`, `html[data-bottomnav]`); floating buttons read that attribute to sit above it.
+* Full-screen overlays (the phone map) get a visible X in the top corner, close on Escape, move focus to the X on open and back to the opener on close.
+* Body text at least 16 px; contrast at least 4.5:1; visible focus rings; respect `prefers-reduced-motion`.
+* Dragging always has a tap alternative (the ⋯ menu's Move to another day).
+
 ## Maps
 
 Real Leaflet maps remain functional.

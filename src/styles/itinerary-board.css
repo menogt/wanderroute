@@ -3,14 +3,16 @@
 .wr-board__list { display: grid; gap: 18px; align-content: start; min-width: 0; padding: 22px max(16px, env(safe-area-inset-left, 0px)) 96px max(16px, env(safe-area-inset-right, 0px)); }
 .wr-board__map { display: none; }
 @media (max-width: 767px) {
-  /* Clear the site's bottom navigation (68px plus the phone's safe area). */
-  .wr-board__map-open { bottom: calc(86px + env(safe-area-inset-bottom, 0px)) !important; }
+  /* Clear the site's bottom navigation: slim on the planner (50px), gone while it is hidden (BottomNav). */
+  .wr-board__map-open { bottom: calc(86px + env(safe-area-inset-bottom, 0px)) !important; transition: bottom 0.22s ease-out; }
+  [data-bottomnav="compact"] .wr-board__map-open { bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important; }
+  [data-bottomnav="hidden"] .wr-board__map-open { bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important; }
 }
 @media (min-width: 1024px) {
   .wr-board { grid-template-columns: minmax(0, 1.05fr) minmax(420px, 0.95fr); }
   .wr-board__list { padding-inline: clamp(20px, 2.6vw, 40px); }
   .wr-board__map { display: flex; position: sticky; top: var(--wr-nav-height, 72px); height: calc(100vh - var(--wr-nav-height, 72px)); border-left: 1px solid var(--wr-line-dark); }
-  .wr-board__map-open, .wr-board__map-close { display: none !important; }
+  .wr-board__map-open, .wr-board__map-head { display: none !important; }
 }
 @media (max-width: 1023px) {
   /* Above the site's bottom navigation, so the map really is full screen. */
@@ -19,8 +21,13 @@
   .wr-board__map-open { position: fixed; z-index: 70; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
     display: inline-flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 22px; border: 0; border-radius: 999px;
     background: var(--wr-midnight); color: var(--wr-ivory); font-weight: 700; box-shadow: 0 10px 28px rgba(7, 26, 45, 0.35); cursor: pointer; }
-  .wr-board__map-close { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: 8px 12px 0; padding: 0 14px;
-    border: 1px solid var(--wr-line-dark); border-radius: 999px; background: #fff; color: var(--wr-midnight); font-weight: 600; cursor: pointer; }
+  .wr-board__map-head { display: none; }
+  .wr-board__map.is-open .wr-board__map-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px 6px 16px;
+    border-bottom: 1px solid var(--wr-line-dark); background: var(--wr-ivory); }
+  .wr-board__map-head strong { font-family: var(--wr-font-display, "Fraunces", Georgia, serif); font-size: 1.15rem; color: var(--wr-midnight); }
+  .wr-board__map-close { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid rgba(7, 26, 45, 0.2); border-radius: 50%;
+    background: #fff; color: var(--wr-midnight); cursor: pointer; touch-action: manipulation; }
+  .wr-board__map-close:hover, .wr-board__map-close:focus-visible { border-color: var(--wr-midnight); background: var(--wr-cream); }
 }
 
 /* Overview and actions */
@@ -60,7 +67,7 @@
 .wr-route-editor__stops { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .wr-route-editor__stops li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px 12px; align-items: center; padding: 8px 10px; border-radius: 8px; background: var(--wr-cream); }
 .wr-route-editor__name { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px; border: 0; background: transparent; color: var(--wr-midnight); text-align: left; cursor: pointer; }
-.wr-route-editor__name strong { font-size: 1.02rem; overflow-wrap: anywhere; }
+.wr-route-editor__name strong { font-size: 1.02rem; overflow-wrap: break-word; }
 .wr-route-editor__name small { color: var(--wr-ink-soft); white-space: nowrap; }
 .wr-route-editor__dot { flex: none; width: 12px; height: 12px; border-radius: 50%; }
 .wr-route-editor__nights, .wr-route-editor__order { display: flex; align-items: center; gap: 4px; }
@@ -73,8 +80,13 @@
 .wr-route-editor__status { margin: 0; min-height: 1.2em; color: var(--wr-tea); font-weight: 600; }
 .wr-route-editor__problem { margin: 0; color: #9b3b22; font-weight: 600; }
 @media (max-width: 560px) {
-  .wr-route-editor__stops li { grid-template-columns: minmax(0, 1fr) auto; }
-  .wr-route-editor__order { grid-column: 1 / -1; justify-content: flex-end; }
+  /* Phones: the town name gets its own line; nights on the left and order buttons on the right below it. */
+  .wr-route-editor__stops li { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name name" "nights order"; gap: 6px 8px; padding: 10px 12px; }
+  .wr-route-editor__name { grid-area: name; flex-wrap: wrap; column-gap: 8px; row-gap: 0; }
+  .wr-route-editor__nights { grid-area: nights; }
+  .wr-route-editor__order { grid-area: order; justify-content: flex-end; gap: 6px; }
+  .wr-route-editor__stops button:not(.wr-route-editor__name) { width: 40px; height: 40px; }
+  .wr-route-editor__nights output { min-width: 4.4em; }
 }
 
 /* Places to visit */
@@ -183,10 +195,18 @@
 
 /* Phones: no top site header, so the bar sticks to the top; it stays on one line with icon-only Undo/Redo. */
 @media (max-width: 767px) {
-  .wr-board__bar { top: env(safe-area-inset-top, 0px); flex-wrap: nowrap; }
-  .wr-board__bar nav { flex: 1; }
+  .wr-board__bar { top: env(safe-area-inset-top, 0px); flex-wrap: nowrap; gap: 4px; padding: 6px 4px; }
+  .wr-board__bar nav { flex: 1; gap: 0; justify-content: space-between; overflow-x: auto; }
+  .wr-board__bar nav a { display: inline-flex; align-items: center; min-height: 40px; padding: 0 clamp(4px, 1.6vw, 10px); font-size: clamp(0.78rem, 3.45vw, 0.92rem); }
   .wr-board__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .wr-board__history button { padding: 0 9px; }
+  .wr-board__history { gap: 4px; }
+  .wr-board__history button { justify-content: center; width: 40px; min-height: 40px; padding: 0; }
+  @media (max-width: 340px) {
+    .wr-board__bar nav a { padding: 0 3px; font-size: 0.74rem; }
+    .wr-board__history button { width: 36px; }
+  }
+  /* "Saved" is the normal state, so phones show only the warning when saving fails. */
+  .wr-board__history .wr-edit-saved:not(.wr-edit-saved--failed) { display: none; }
   .wr-board-section, .wr-board-day { scroll-margin-top: 64px; }
   .wr-place-card__photo.is-missing { display: none; }
 }

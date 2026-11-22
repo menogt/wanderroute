@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CalendarClock, CarFront, CheckCircle2, Clock3, HelpCircle, List, Map as MapIcon, Redo2, RefreshCw,
+import { AlertTriangle, CalendarClock, CarFront, CheckCircle2, Clock3, HelpCircle, Map as MapIcon, Redo2, RefreshCw,
   Settings2, Undo2, WalletCards, X } from "lucide-react";
 import { StudioGuide, studioGuideSeen } from "./StudioHelp";
 import { PlanningReviewPanel } from "./PlanningReviewPanel";
@@ -66,6 +66,20 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
   const [focusDay, setFocusDay] = useState<number | undefined>();
   const [highlightId, setHighlightId] = useState<string>();
   const [mapOpen, setMapOpen] = useState(false);
+  const mapCloseRef = useRef<HTMLButtonElement>(null);
+  const mapOpenRef = useRef<HTMLButtonElement>(null);
+  const mapWasOpen = useRef(false);
+  // Phone map overlay: focus its close button on open, Escape closes, focus returns to the Map button.
+  useEffect(() => {
+    if (mapOpen) {
+      mapWasOpen.current = true;
+      mapCloseRef.current?.focus();
+      const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMapOpen(false); };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }
+    if (mapWasOpen.current) { mapWasOpen.current = false; mapOpenRef.current?.focus({ preventScroll: true }); }
+  }, [mapOpen]);
   // The map beside the list is a desktop layout; on smaller screens it only exists while opened.
   const [wide, setWide] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(min-width: 1024px)").matches);
   useEffect(() => {
@@ -212,13 +226,16 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
         <p className="wr-v2-detail__footer"><Clock3 size={16} /> Activity durations are estimates. Train, bus and other unverified transfers have no invented timetable.</p>
       </div></BoardDndProvider>
 
-      <div className={`wr-board__map${mapOpen ? " is-open" : ""}`}>
-        <button type="button" className="wr-board__map-close" onClick={() => setMapOpen(false)}><List size={17} aria-hidden="true" /> Back to the list</button>
+      <div className={`wr-board__map${mapOpen ? " is-open" : ""}`} role={mapOpen ? "dialog" : undefined} aria-modal={mapOpen || undefined} aria-label={mapOpen ? "Trip map" : undefined}>
+        <div className="wr-board__map-head">
+          <strong>Trip map</strong>
+          <button ref={mapCloseRef} type="button" className="wr-board__map-close" onClick={() => setMapOpen(false)} aria-label="Close map"><X size={22} aria-hidden="true" /></button>
+        </div>
         {(wide || mapOpen) && <BoardMap detail={detail} brief={brief} focusDay={focusDay} highlightId={highlightId}
           onFocusDay={day => { if (day) showDay(day); else setFocusDay(undefined); }}
           onItem={itemId => showItem(itemId)} />}
       </div>
     </div>
-    {!mapOpen && <button type="button" className="wr-board__map-open" onClick={() => setMapOpen(true)}><MapIcon size={18} aria-hidden="true" /> Map</button>}
+    {!mapOpen && <button ref={mapOpenRef} type="button" className="wr-board__map-open" onClick={() => setMapOpen(true)}><MapIcon size={18} aria-hidden="true" /> Map</button>}
   </section>;
 }

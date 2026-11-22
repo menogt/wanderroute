@@ -422,6 +422,15 @@
   font-weight: 800;
 }
 
+/* Planner: a slimmer bar that slides away while scrolling down (BottomNav useCompactNav). */
+.wr-bottomnav.is-compact { transition: transform 0.22s ease-out; }
+.wr-bottomnav.is-compact.is-hidden { transform: translateY(100%); }
+.wr-bottomnav.is-compact .wr-bottomnav__inner { min-height: 50px; padding: 0.15rem 0.3rem 0.2rem; }
+.wr-bottomnav.is-compact .wr-bottomnav__item { gap: 0.05rem; font-size: 0.58rem; }
+.wr-bottomnav.is-compact .wr-bottomnav__icon { height: 26px; width: 38px; }
+.wr-bottomnav.is-compact .wr-bottomnav__item.is-primary .wr-bottomnav__icon { height: 26px; width: 38px; margin-top: 0; border-radius: 13px; }
+@media (prefers-reduced-motion: reduce) { .wr-bottomnav.is-compact { transition: none; } }
+
 /* Home */
 .wr-home {
   background: var(--wr-ivory-local);
