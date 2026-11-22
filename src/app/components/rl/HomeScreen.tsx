@@ -1,17 +1,19 @@
-import { useMemo, useRef, useState } from "react";
-import { ArrowRight, Camera, CirclePlay, Compass, Landmark, Minus, Mountain, Navigation, Plus, UtensilsCrossed, Waves, X } from "lucide-react";
-import { PLACE_PHOTOS } from "../../lib/placePhotoCatalog";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowRight, Camera, Compass, Landmark, MapPin, Minus, Mountain, Navigation, Plus, Sun, UtensilsCrossed, Waves } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { CURRENCY_SYMBOLS, generateItinerary } from "./data";
-import { citiesFromPlaces, type RequestedPlace } from "../../lib/requestedPlaces";
+import { citiesFromPlaces, MAX_REQUESTED_PLACES, pickablePlaces, placeKey, type RequestedPlace } from "../../lib/requestedPlaces";
 import { quickTripEstimate } from "../../lib/indicativePrices";
 import { DestinationHint } from "./DestinationHint";
 import { PlacePicker } from "./PlacePicker";
 import { MONTH_NAMES } from "../../lib/seasonData";
 import type { Interest, Screen, TravelStyle, TripInputs } from "./types";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
+import { HomeHero } from "./home/HomeHero";
+import { HomeLoop, type LoopStop } from "./home/HomeLoop";
+import { prefersReducedMotion, useLandingMotion } from "./home/useLandingMotion";
 import "../../../styles/core-ui.css";
-import "../../../styles/home-journey.css";
+import "../../../styles/home-landing.css";
 
 const ADMIN_TAP_THRESHOLD = 5;
 const ADMIN_TAP_WINDOW_MS = 2500;
@@ -34,18 +36,6 @@ const QUICK_STYLES: Array<{ key: TravelStyle; label: string }> = [
   { key: "luxury", label: "Luxury" },
 ];
 
-const stops = [
-  { city: "Sigiriya", place: "Sigiriya Rock Fortress", photo: "sigiriya", title: "Walk the water gardens", detail: "Sleep in Sigiriya and leave the next morning for the climb above the gardens." },
-  { city: "Ella", place: "Nine Arches Bridge", photo: "ella", title: "Stay another night in Ella", detail: "Move a night here in Trip Studio to visit Nine Arches Bridge the morning after you arrive." },
-  { city: "Mirissa", place: "Mirissa Beach", photo: "mirissa", title: "Take the coast slowly", detail: "Leave a day for the beach. Check the drive back to the airport against your flight time." },
-];
-
-function PhotoCredit({ index }: { index: number }) {
-  const stop = stops[index];
-  const photo = PLACE_PHOTOS[stop.city + "|" + stop.place];
-  return <a href={photo.page} target="_blank" rel="noreferrer">{photo.credit} · {photo.licence}</a>;
-}
-
 export function HomeScreen({
   navigate,
   onQuickPlan,
@@ -57,8 +47,6 @@ export function HomeScreen({
   initialMonth?: number | null;
 }) {
   const bp = useBreakpoint();
-  const filmDialog = useRef<HTMLDialogElement>(null);
-  const [filmOpen, setFilmOpen] = useState(false);
   const [tapCount, setTapCount] = useState(0);
   const [tapTimer, setTapTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [budget, setBudget] = useState(initialInputs?.budget ?? 800);
@@ -96,12 +84,38 @@ export function HomeScreen({
     month: travelMonth ?? undefined, stops: preview.cities.length }), [days, people, travelStyle, travelMonth, preview.cities.length]);
   const money = (value: number) => `${currencySymbol}${value.toLocaleString()}`;
   const estimateText = `${money(estimate.min)}–${estimate.max.toLocaleString()}`;
-  const fit = estimate.min > budget ? "over" : estimate.max > budget ? "risk" : "fits";
-  const breakdownTotal = estimate.rows.reduce((sum, row) => sum + (row.min + row.max) / 2, 0);
-  const ROW_LABELS = { stays: ["Accommodation", "navy"], food: ["Food", "gold"], transport: ["Transport", "blue"],
-    activities: ["Sights and entry fees", "tea"], misc: ["SIM, tips and extras", "sand"] } as const;
-  const budgetRows = estimate.rows.map(row => ({ label: ROW_LABELS[row.key][0], tone: ROW_LABELS[row.key][1],
-    value: (row.min + row.max) / 2, text: `${money(row.min)}–${row.max.toLocaleString()}` }));
+
+  const root = useRef<HTMLElement>(null);
+  useLandingMotion(root);
+  const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
+  const [addedNote, setAddedNote] = useState("");
+  const catalogue = useMemo(() => pickablePlaces(), []);
+  const isAdded = (town: string, name: string) => places.some(place => place.key === placeKey(town, name));
+  // "Add Kandy to my trip" puts that stop's landmarks in the planner below; pressing again takes them out.
+  const addStop = (stop: LoopStop) => {
+    const keys = stop.landmarks.map(place => placeKey(place.town, place.name));
+    if (keys.every(key => places.some(place => place.key === key))) {
+      setPlaces(places.filter(place => !keys.includes(place.key)));
+      setAddedNote(`${stop.town} removed from your trip.`);
+      return;
+    }
+    const next = [...places];
+    for (const key of keys) {
+      const match = catalogue.find(place => place.key === key);
+      if (match && !next.some(place => place.key === key) && next.length < MAX_REQUESTED_PLACES)
+        next.push({ key: match.key, name: match.name, city: match.city, source: match.source, ...(match.category ? { category: match.category } : {}) });
+    }
+    setPlaces(next);
+    setAddedNote(`${stop.town} added. ${next.length} ${next.length === 1 ? "place" : "places"} in your trip.`);
+  };
+  const [plannerVisible, setPlannerVisible] = useState(false);
+  useEffect(() => {
+    const planner = document.getElementById("quick-planner");
+    if (!planner || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => setPlannerVisible(entry.isIntersecting), { threshold: 0.05 });
+    observer.observe(planner);
+    return () => observer.disconnect();
+  }, []);
 
   const handleLogoTap = () => {
     if (bp !== "mobile") return;
@@ -137,9 +151,8 @@ export function HomeScreen({
   };
 
   return (
-    <main className="wr-home journey-home">
-      <header className="journey-hero">
-        <img className="journey-hero-photo" src="/journey/ella.webp" fetchPriority="high" alt="Nine Arches Bridge curving through forest near Ella" />
+    <main className="wr-home wr-landing" ref={root}>
+      <HomeHero>
         <div className="wr-home-mobilebar">
           <button
             type="button"
@@ -152,38 +165,48 @@ export function HomeScreen({
           </button>
           <button type="button" onClick={() => navigate("routes")}>Routes</button>
         </div>
-
-        <div className="journey-hero-copy">
-          <h1>Take the long way<br /><em>through Sri Lanka.</em></h1>
-          <p>Pick the places you dream of seeing. Build a day-by-day trip around your time and budget.</p>
-          <div className="journey-actions">
-            <button className="wr-button wr-button--gold" onClick={() => navigate("planner")}>Plan Your Trip <ArrowRight size={18} /></button>
-            <button className="journey-play" onClick={() => { setFilmOpen(true); filmDialog.current?.showModal(); }}><CirclePlay size={22} /> Watch the island <small>0:09</small></button>
+        <div className="wr-landing-hero__content">
+          <h1>See Sri Lanka the way a local would plan it.</h1>
+          <p className="wr-landing-hero__lead">Pick the places you dream about. WanderRoute shapes the route on real road times, prices it from published rates, and a local driver can quote it.</p>
+          <div className="wr-landing-hero__actions">
+            <button type="button" className="wr-button wr-button--gold" onClick={() => scrollToId("quick-planner")}>
+              Plan my trip <ArrowRight size={17} aria-hidden="true" />
+            </button>
+            <button type="button" className="wr-landing-ghost" onClick={() => scrollToId("the-loop")}>See the classic loop</button>
           </div>
-          <small>Free to plan · No account needed</small>
+          <p className="wr-landing-hero__free">Free, no account needed.</p>
         </div>
-        <div className="journey-caption">Nine Arches Bridge, Ella <PhotoCredit index={1} /></div>
-      </header>
-      <dialog ref={filmDialog} className="journey-dialog" aria-label="Nine seconds in Sri Lanka" onClose={() => setFilmOpen(false)}>
-        <button aria-label="Close film" onClick={() => filmDialog.current?.close()} autoFocus><X size={22} /></button>
-        {filmOpen && <video controls autoPlay muted playsInline aria-label="A silent photographic journey from Sigiriya to Ella and Mirissa" src="/journey/island.mp4" />}
-        <p>Sigiriya · Ella · Mirissa</p><small>Photo film · cropped and animated · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a><br />{stops.map((stop, index) => <span key={stop.city}><PhotoCredit index={index} /> </span>)}</small>
-      </dialog>
-      <section className="journey-story" aria-labelledby="journey-title">
-        <div className="journey-story-head"><div><h2 id="journey-title">From rock fortress<br />to rolling surf.</h2><p>Three stops you could build a trip around.</p></div>
-        <button className="journey-link" onClick={() => navigate("routes")}>Browse sample routes <ArrowRight size={16} /></button></div>
-        <div className="journey-stops">{stops.map((stop, index) => <article key={stop.city}>
-          <figure><img src={`/journey/${stop.photo}.webp`} alt={stop.place} loading="lazy" /><figcaption>{stop.city}</figcaption></figure>
-          <small className="journey-credit"><PhotoCredit index={index} /></small>
-          <h3>{stop.title}</h3><p>{stop.detail}</p>
-        </article>)}</div>
-        <a className="journey-link" href="#quick-planner">Build a quick route <ArrowRight size={16} /></a>
+      </HomeHero>
+
+      <HomeLoop isAdded={isAdded} onAdd={addStop} />
+      <p className="wr-sr-only" role="status">{addedNote}</p>
+
+      <section className="wr-seasons" aria-labelledby="wr-seasons-title">
+        <div className="wr-seasons__inner">
+          <h2 id="wr-seasons-title">Two monsoons, so one coast is always in season.</h2>
+          <div className="wr-seasons__grid">
+            <article>
+              <h3><Sun size={20} aria-hidden="true" /> December to April</h3>
+              <p>The south and west coasts and the hill country are at their driest. The best months for Mirissa, Galle and the Kandy to Ella train.</p>
+            </article>
+            <article>
+              <h3><Waves size={20} aria-hidden="true" /> May to September</h3>
+              <p>The east coast has its turn: calm seas at Trincomalee and Pasikudah, and surf at Arugam Bay.</p>
+            </article>
+          </div>
+          <p className="wr-seasons__note">Tell the planner your month and it checks the season for every stop.</p>
+        </div>
       </section>
+
       <section className="wr-quick" id="quick-planner" aria-labelledby="quick-planner-title">
         <div className="wr-quick__intro">
-
-          <h2 id="quick-planner-title">Make the route yours.</h2>
-          <p>Choose your days and budget. Add the places you already have in mind, or let us suggest a route.</p>
+          <h2 id="quick-planner-title">Plan it in a minute.</h2>
+          <p>Pick places, set your days and a budget. You get a day-by-day plan you can change, with a map, costs and a local driver quote.</p>
+          <ol className="wr-landing-steps">
+            <li>Pick what you want to see</li>
+            <li>Get a route on real Sri Lankan road times</li>
+            <li>Change anything, then ask a local driver to quote it</li>
+          </ol>
         </div>
 
         <form className="wr-quick__form" onSubmit={handleQuickGenerate}>
@@ -244,11 +267,11 @@ export function HomeScreen({
             </fieldset>
           </div>
 
-          <details className="journey-picker"><summary>Choose places {places.length + towns.length > 0 ? `(${places.length + towns.length} selected)` : "(optional)"}</summary><fieldset className="wr-quick__places">
+          <fieldset className="wr-quick__places">
             <legend>What do you want to see?</legend>
             <PlacePicker places={places} onPlaces={setPlaces} towns={towns} onTowns={setTowns} />
             <DestinationHint cities={cities} days={days} />
-          </fieldset></details>
+          </fieldset>
 
           <fieldset className="wr-quick__options">
             <legend>What should shape the trip?</legend>
@@ -296,54 +319,36 @@ export function HomeScreen({
                 Create My Route
                 <ArrowRight size={17} aria-hidden="true" />
               </button>
-              <small>Free to use · No account required</small>
+              <small>Rough estimate {estimateText} for the whole group. Free, no account needed.</small>
             </div>
           </div>
         </form>
       </section>
 
-      <section className="wr-home-budget" aria-labelledby="budget-preview-title">
-        <div className="wr-home-budget__copy">
-
-          <h2 id="budget-preview-title">What might this trip cost?</h2>
-          <p>
-            A rough guide from published Sri Lanka price ranges for your days, travellers, travel style and month.
-            These estimates cover the categories shown for your group. Flights are excluded. Confirm prices before booking.
-          </p>
-          <dl>
-            <div>
-              <dt>Trip budget</dt>
-              <dd>{money(budget)}</dd>
-            </div>
-            <div>
-              <dt>Rough estimate</dt>
-              <dd>{estimateText}</dd>
-            </div>
-            <div className={fit === "over" ? "is-over" : ""}>
-              <dt>Budget fit</dt>
-              <dd>{fit === "fits" ? "Likely fits" : fit === "risk" ? "Could go over" : "Over budget"}</dd>
-            </div>
-          </dl>
+      <section className="wr-landing-final" aria-labelledby="final-cta-title">
+        <div className="wr-landing-final__image" data-parallax="0.12" aria-hidden="true">
+          <img src="/home/ussangoda-1000.webp" srcSet="/home/ussangoda-1000.webp 1000w, /home/ussangoda-2000.webp 2000w" sizes="100vw" alt="" loading="lazy" decoding="async" />
         </div>
-        <div className="wr-home-budget__ledger" aria-label="Estimated cost categories">
-          {budgetRows.map(({ label, value, tone, text }) => {
-            const percent = breakdownTotal > 0 ? Math.round((value / breakdownTotal) * 100) : 0;
-            return (
-              <div key={label} className={`is-${tone}`}>
-                <span><strong>{label}</strong><small>{percent}%</small></span>
-                <i><b style={{ width: `${percent}%` }} /></i>
-                <output>{text}</output>
-              </div>
-            );
-          })}
+        <div className="wr-landing-final__content">
+          <h2 id="final-cta-title">Where will your Sri Lanka start?</h2>
+          <p>Choose one place you have always wanted to see. WanderRoute builds the rest of the loop around it.</p>
+          <div className="wr-landing-hero__actions">
+            <button type="button" className="wr-button wr-button--gold" onClick={() => scrollToId("quick-planner")}>
+              Plan my trip <ArrowRight size={17} aria-hidden="true" />
+            </button>
+            <button type="button" className="wr-landing-ghost" onClick={() => navigate("planner")}>Open the full planner</button>
+          </div>
         </div>
+        <p className="wr-landing-credits">
+          Coast at Ussangoda: photo by <a href="https://commons.wikimedia.org/wiki/File:SL_Ussangoda_NP_asv2020-01_img06.jpg" target="_blank" rel="noopener noreferrer">A.Savin</a>, <a href="https://artlibre.org/licence/lal/en/" target="_blank" rel="noopener noreferrer">Free Art License</a>.
+          Films: <a href="https://www.pexels.com/license/" target="_blank" rel="noopener noreferrer">Pexels</a> clips filmed in Sri Lanka.
+        </p>
       </section>
 
-      <nav className="journey-more" aria-label="More ways to plan">
-        <button onClick={() => navigate("map")}>Explore the island <ArrowRight size={16} /></button>
-        <a href="/trip-studio">Open Trip Studio <ArrowRight size={16} /></a>
-        <button onClick={() => navigate("classic-planner")}>Classic Planner <ArrowRight size={16} /></button>
-      </nav>
+      {places.length > 0 && !plannerVisible && <div className="wr-tripbar" role="region" aria-label="Your trip so far">
+        <span><MapPin size={16} aria-hidden="true" /> {places.length} {places.length === 1 ? "place" : "places"} in your trip</span>
+        <button type="button" onClick={() => scrollToId("quick-planner")}>Plan it <ArrowRight size={15} aria-hidden="true" /></button>
+      </div>}
     </main>
   );
 }
