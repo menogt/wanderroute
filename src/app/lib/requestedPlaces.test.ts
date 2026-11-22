@@ -218,5 +218,6 @@ test("nothing is planned on the morning of an early flight, even if the AI sugge
     getAiPlan: async () => reply });
   assert.equal(output.generationMode, "AI");
   assert.deepEqual(output.itinerary.days[output.itinerary.days.length - 1].items.filter(item => item.category === "activity"), []);
+  assert.match(output.itinerary.days[output.itinerary.days.length - 1].localTip ?? "", /Departure day/);
   assert.ok(output.itinerary.days[1].items.some(item => item.category === "activity"));
 });

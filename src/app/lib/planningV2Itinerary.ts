@@ -123,6 +123,8 @@ function withFixedPlaces(days: DaySelection[], fixed: string[][], noTime: Set<nu
   const all = new Set(fixed.flat());
   return days.map((day, index) => ({ ...day,
     placeIds: [...(fixed[index] ?? []), ...(noTime.has(index) ? [] : day.placeIds.filter(id => !all.has(id)))],
+    // The AI's theme for such a day ("Free day in Negombo") would suggest time that isn't there.
+    ...(noTime.has(index) ? { note: index === 0 ? "Arrival day: check in and rest." : "Departure day: leave time for your airport transfer." } : {}),
     ...(day.descriptions ? { descriptions: day.descriptions.filter(item => !noTime.has(index) || (fixed[index] ?? []).includes(item.placeId)) } : {}) }));
 }
 

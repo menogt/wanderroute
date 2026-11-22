@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { curatedActivityCandidates, eligibleActivityPlaces, loadPlanningV2Places } from "./planningV2Places.ts";
+import { LANDMARK_COORDINATES } from "./placePhotoCatalog.ts";
 import { suggestedActivities } from "./planningActivityChoices.ts";
 import type { CandidatePlace } from "./planningTypes";
 
@@ -33,7 +34,10 @@ test("the existing landmark guide supplies stable offline choices without invent
   const first = curatedActivityCandidates("Ella");
   assert.ok(first.some(place => place.name === "Nine Arches Bridge"));
   assert.deepEqual(first, curatedActivityCandidates("Ella"));
-  assert.ok(first.every(place => !place.coordinates && !place.openingHours && !place.priceEvidence && !place.recordedPrice));
+  // Map positions come only from the generated landmark list (Wikipedia, or marked approximate); no hours or prices.
+  assert.ok(first.every(place => !place.openingHours && !place.priceEvidence && !place.recordedPrice));
+  assert.ok(first.every(place => !place.coordinates || LANDMARK_COORDINATES[`Ella|${place.name}`]?.[0] === place.coordinates.latitude));
+  assert.ok(first.some(place => place.coordinates));
   assert.ok(eligibleActivityPlaces(first, "Ella").length > 1);
   assert.deepEqual(curatedActivityCandidates("Uncatalogued place"), []);
 });

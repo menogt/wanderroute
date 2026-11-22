@@ -4,6 +4,7 @@ import type { CandidateRoute } from "./routeTypes";
 import type { RequestedPlace } from "./requestedPlaces";
 import type { DbPlace } from "./supabase";
 import { MUST_SEE } from "./curatedPlaces.ts";
+import { LANDMARK_COORDINATES } from "./placePhotoCatalog.ts";
 
 const CATEGORY_LIMITS = [
   { category: "attraction", limit: 25 },
@@ -31,11 +32,15 @@ function stableSlug(value: string): string {
 }
 
 /** Reuse the existing editorial landmark list when the live catalog is unavailable.
- * A guide entry has no inferred coordinates, opening hours, ticket price or availability.
+ * A guide entry carries a map position (from Wikipedia, or approximate) but no opening hours, ticket price or availability.
  */
 export function curatedActivityCandidates(city: string): CandidatePlace[] {
-  return (MUST_SEE[city] ?? []).map(name => ({ databaseId: `curated-activity:${stableSlug(city)}:${stableSlug(name)}`,
-    name, city, category: "attraction", sourceProvider: "WanderRoute landmark guide; visit details to confirm" }));
+  return (MUST_SEE[city] ?? []).map(name => {
+    const point = LANDMARK_COORDINATES[`${city}|${name}`];
+    return { databaseId: `curated-activity:${stableSlug(city)}:${stableSlug(name)}`,
+      name, city, category: "attraction", sourceProvider: "WanderRoute landmark guide; visit details to confirm",
+      ...(point ? { coordinates: { latitude: point[0], longitude: point[1] } } : {}) };
+  });
 }
 
 /** Existing curated hotels are candidates, not availability or current-price evidence. */
