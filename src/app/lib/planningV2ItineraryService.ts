@@ -3,9 +3,19 @@ import type { CandidateRoute } from "./routeTypes";
 import { eligibleActivityPlaces } from "./planningV2Places.ts";
 import { routeDayCities, type DaySelection } from "./planningV2Scheduling.ts";
 import { activitiesPerDay } from "./requestedPlaces.ts";
+import { arrivalDayUsableMinutes, departureDayUsableMinutes } from "./routeConstraints.ts";
 
 export type AiDaySelection = Pick<DaySelection, "placeIds" | "descriptions" | "note"> & { day: number };
 export type AiActivityPlan = { schemaVersion: 2; routeConceptId: string; days: AiDaySelection[] };
+
+/** Day indexes with no time to sightsee: a late arrival, or a flight that leaves under two hours of daylight. */
+export function daysWithoutSightseeing(brief: TripBriefV1, dayCount: number): Set<number> {
+  const days = new Set<number>();
+  if (arrivalDayUsableMinutes(brief) === 0) days.add(0);
+  const departure = departureDayUsableMinutes(brief);
+  if (departure !== undefined && departure < 120) days.add(dayCount - 1);
+  return days;
+}
 
 /** `fixed` holds the places the traveller chose for each day; the AI fills only the remaining slots. */
 export function validateAiActivityPlan(value: unknown, route: CandidateRoute,
@@ -47,6 +57,7 @@ export async function requestAiActivityPlan(brief: TripBriefV1, route: Candidate
   places: CandidatePlace[], signal?: AbortSignal, fixed: string[][] = []): Promise<AiActivityPlan> {
   signal?.throwIfAborted();
   const cities = routeDayCities(route, brief.durationDays);
+  const noTime = daysWithoutSightseeing(brief, cities.length);
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, { once: true });
@@ -57,6 +68,8 @@ export async function requestAiActivityPlan(brief: TripBriefV1, route: Candidate
       body: JSON.stringify({ schemaVersion: 2, routeConceptId: route.id,
         interests: brief.interests, pace: brief.pace,
         days: cities.map((city, index) => {
+          // No candidates on a day without sightseeing time, so nothing can be picked for it.
+          if (noTime.has(index)) return { day: index + 1, city, places: [] };
           const pinned = fixed[index] ?? [];
           const eligible = eligibleActivityPlaces(places, city);
           // Chosen places lead the list so they are always among the places the AI can describe.

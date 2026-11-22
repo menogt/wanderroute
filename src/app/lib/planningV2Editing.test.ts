@@ -171,3 +171,45 @@ test("personal allowances use explicit rooms and party quantities without rewrit
   const unknownRooms = planningBudget({ ...updated.detailed!, allowances: { stays: { amount: 100, basis: "ROOM_NIGHT" } } }, familyBrief);
   assert.equal(unknownRooms.rows.find(row => row.key === "stays")?.allowanceTotal, undefined);
 });
+
+test("drag and drop puts a place at an exact position in its day or another day in the same town, with undo", async () => {
+  const original = await session();
+  const [first, second] = activityIds(original.detailed!.itinerary.days[0]);
+  const [third] = activityIds(original.detailed!.itinerary.days[1]);
+  const reordered = applyPlanningV2Edit(original, { type: "place", itemId: second, day: 1, index: 0 });
+  assert.equal(reordered.editError, undefined);
+  assert.deepEqual(activityIds(reordered.detailed!.itinerary.days[0]), [second, first]);
+  const moved = applyPlanningV2Edit(reordered, { type: "place", itemId: first, day: 2, index: 0 });
+  assert.deepEqual(activityIds(moved.detailed!.itinerary.days[1]), [first, third]);
+  assert.deepEqual(activityIds(moved.detailed!.itinerary.days[0]), [second]);
+  const clamped = applyPlanningV2Edit(moved, { type: "place", itemId: second, day: 2, index: 99 });
+  assert.deepEqual(activityIds(clamped.detailed!.itinerary.days[1]), [first, third, second]);
+  const undone = undoPlanningV2Edit(clamped);
+  assert.deepEqual(activityIds(undone.detailed!.itinerary.days[1]), [first, third]);
+});
+
+test("a drop into another town or onto a full day is refused and the plan is kept", async () => {
+  const original = await session();
+  const [first] = activityIds(original.detailed!.itinerary.days[0]);
+  const outside = applyPlanningV2Edit(original, { type: "place", itemId: first, day: 9, index: 0 });
+  assert.match(outside.editError ?? "", /same town/);
+  assert.equal(outside.detailed, original.detailed);
+  let full = original;
+  for (const placeId of ["p4", "p3"]) full = applyPlanningV2Edit(full, { type: "add", day: 3, placeId });
+  for (let step = 0; step < 4; step++) full = applyPlanningV2Edit(full, { type: "free-time", day: 3 });
+  assert.equal(activityIds(full.detailed!.itinerary.days[2]).length, 6);
+  const crowded = applyPlanningV2Edit(full, { type: "place", itemId: first, day: 3, index: 0 });
+  assert.match(crowded.editError ?? "", /full|already/);
+});
+
+test("adding and restoring can target a position", async () => {
+  const original = await session();
+  const [first, second] = activityIds(original.detailed!.itinerary.days[0]);
+  const added = applyPlanningV2Edit(original, { type: "add", day: 1, placeId: "p4", index: 1 });
+  const ids = activityIds(added.detailed!.itinerary.days[0]);
+  assert.deepEqual([ids[0], ids[2]], [first, second]);
+  assert.equal(added.detailed!.itinerary.days[0].items.find(item => item.id === ids[1])?.placeId, "p4");
+  const removed = applyPlanningV2Edit(added, { type: "remove", itemId: first });
+  const restored = applyPlanningV2Edit(removed, { type: "restore", day: 1, itemId: first, index: 0 });
+  assert.equal(activityIds(restored.detailed!.itinerary.days[0])[0], first);
+});

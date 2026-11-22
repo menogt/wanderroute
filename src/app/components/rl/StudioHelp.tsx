@@ -58,27 +58,32 @@ const GUIDE_KEY = "wanderroute_studio_guide_seen_v1";
 export function studioGuideSeen(): boolean { try { return localStorage.getItem(GUIDE_KEY) === "1"; } catch { return true; } }
 function markGuideSeen() { try { localStorage.setItem(GUIDE_KEY, "1"); } catch { /* Private browsing: show again next time. */ } }
 
-const ICONS: Record<StudioPanel, typeof Compass> = { journey: CalendarDays, places: Compass, route: Map, budget: WalletCards };
+/** The four things a traveller can change on the trip board, in the order they appear. */
+export const BOARD_HELP = [
+  { id: "wr-board-route", icon: Map, title: "Your route", summary: "Change the nights in each town with − and +, reorder stops with the arrows, or add and remove a town." },
+  { id: "wr-board-days", icon: CalendarDays, title: "Your days", summary: "Every day lists its places. Drag a place to reorder it or move it to another day, or use ⋯ to move, replace, time or remove it." },
+  { id: "wr-board-days", icon: Compass, title: "Add a place", summary: "Search under any day, or tap a suggestion. Places you remove wait in Places to visit." },
+  { id: "wr-board-budget", icon: WalletCards, title: "Budget", summary: "See the estimated cost and whether it fits, with every price source listed." },
+] as const;
 
-/** First-visit guide to Trip Studio; reopened from the "How to edit" button. */
-export function StudioGuide({ onClose, onOpen }: { onClose: () => void; onOpen: (panel: StudioPanel) => void }) {
+/** First-visit guide to the trip board; reopened from the "How to edit" button. */
+export function StudioGuide({ onClose, onOpen }: { onClose: () => void; onOpen: (sectionId: string) => void }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus(); }, []);
   const close = () => { markGuideSeen(); onClose(); };
   return <section className="wr-studio-guide" aria-labelledby="wr-studio-guide-title">
-    <button type="button" className="wr-studio-guide__close" onClick={close} aria-label="Close the Trip Studio guide"><X size={18} aria-hidden="true" /></button>
+    <button type="button" className="wr-studio-guide__close" onClick={close} aria-label="Close the editing guide"><X size={18} aria-hidden="true" /></button>
     <p className="wr-kicker">New to Trip Studio?</p>
-    <h2 id="wr-studio-guide-title" ref={heading} tabIndex={-1}>Edit your trip in four places</h2>
+    <h2 id="wr-studio-guide-title" ref={heading} tabIndex={-1}>Edit your trip right here</h2>
     <ol className="wr-studio-guide__steps">
-      {/* Same order as the tab bar, so the step numbers match what the traveller sees. */}
-      {(["places", "route", "journey", "budget"] as const).map((panel, index) => {
-        const Icon = ICONS[panel];
-        return <li key={panel}><span className="wr-studio-guide__number">{index + 1}</span>
-          <div><strong><Icon size={16} aria-hidden="true" /> {STUDIO_HELP[panel].title}</strong><p>{STUDIO_HELP[panel].summary}</p>
-            <button type="button" className="wr-v2__text-link" onClick={() => { markGuideSeen(); onOpen(panel); }}>Open {STUDIO_HELP[panel].title}</button></div></li>;
+      {BOARD_HELP.map((step, index) => {
+        const Icon = step.icon;
+        return <li key={step.title}><span className="wr-studio-guide__number">{index + 1}</span>
+          <div><strong><Icon size={16} aria-hidden="true" /> {step.title}</strong><p>{step.summary}</p>
+            <button type="button" className="wr-v2__text-link" onClick={() => { markGuideSeen(); onOpen(step.id); }}>Go to {step.title}</button></div></li>;
       })}
     </ol>
-    <p className="wr-studio-guide__save"><strong>Saving is automatic.</strong> Every change is kept in this browser. Use Undo to step back, and Done when you have finished. Download the PDF to keep a copy.</p>
+    <p className="wr-studio-guide__save"><strong>Saving is automatic.</strong> Every change is kept in this browser. Use Undo to step back. Download the PDF to keep a copy.</p>
     <button type="button" className="wr-button wr-button--primary" onClick={close}>Got it</button>
   </section>;
 }

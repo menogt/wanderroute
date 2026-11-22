@@ -66,13 +66,6 @@ export const PLACE_PHOTOS: Record<string, PlacePhoto> = {
     "licence": "CC BY-SA 4.0",
     "article": "https://en.wikipedia.org/wiki/Nine_Arch_Bridge"
   },
-  "Ella|Ella Rock": {
-    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/47/Ella_railway_station.jpg/500px-Ella_railway_station.jpg",
-    "page": "https://commons.wikimedia.org/wiki/File:Ella_railway_station.jpg",
-    "credit": "Dan arndt",
-    "licence": "CC BY-SA 4.0",
-    "article": "https://en.wikipedia.org/wiki/Ella%2C_Sri_Lanka"
-  },
   "Ella|Ravana Falls": {
     "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/05/SL_Ella_asv2020-01_img01_Ravana_Falls.jpg/500px-SL_Ella_asv2020-01_img01_Ravana_Falls.jpg",
     "page": "https://commons.wikimedia.org/wiki/File:SL_Ella_asv2020-01_img01_Ravana_Falls.jpg",
@@ -94,21 +87,7 @@ export const PLACE_PHOTOS: Record<string, PlacePhoto> = {
     "licence": "FAL",
     "article": "https://en.wikipedia.org/wiki/Galle_Lighthouse"
   },
-  "Galle|Jungle Beach": {
-    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/83/Unawatuna.jpg/500px-Unawatuna.jpg",
-    "page": "https://commons.wikimedia.org/wiki/File:Unawatuna.jpg",
-    "credit": "Bernard Gagnon",
-    "licence": "CC BY-SA 3.0",
-    "article": "https://en.wikipedia.org/wiki/Unawatuna"
-  },
   "Mirissa|Mirissa Beach": {
-    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Mirissa-Plage_%283%29.jpg/500px-Mirissa-Plage_%283%29.jpg",
-    "page": "https://commons.wikimedia.org/wiki/File:Mirissa-Plage_(3).jpg",
-    "credit": "Ji-Elle",
-    "licence": "CC BY-SA 3.0",
-    "article": "https://en.wikipedia.org/wiki/Mirissa"
-  },
-  "Mirissa|Whale Watching Mirissa": {
     "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a5/Mirissa-Plage_%283%29.jpg/500px-Mirissa-Plage_%283%29.jpg",
     "page": "https://commons.wikimedia.org/wiki/File:Mirissa-Plage_(3).jpg",
     "credit": "Ji-Elle",
@@ -142,13 +121,6 @@ export const PLACE_PHOTOS: Record<string, PlacePhoto> = {
     "credit": "Recal Media recalmedia",
     "licence": "CC0",
     "article": "https://en.wikipedia.org/wiki/Negombo"
-  },
-  "Nuwara Eliya|Pedro Tea Estate": {
-    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c2/SL_Kandy_asv2020-01_img04_Queens_Hotel.jpg/500px-SL_Kandy_asv2020-01_img04_Queens_Hotel.jpg",
-    "page": "https://commons.wikimedia.org/wiki/File:SL_Kandy_asv2020-01_img04_Queens_Hotel.jpg",
-    "credit": "A.Savin",
-    "licence": "FAL",
-    "article": "https://en.wikipedia.org/wiki/Kandy"
   },
   "Nuwara Eliya|Horton Plains National Park": {
     "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4a/Srilankamountainforest.jpg/500px-Srilankamountainforest.jpg",
@@ -185,13 +157,6 @@ export const PLACE_PHOTOS: Record<string, PlacePhoto> = {
     "licence": "CC BY-SA 4.0",
     "article": "https://en.wikipedia.org/wiki/Nilaveli"
   },
-  "Hikkaduwa|Hikkaduwa Coral Reef": {
-    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/27/Hikkaduwa3.JPG/500px-Hikkaduwa3.JPG",
-    "page": "https://commons.wikimedia.org/wiki/File:Hikkaduwa3.JPG",
-    "credit": "Astronomyinertia",
-    "licence": "CC BY-SA 3.0",
-    "article": "https://en.wikipedia.org/wiki/Hikkaduwa"
-  },
   "Hikkaduwa|Hikkaduwa Beach": {
     "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/27/Hikkaduwa3.JPG/500px-Hikkaduwa3.JPG",
     "page": "https://commons.wikimedia.org/wiki/File:Hikkaduwa3.JPG",
@@ -200,13 +165,6 @@ export const PLACE_PHOTOS: Record<string, PlacePhoto> = {
     "article": "https://en.wikipedia.org/wiki/Hikkaduwa"
   },
   "Arugam Bay|Arugam Bay Beach": {
-    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2c/Beach_of_Arugam_Bay.jpg/500px-Beach_of_Arugam_Bay.jpg",
-    "page": "https://commons.wikimedia.org/wiki/File:Beach_of_Arugam_Bay.jpg",
-    "credit": "Dennis Sylvester Hurd",
-    "licence": "CC0",
-    "article": "https://en.wikipedia.org/wiki/Arugam_Bay"
-  },
-  "Arugam Bay|Pottuvil Point": {
     "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2c/Beach_of_Arugam_Bay.jpg/500px-Beach_of_Arugam_Bay.jpg",
     "page": "https://commons.wikimedia.org/wiki/File:Beach_of_Arugam_Bay.jpg",
     "credit": "Dennis Sylvester Hurd",

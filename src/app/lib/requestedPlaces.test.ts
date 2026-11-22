@@ -201,3 +201,22 @@ test("the AI endpoint keeps chosen places out of the AI's picks and counts only 
     }
   }
 });
+
+test("nothing is planned on the morning of an early flight, even if the AI suggests it", async () => {
+  const brief: TripBriefV1 = { ...tripBrief, requestedPlaces: [], travelDates: { start: "2026-12-10", end: "2026-12-14" },
+    arrival: { location: "CMB_AIRPORT", dateTime: "2026-12-10T10:00" }, departure: { location: "Ella", dateTime: "2026-12-14T07:00" } };
+  const result = await plan(brief);
+  const concept = kandyThenElla(result);
+  const cities = routeDayCities(concept.candidate, brief.durationDays);
+  assert.equal(cities[cities.length - 1], "Ella");
+  const used = new Set<string>();
+  const reply: AiActivityPlan = { schemaVersion: 2, routeConceptId: concept.routeConcept.id, days: cities.map((city, index) => ({
+    day: index + 1, placeIds: places.filter(entry => entry.city === city && entry.category !== "hotel" && !used.has(entry.databaseId!))
+      .slice(0, 1).map(entry => { used.add(entry.databaseId!); return entry.databaseId!; }) })) };
+  assert.ok(reply.days[reply.days.length - 1].placeIds.length === 1);
+  const output = await generatePlanningV2Itinerary(result, concept.routeConcept.id, { getPlaces: async () => places,
+    getAiPlan: async () => reply });
+  assert.equal(output.generationMode, "AI");
+  assert.deepEqual(output.itinerary.days[output.itinerary.days.length - 1].items.filter(item => item.category === "activity"), []);
+  assert.ok(output.itinerary.days[1].items.some(item => item.category === "activity"));
+});

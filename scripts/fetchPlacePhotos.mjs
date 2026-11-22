@@ -31,14 +31,25 @@ const TITLES = {
   "Colombo|Galle Face Green": "Galle Face Green",
   "Colombo|Independence Square": "Independence Memorial Hall",
   "Colombo|National Museum of Colombo": "National Museum of Colombo",
-  "Mirissa|Whale Watching Mirissa": "Mirissa",
+  // Town photos that show the beach itself.
+  "Mirissa|Mirissa Beach": "Mirissa",
+  "Negombo|Negombo Beach": "Negombo",
+  "Hikkaduwa|Hikkaduwa Beach": "Hikkaduwa",
+  "Arugam Bay|Arugam Bay Beach": "Arugam Bay",
+  "Trincomalee|Nilaveli Beach": "Nilaveli",
   "Negombo|Angurukaramulla Temple": "Angurukaramulla Temple",
   "Sigiriya|Pidurangala Rock": "Pidurangala Rock",
   "Nuwara Eliya|Gregory Lake": "Gregory Lake",
   // A search would return a photo of something else; these keep an icon.
   "Negombo|Negombo Fish Market": null,
   "Sigiriya|Sigiriya Museum": null,
+  "Mirissa|Whale Watching Mirissa": null,
 };
+// A searched page must share a distinctive word with the place name; town names and generic words don't count.
+const GENERIC = new Set(["sri", "lanka", "the", "temple", "beach", "park", "national", "view", "viewpoint", "point", "lake", "falls",
+  "rock", "hill", "fort", "museum", "market", "show", "reef", "coral", "estate", "tea", "island", "watching", "whale", "cultural", "dance"]);
+const distinctive = (text, city) => text.toLowerCase().normalize("NFKD").replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
+  .filter(word => word.length >= 4 && !GENERIC.has(word) && !city.toLowerCase().split(" ").includes(word));
 
 const km = ([a, b], [c, d]) => {
   const r = Math.PI / 180, dLat = (c - a) * r, dLng = (d - b) * r;
@@ -64,8 +75,10 @@ async function pageFor(city, name) {
   // A page without a lead image can still have a photo of the place further down.
   for (const page of pages) page.pageimage ??= page.images?.map(image => image.title.replace(/^File:/, ""))
     .find(file => /\.jpe?g$/i.test(file) && !/map|logo|flag|locator/i.test(file));
+  const wanted = distinctive(name, city);
   return pages.find(page => page.pageimage && (!page.coordinates?.[0] || !near ||
-    km(near, [page.coordinates[0].lat, page.coordinates[0].lon]) <= MAX_KM));
+    km(near, [page.coordinates[0].lat, page.coordinates[0].lon]) <= MAX_KM) &&
+    (title || distinctive(page.title, city).some(word => wanted.includes(word))));
 }
 
 async function photoFor(page) {

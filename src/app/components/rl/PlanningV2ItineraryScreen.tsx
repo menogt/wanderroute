@@ -1,76 +1,40 @@
-import { useEffect, useRef, useState } from "react";
-import { StudioGuide, StudioPanelHelp, studioGuideSeen } from "./StudioHelp";
-import { AlertTriangle, ArrowLeft, CarFront, Check, CheckCircle2, ChevronDown, ChevronUp, Clock3, HelpCircle, MapPin, Pencil, Redo2,
-  RefreshCw, Trash2, Undo2, WalletCards } from "lucide-react";
-import { StudioNavigation, type StudioPanel } from "../tripStudio/StudioNavigation";
-import "../../../styles/trip-studio.css";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, CalendarClock, CarFront, CheckCircle2, Clock3, HelpCircle, List, Map as MapIcon, Redo2, RefreshCw,
+  Settings2, Undo2, WalletCards, X } from "lucide-react";
+import { StudioGuide, studioGuideSeen } from "./StudioHelp";
 import { PlanningReviewPanel } from "./PlanningReviewPanel";
 import { sriLankaCalendarDate } from "../../lib/planningCalendar";
-import { PlanningShortlist } from "./PlanningShortlist";
 import { PlanningCustomizationPanel } from "./PlanningCustomizationPanel";
 import type { PlanningV2Session } from "../../lib/planningV2Session";
 import type { CustomizationDraft } from "../../lib/planningCustomization";
 import { PlanningBudgetPanel } from "./PlanningBudgetPanel";
 import { PlanningQuotePanel } from "./PlanningQuotePanel";
-import { PlanningItineraryMap } from "./PlanningItineraryMap";
 import type { DetailedPlanningResult } from "../../lib/planningV2Itinerary";
 import type { PlanningV2Edit } from "../../lib/planningV2Editing";
-import { eligibleActivityPlaces } from "../../lib/planningV2Places";
 import type { PlanningRouteConcept } from "../../lib/planningV2";
 import type { TripBriefV1 } from "../../lib/planningTypes";
-import type { CostLedger, AmountSummary } from "../../lib/costLedger";
 import type { TransportLeg } from "../../lib/transportTypes";
-import { formatDriveTime } from "../../lib/transportPlanning";
+import { amountLabel, readableIssue } from "./board/boardFormat";
+import { BoardDay } from "./board/BoardDay";
+import { BoardDndProvider } from "./board/BoardDnd";
+import { BoardMap } from "./board/BoardMap";
+import { PlacesToVisit } from "./board/PlacesToVisit";
+import { RouteEditor } from "./board/RouteEditor";
 import "../../../styles/planning-v2.css";
 import "../../../styles/planning-v2-itinerary.css";
+import "../../../styles/studio-help.css";
+import "../../../styles/itinerary-board.css";
 
 const STATUS = { READY: "Ready", READY_WITH_WARNINGS: "Ready with warnings",
   NEEDS_CONFIRMATION: "Needs confirmation", INVALID: "Cannot use as a ready plan" } as const;
 
-function amountLabel(summary: AmountSummary | undefined, currency: string): string {
-  if (!summary || summary.unknownCount > 0) {
-    return summary?.minimum ? `At least ${currency} ${summary.minimum.toLocaleString()} plus unpriced costs` : "Price to confirm";
-  }
-  if (summary.exact !== undefined) return `${currency} ${summary.exact.toLocaleString()}`;
-  if (summary.maximum !== undefined) {
-    if (summary.maximum === 0) return "No entry fee";
-    if (summary.maximum - summary.minimum < 1) return `About ${currency} ${Math.round(summary.maximum).toLocaleString()}`;
-    return `${currency} ${Math.floor(summary.minimum).toLocaleString()}–${Math.ceil(summary.maximum).toLocaleString()} est.`;
-  }
-  return "Price to confirm";
-}
-
-function readableIssue(code: string): string {
-  const names: Record<string, string> = {
-    OPENING_HOURS_UNCONFIRMED: "Opening hours need confirmation",
-    OPENING_HOURS_CONFLICT: "An activity conflicts with known opening hours",
-    TRANSPORT_TIME_UNKNOWN: "A transfer time is unknown",
-    TRANSFER_SCHEDULE_TIME_UNKNOWN: "A transfer cannot be timed yet",
-    BUDGET_UNKNOWN: "Budget fit cannot be confirmed",
-    BUDGET_RISK: "The cost estimate could exceed your budget",
-    BUDGET_OVER: "Even the low cost estimate exceeds your budget",
-    SEASON_UNKNOWN: "Seasonal conditions need confirmation",
-    HARD_DRIVING_LIMIT_EXCEEDED: "Daily driving exceeds the hard limit",
-    ITEMS_OVERLAP: "Scheduled items overlap",
-    MUST_VISIT_UNSCHEDULED: "A must-visit destination still needs a day and transfer",
-    REQUESTED_PLACE_UNSCHEDULED: "A place you chose isn't on any day yet",
-    DAY_VISIT_TIME_INSUFFICIENT: "A return visit needs more time than the day allows",
-    DAY_VISIT_SERVICE_UNCONFIRMED: "Outward and return visit services need confirmation",
-    DAY_VISIT_TRANSFER_MISSING: "A day visit is missing an outward or return transfer",
-    TRANSFER_TIME_INSUFFICIENT: "A transfer needs more time",
-  };
-  return names[code] ?? code.toLowerCase().replace(/_/g, " ").replace(/^./, letter => letter.toUpperCase());
-}
-
-function itemCost(ledger: CostLedger, itemId: string): string {
-  const line = ledger.lines.find(entry => entry.input.id === `cost:${itemId}`);
-  // Meals and stays are costed per day, not per item.
-  if (!line) return ledger.sourceLines.some(entry => entry.unitPrice.kind === "RANGE") ? "In the day cost below" : "Price to confirm";
-  return amountLabel(line.total ? { ...line.total, unknownCount: 0 } : undefined, ledger.currency);
-}
-
+/**
+ * The generated trip as one editable board (Trip Studio): the route, places waiting for a day, every
+ * day as a list of place cards, then budget, quote and PDF, with the map beside it. Every change applies
+ * at once, is saved in the browser and can be undone.
+ */
 export function PlanningV2ItineraryScreen({ initialStudio = false, detail, concept, brief, busy, error, editError,
-  canUndo, canRedo, session, draftStored, onNewPlan, onCustomize, onFinalize, onBack, onRetry, onEdit, onUndo, onRedo }: {
+  canUndo, canRedo, session, draftStored, onNewPlan, onCustomize, onFinalize, onRetry, onEdit, onUndo, onRedo }: {
   initialStudio?: boolean;
   session: PlanningV2Session;
   draftStored: boolean;
@@ -91,192 +55,170 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
   onUndo: () => void;
   onRedo: () => void;
 }) {
-  const today = detail.itinerary.days.find(day => day.date === sriLankaCalendarDate())?.day;
-  const [activeDay, setActiveDay] = useState(today ?? 1);
-  const [editorRevision, setEditorRevision] = useState(0);
-  const [studio, setStudio] = useState(initialStudio);
-  const [panel, setPanel] = useState<StudioPanel>("journey");
+  const { itinerary, ledger, validation } = detail;
+  const today = itinerary.days.find(day => day.date === sriLankaCalendarDate())?.day;
   const [guideOpen, setGuideOpen] = useState(() => initialStudio && !studioGuideSeen());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editorRevision, setEditorRevision] = useState(0);
   const [savedNotice, setSavedNotice] = useState("");
-  function openPanel(next: StudioPanel) {
-    if (!studio && !studioGuideSeen()) setGuideOpen(true);
-    setStudio(true);
-    setPanel(next);
-    setEditing(next === "places");
-    setCustomizing(true);
-    setMobilePane(next === "route" ? "map" : "itinerary");
-  }
-  /** Leaving the Studio: edits are already saved, so say so where the traveller lands. */
-  function closeStudio(message = canUndo ? "Your changes are saved in this browser." : "") {
-    setStudio(false); setCustomizing(false); setEditing(false); setGuideOpen(false); setMobilePane("itinerary");
-    setSavedNotice(message);
-  }
+  const [announcement, setAnnouncement] = useState("");
+  const [quoteSignal, setQuoteSignal] = useState(0);
+  const [focusDay, setFocusDay] = useState<number | undefined>();
+  const [highlightId, setHighlightId] = useState<string>();
+  const [mapOpen, setMapOpen] = useState(false);
+  // The map beside the list is a desktop layout; on smaller screens it only exists while opened.
+  const [wide, setWide] = useState(() => typeof window !== "undefined" && window.matchMedia?.("(min-width: 1024px)").matches);
+  useEffect(() => {
+    const query = window.matchMedia?.("(min-width: 1024px)");
+    if (!query) return;
+    const change = () => setWide(query.matches);
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  const dayElements = useRef(new Map<number, HTMLElement>());
+
   useEffect(() => {
     if (!savedNotice) return;
     const timer = window.setTimeout(() => setSavedNotice(""), 6000);
     return () => window.clearTimeout(timer);
   }, [savedNotice]);
-  const [customizing, setCustomizing] = useState(initialStudio);
-  const [editing, setEditing] = useState(false);
-  const [selectedItemId, setSelectedItemId] = useState<string>();
-  const [mobilePane, setMobilePane] = useState("itinerary");
-  const [search, setSearch] = useState("");
-  const [announcement, setAnnouncement] = useState("");
-  const [quoteSignal, setQuoteSignal] = useState(0);
-  const editHeading = useRef<HTMLHeadingElement>(null);
-  const commitEdit = (edit: PlanningV2Edit) => { onEdit(edit); setAnnouncement("Edit checked. Review your itinerary and any messages shown."); if (edit.type === "remove" || edit.type === "move") editHeading.current?.focus(); };
-  const { itinerary, ledger, validation } = detail;
-  useEffect(() => { setActiveDay(value => Math.min(value, itinerary.days.length)); }, [itinerary.days.length]);
-  const day = itinerary.days[activeDay - 1] ?? itinerary.days[0];
-  const activityCity = day.visitCity ?? day.city;
+
+  // The day being read (the one crossing the upper part of the screen) is the one the map highlights.
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries.filter(entry => entry.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (visible) setFocusDay(Number((visible.target as HTMLElement).dataset.day));
+    }, { rootMargin: "-30% 0px -60% 0px" });
+    dayElements.current.forEach(element => observer.observe(element));
+    return () => observer.disconnect();
+  }, [itinerary.days.length]);
+
+  useEffect(() => { if (initialStudio) scrollToId("wr-board-route"); }, []);
+
+  const commitEdit = (edit: PlanningV2Edit) => {
+    onEdit(edit);
+    setAnnouncement("Change applied. Check your days and any messages shown.");
+  };
+  const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const showDay = (day?: number) => {
+    setFocusDay(day);
+    if (day) scrollToId(`wr-day-${day}`);
+  };
+  const showItem = (itemId: string) => {
+    setMapOpen(false);
+    setHighlightId(itemId);
+    window.setTimeout(() => document.getElementById(`wr-card-${itemId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+  };
+
+  const plan = detail.transport ?? concept.transport;
+  const legs = useMemo(() => new Map([...plan.legs, plan.arrivalTransfer, plan.departureTransfer,
+    ...(detail.transport?.excursions ?? []).flatMap(visit => [visit.outbound, visit.inbound])]
+    .filter((leg): leg is TransportLeg => !!leg).map(leg => [leg.id, leg])), [plan, detail.transport]);
   const coveredCities = new Set([...itinerary.cities, ...itinerary.days.map(day => day.visitCity).filter(Boolean)]);
-  const dayActivities = day.items.filter(item => item.category === "activity");
-  const paceLimit = 6;
-  const additions = eligibleActivityPlaces(detail.places, activityCity).filter(place => !dayActivities.some(item => item.placeId === place.databaseId) && place.name.toLowerCase().includes(search.toLowerCase()));
-  const legs = new Map([...(detail.transport ?? concept.transport).legs, (detail.transport ?? concept.transport).arrivalTransfer, (detail.transport ?? concept.transport).departureTransfer, ...(detail.transport?.excursions ?? []).flatMap(visit => [visit.outbound, visit.inbound])]
-    .filter((leg): leg is TransportLeg => !!leg).map(leg => [leg.id, leg]));
+  const unarranged = brief.requestedCities.filter(city => !coveredCities.has(city));
   const visibleIssues = validation.issues.filter(issue => !issue.code.startsWith("COST_")).slice(0, 10);
-  return <section className="wr-v2 wr-v2-detail" aria-labelledby="wr-v2-detail-title">
+  const waiting = (detail.unscheduledActivities?.length ?? 0) > 0;
+
+  const days = <div className="wr-board-days">
+    {itinerary.days.map(day => <BoardDay key={day.day} day={day} detail={detail} legs={legs} highlightId={highlightId}
+      focused={focusDay === day.day} onEdit={commitEdit} onHighlight={setHighlightId}
+      sectionRef={element => { if (element) dayElements.current.set(day.day, element); else dayElements.current.delete(day.day); }} />)}
+  </div>;
+
+  return <section className="wr-v2 wr-v2-detail wr-board-page" aria-labelledby="wr-v2-detail-title">
     <div className="wr-v2__masthead"><div className="wr-v2__wrap">
-      {studio && <button type="button" className="wr-v2__back" onClick={() => closeStudio()}><ArrowLeft size={17} /> Back to itinerary</button>}
-      <p className="wr-kicker">{studio ? "Trip Studio" : "Day-by-day route draft"}</p>
+      <p className="wr-kicker">Trip Studio · your editable trip</p>
       <h1 id="wr-v2-detail-title">{itinerary.routeName}</h1>
       <p>{itinerary.totalDays} days · {itinerary.totalPeople} {itinerary.totalPeople === 1 ? "traveller" : "travellers"} · Your Sri Lanka travel draft.</p>
     </div></div>
-    <div className="wr-v2__wrap wr-v2-detail__body">
-      <div className="wr-v2-detail__overview">
-        <div><span className={`wr-v2__status wr-v2__status--${detail.readiness.toLowerCase().replace(/_/g, "-")}`}>{STATUS[detail.readiness]}</span>
-          <h2 className="wr-sr-only">Your itinerary</h2><p>{detail.generationMode === "LIMITED_DRAFT" ? "Limited draft from available place records." :
-            "Activity choices were checked against available place records."} Transport and prices remain uncertain where marked.</p></div>
-        <div className="wr-v2-detail__actions">
-          {detail.generationMode === "LIMITED_DRAFT" && !canUndo && !canRedo && <button type="button" className="wr-button wr-button--primary" onClick={onRetry} disabled={busy}>
-            <RefreshCw size={16} /> {busy ? "Retrying…" : "Retry suggestions"}</button>}
-          <button type="button" className="wr-button wr-button--primary" onClick={() => setQuoteSignal(value => value + 1)}><CarFront size={16} aria-hidden="true" /> Get a driver quote</button>
-          {!studio && <button type="button" className="wr-button wr-button--primary" disabled={busy} onClick={() => openPanel("journey")}>Edit in Trip Studio</button>}
-          {!studio && <button type="button" className="wr-v2__text-link" onClick={() => openPanel("places")}>Edit activities</button>}
-          <button type="button" className="wr-v2__text-link" disabled={busy} onClick={onNewPlan}>Start another plan</button>
+
+    <div className="wr-board">
+      <BoardDndProvider onEdit={commitEdit}><div className="wr-board__list">
+        <div className="wr-board__overview">
+          <div><span className={`wr-v2__status wr-v2__status--${detail.readiness.toLowerCase().replace(/_/g, "-")}`}>{STATUS[detail.readiness]}</span>
+            <h2 className="wr-sr-only">Your itinerary</h2>
+            <p>{detail.generationMode === "LIMITED_DRAFT" ? "Limited draft from available place records." :
+              "Activity choices were checked against available place records."} Transport and prices remain uncertain where marked.</p></div>
+          <div className="wr-board__actions">
+            {detail.generationMode === "LIMITED_DRAFT" && !canUndo && !canRedo && <button type="button" className="wr-button wr-button--primary" onClick={onRetry} disabled={busy}>
+              <RefreshCw size={16} /> {busy ? "Retrying…" : "Retry suggestions"}</button>}
+            <button type="button" className="wr-button wr-button--primary" onClick={() => setQuoteSignal(value => value + 1)}><CarFront size={16} aria-hidden="true" /> Get a driver quote</button>
+            <button type="button" className="wr-board__plain" aria-expanded={settingsOpen} onClick={() => { setSettingsOpen(value => !value); if (!settingsOpen) window.setTimeout(() => scrollToId("wr-board-settings"), 50); }}>
+              <Settings2 size={16} aria-hidden="true" /> Trip settings</button>
+            <button type="button" className="wr-board__plain" aria-expanded={guideOpen} onClick={() => setGuideOpen(value => !value)}><HelpCircle size={16} aria-hidden="true" /> How to edit</button>
+            {today && <button type="button" className="wr-board__plain" onClick={() => showDay(today)}><CalendarClock size={16} aria-hidden="true" /> Today's plan</button>}
+            <button type="button" className="wr-v2__text-link" disabled={busy} onClick={onNewPlan}>Start another plan</button>
+          </div>
         </div>
+        {guideOpen && <StudioGuide onClose={() => setGuideOpen(false)} onOpen={id => { setGuideOpen(false); scrollToId(id); }} />}
+        {savedNotice && <p className="wr-v2-detail__saved-notice" role="status"><CheckCircle2 size={17} aria-hidden="true" /> {savedNotice}</p>}
+        {error && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {error}</div>}
+
+        <div className="wr-board__bar">
+          <nav aria-label="Trip sections">
+            <a href="#wr-board-route" onClick={event => { event.preventDefault(); scrollToId("wr-board-route"); }}>Route</a>
+            {waiting && <a href="#wr-board-waiting" onClick={event => { event.preventDefault(); scrollToId("wr-board-waiting"); }}>To visit</a>}
+            <a href="#wr-board-days" onClick={event => { event.preventDefault(); scrollToId("wr-board-days"); }}>Days</a>
+            <a href="#wr-board-budget" onClick={event => { event.preventDefault(); scrollToId("wr-board-budget"); }}>Budget</a>
+            <a href="#wr-driver-quote" onClick={event => { event.preventDefault(); setQuoteSignal(value => value + 1); }}>Quote</a>
+          </nav>
+          <div className="wr-board__history" aria-label="Editing history">
+            <span className={`wr-edit-saved${draftStored ? "" : " wr-edit-saved--failed"}`}>{draftStored
+              ? <><CheckCircle2 size={15} aria-hidden="true" /> <span className="wr-board__label">Saved</span></> : <><AlertTriangle size={15} aria-hidden="true" /> Not saved</>}</span>
+            <button type="button" onClick={() => { onUndo(); setEditorRevision(value => value + 1); }} disabled={busy || !canUndo} aria-label="Undo"><Undo2 size={15} aria-hidden="true" /> <span className="wr-board__label">Undo</span></button>
+            <button type="button" onClick={() => { onRedo(); setEditorRevision(value => value + 1); }} disabled={busy || !canRedo} aria-label="Redo"><Redo2 size={15} aria-hidden="true" /> <span className="wr-board__label">Redo</span></button>
+          </div>
+        </div>
+        {!draftStored && <p className="wr-v2-draft-note" role="status">This browser could not save your latest draft. Keep this tab open and download a PDF before leaving.</p>}
+        {editError && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {editError}</div>}
+        {validation.errors.length > 0 && <div className="wr-v2__alert" role="alert">This draft has conflicts to resolve: {validation.errors.map(issue => readableIssue(issue.code)).join(" · ")}. Keep editing to resolve them.</div>}
+        <p className="wr-sr-only" role="status">{announcement}</p>
+
+        <RouteEditor key={`route-${editorRevision}`} session={session} busy={busy} onCustomize={onCustomize} onFocusDay={showDay} />
+        {settingsOpen && <section id="wr-board-settings" className="wr-board-section wr-board-settings" aria-label="Trip settings">
+          <button type="button" className="wr-board-settings__close" onClick={() => setSettingsOpen(false)} aria-label="Close trip settings"><X size={18} aria-hidden="true" /></button>
+          <PlanningCustomizationPanel key={editorRevision} session={session} busy={busy} onApply={onCustomize}
+            onClose={applied => { setSettingsOpen(false); if (applied || canUndo) setSavedNotice("Your changes are saved in this browser."); }} />
+        </section>}
+        <PlacesToVisit detail={detail} brief={brief} onEdit={commitEdit} />
+        {unarranged.length > 0 && <section className="wr-v2__alert"><strong>Visits still to arrange</strong><p>{unarranged.join(", ")} have not been scheduled. Add them under Your route, or keep them as requests.</p></section>}
+
+        <section id="wr-board-days" className="wr-board-section wr-board-section--days" aria-labelledby="wr-days-title">
+          <h2 id="wr-days-title">Your days</h2>
+          <p className="wr-board-section__lead">Drag a place by its handle to reorder it or move it to another day in the same town, or use ⋯ to move, replace, time or remove it.</p>
+          {days}
+        </section>
+
+        <section className="wr-board-section wr-board-checks" aria-label="Season and checks">
+          <p><strong>Season:</strong> {concept.routeConcept.seasonalAssessment?.status === "SUITABLE" ? "No mapped seasonal warning." :
+            concept.routeConcept.seasonalAssessment?.reasons.join(" · ") || "Seasonal conditions need confirmation."}</p>
+          <details><summary>What needs checking ({visibleIssues.length})</summary>{visibleIssues.length ? <ul>{visibleIssues.map((issue, index) => <li key={`${issue.code}-${index}`}>
+            <AlertTriangle size={15} /><span>{readableIssue(issue.code)}{issue.day ? ` · day ${issue.day}` : ""}{typeof issue.details?.place === "string" ? ` · ${issue.details.place}` : ""}</span></li>)}</ul> : <p>No validation issues found.</p>}</details>
+        </section>
+
+        <section id="wr-board-budget" className="wr-board-section" aria-labelledby="wr-budget-title">
+          <h2 id="wr-budget-title">Budget</h2>
+          <div className="wr-v2-detail__summary" aria-label="Trip costs and status">
+            <div><WalletCards size={19} /><span>Whole trip</span><strong>{amountLabel(ledger.summary.trip, ledger.currency)}</strong></div>
+            <div><WalletCards size={19} /><span>Per traveller</span><strong>{amountLabel(ledger.summary.perPerson, ledger.currency)}</strong></div>
+            <div><WalletCards size={19} /><span>Your budget target</span><strong>{brief.budget.currency} {brief.budget.amount.toLocaleString()}</strong></div>
+          </div>
+          <PlanningBudgetPanel detail={detail} brief={brief} onAllowance={(group, allowance) => commitEdit({ type: "allowance", group, allowance })} />
+        </section>
+        <PlanningQuotePanel detail={detail} brief={brief} concept={concept} openSignal={quoteSignal} />
+        <PlanningReviewPanel detail={detail} brief={brief} concept={concept} busy={busy} approvedRevision={session.preferredRevision} onFinalize={onFinalize} onRequestQuote={() => setQuoteSignal(value => value + 1)} />
+        <p className="wr-v2-detail__footer"><Clock3 size={16} /> Activity durations are estimates. Train, bus and other unverified transfers have no invented timetable.</p>
+      </div></BoardDndProvider>
+
+      <div className={`wr-board__map${mapOpen ? " is-open" : ""}`}>
+        <button type="button" className="wr-board__map-close" onClick={() => setMapOpen(false)}><List size={17} aria-hidden="true" /> Back to the list</button>
+        {(wide || mapOpen) && <BoardMap detail={detail} brief={brief} focusDay={focusDay} highlightId={highlightId}
+          onFocusDay={day => { if (day) showDay(day); else setFocusDay(undefined); }}
+          onItem={itemId => showItem(itemId)} />}
       </div>
-      <p className="wr-v2-draft-note" role="status">{draftStored ? "Draft saved in this browser, including recent undo history. Prices, hours and arrangements still need checking. Use the PDF for an offline copy." : "This browser could not save your latest draft. Keep this tab open and download a PDF before leaving."}</p>
-      {savedNotice && !studio && <p className="wr-v2-detail__saved-notice" role="status"><CheckCircle2 size={17} aria-hidden="true" /> {savedNotice}</p>}
-      {error && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {error}</div>}
-      {editError && <div className="wr-v2__alert" role="alert"><AlertTriangle size={18} /> {editError}</div>}
-      {studio && <div className="wr-studio-bar">
-        <StudioNavigation panel={panel} select={openPanel} />
-        <button type="button" className="wr-studio-bar__howto" aria-expanded={guideOpen} onClick={() => setGuideOpen(value => !value)}><HelpCircle size={17} aria-hidden="true" /> How to edit</button>
-      </div>}
-      {studio && guideOpen && <StudioGuide onClose={() => setGuideOpen(false)} onOpen={next => { setGuideOpen(false); openPanel(next); }} />}
-      {studio && <StudioPanelHelp panel={panel} />}
-      {customizing && <div hidden={panel !== "journey"}><PlanningCustomizationPanel key={editorRevision} session={session} busy={busy} onApply={onCustomize} onClose={applied => closeStudio(applied || canUndo ? "Your changes are saved in this browser." : "")} /></div>}
-      {brief.requestedCities.some(city => !coveredCities.has(city)) && <section className="wr-v2__alert"><strong>Visits still to arrange</strong><p>{brief.requestedCities.filter(city => !coveredCities.has(city)).join(", ")} have not been scheduled. Keep these requests in view while adjusting your bases and trip length.</p></section>}
-      {/* Kept visible after Apply closes the Studio, so a change can always be undone where it was made. */}
-      {(editing || studio || canUndo || canRedo) && <div className="wr-v2-detail__edit-toolbar" aria-label="Activity editing history">
-        <p><span className={`wr-edit-saved${draftStored ? "" : " wr-edit-saved--failed"}`}>{draftStored
-          ? <><CheckCircle2 size={16} aria-hidden="true" /> Saved in this browser.</> : <><AlertTriangle size={16} aria-hidden="true" /> Not saved: this browser blocked storage. Download the PDF.</>}</span>{" "}
-          Every change saves automatically; times, costs and checks update after each edit.</p>
-        <div><button type="button" onClick={() => { onUndo(); setEditorRevision(value => value + 1); editHeading.current?.focus(); }} disabled={busy || !canUndo}><Undo2 size={16} aria-hidden="true" /> Undo</button>
-          <button type="button" onClick={() => { onRedo(); setEditorRevision(value => value + 1); editHeading.current?.focus(); }} disabled={busy || !canRedo}><Redo2 size={16} aria-hidden="true" /> Redo</button>
-          {studio && <button type="button" className="wr-button wr-button--primary wr-edit-done" onClick={() => closeStudio(canUndo ? "Your changes are saved in this browser." : "")}><Check size={16} aria-hidden="true" /> Done</button>}</div>
-      </div>}
-      {validation.errors.length > 0 && <div className="wr-v2__alert" role="alert">This draft has conflicts to resolve: {validation.errors.map(issue => readableIssue(issue.code)).join(" · ")}. Keep editing to resolve them.</div>}
-      {studio && panel === "route" && (() => { const plan = detail.transport ?? concept.transport; return <section className="wr-v2__section"><h2>My Route</h2>
-        <ol>{[plan.arrivalTransfer, ...plan.legs, plan.departureTransfer].filter((leg): leg is TransportLeg => !!leg).map(leg => {
-          const minutes = leg.durationMinutes ?? leg.roadReferenceMinutes;
-          return <li key={leg.id}>{leg.fromId.replace("CMB_AIRPORT", "Bandaranaike Airport (CMB)")} → {leg.toId.replace("CMB_AIRPORT", "Bandaranaike Airport (CMB)")} · {minutes === undefined ? "Journey time to confirm" : `about ${formatDriveTime(minutes)} by car (road estimate)`}</li>; })}</ol>
-        <button type="button" onClick={() => openPanel("journey")}>Adjust stops and nights</button></section>; })()}
-      {/* The day plan and its route map stay visible while the journey is edited, so the map is always this trip. */}
-      <div hidden={studio && panel === "budget"}>
-      <nav className="wr-v2-detail__day-nav" aria-label="Itinerary days">
-        {today && <button type="button" onClick={() => { setActiveDay(today); setMobilePane("itinerary"); }}><span>During your trip</span><strong>Today's plan</strong></button>}
-        {itinerary.days.map(item => <button key={item.day} type="button" aria-current={activeDay === item.day ? "step" : undefined}
-          className={activeDay === item.day ? "is-active" : ""} onClick={() => setActiveDay(item.day)}>
-          <span>Day {String(item.day).padStart(2, "0")}</span><strong>{item.visitCity ?? item.city}</strong></button>)}
-      </nav>
-      <div className="wr-v2-detail__mobile-switch" aria-label="Workspace view"><button type="button" aria-pressed={mobilePane === "itinerary"} onClick={() => setMobilePane("itinerary")}>Itinerary</button><button type="button" aria-pressed={mobilePane === "map"} onClick={() => setMobilePane("map")}>Route map</button></div>
-      <div className={`wr-v2-detail__grid is-${mobilePane}`}>
-        <article className="wr-v2-detail__day">
-          <header><p className="wr-kicker">Day {String(day.day).padStart(2, "0")}{day.date ? ` · ${day.date}` : ""}</p>
-            <h2 ref={editHeading} tabIndex={-1}>{day.visitCity ? `${day.visitCity} · visit from ${day.city}` : day.city}</h2><p>{day.overnightCity ? `Overnight in ${day.overnightCity}` : "Departure day"}</p>
-            {day.localTip && <p className="wr-v2-detail__day-note"><span>{detail.generationMode === "AI" ? "Day theme" : "Day note"}</span>{day.localTip}</p>}</header>
-          <ol className="wr-v2-detail__timeline">
-            {day.items.map(item => {
-              const leg = item.transportLegId ? legs.get(item.transportLegId) : undefined;
-              const activityIndex = dayActivities.findIndex(activity => activity.id === item.id);
-              const replacements = item.category === "activity" ? eligibleActivityPlaces(detail.places, activityCity)
-                .filter(place => place.databaseId !== item.placeId && !dayActivities.some(activity =>
-                  activity.id !== item.id && activity.placeId === place.databaseId)) : [];
-              const compatibleDays = item.category === "activity" ? itinerary.days.filter(candidate =>
-                candidate.day !== day.day && (candidate.visitCity ?? candidate.city).toLowerCase() === activityCity.toLowerCase() &&
-                candidate.items.filter(entry => entry.category === "activity").length < paceLimit &&
-                (!item.placeId || !candidate.items.some(entry => entry.placeId === item.placeId))) : [];
-              return <li key={item.id} className={selectedItemId === item.id ? "is-selected" : undefined}>
-                <span className="wr-v2-detail__time">{item.plannedStart ?? item.time}</span>
-                <div><button type="button" className="wr-v2-detail__activity-name" aria-pressed={selectedItemId === item.id} onClick={() => { setSelectedItemId(item.id); }}>{item.label}</button><p>{item.detail}</p>
-                  {leg && <small>{leg.mode === "UNASSIGNED" ? "transport to choose" : leg.mode.replace(/_/g, " ").toLowerCase()} · {leg.durationMinutes !== undefined
-                    ? `${Math.ceil(leg.durationMinutes)} min road-driving estimate`
-                    : leg.roadReferenceMinutes !== undefined ? `about ${formatDriveTime(leg.roadReferenceMinutes)} by car (road estimate)`
-                    : "journey time unknown"}</small>}
-                  {item.category === "activity" && !item.isFreeTime && <small>{item.durationMinutes} min visit estimate · Opening hours {detail.places.find(place => place.databaseId === item.placeId)?.openingHours ? "to check" : "unknown"}</small>}
-                  <small>{item.isFreeTime ? "Personal time; include any spending in your allowances." : itemCost(ledger, item.id)}</small>
-                  {editing && item.category === "activity" && <div className="wr-v2-detail__item-editor">
-                    <div className="wr-v2-detail__edit-buttons">
-                      <button type="button" disabled={activityIndex === 0} onClick={() => commitEdit({ type: "reorder", itemId: item.id, direction: -1 })}
-                        aria-label={`Move ${item.label} earlier`}><ChevronUp size={16} aria-hidden="true" /> Earlier</button>
-                      <button type="button" disabled={activityIndex === dayActivities.length - 1} onClick={() => commitEdit({ type: "reorder", itemId: item.id, direction: 1 })}
-                        aria-label={`Move ${item.label} later`}><ChevronDown size={16} aria-hidden="true" /> Later</button>
-                      <button type="button" onClick={() => commitEdit({ type: "remove", itemId: item.id })}
-                        aria-label={`Remove ${item.label}`}><Trash2 size={16} aria-hidden="true" /> Remove</button>
-                    </div>
-                    {!item.isFreeTime && <label>Replace {item.label} with
-                      <select value="" disabled={!replacements.length} onChange={event => event.target.value &&
-                        commitEdit({ type: "replace", itemId: item.id, placeId: event.target.value })}>
-                        <option value="">{replacements.length ? "Choose a trusted place" : "No other place available"}</option>
-                        {replacements.map(place => <option key={place.databaseId} value={place.databaseId}>{place.name}</option>)}
-                      </select>
-                    </label>}
-                    <label>Preferred start for {item.label}<input type="time" value={item.preferredStart ?? ""} onChange={event => commitEdit({ type: "timing", itemId: item.id, durationMinutes: item.durationMinutes ?? 90, preferredStart: event.target.value || undefined })} /></label>
-                    <label>Visit duration for {item.label}<select value={item.durationMinutes ?? 90} onChange={event => commitEdit({ type: "timing", itemId: item.id, durationMinutes: Number(event.target.value), preferredStart: item.preferredStart })}>{[30,60,90,120,180,240].map(minutes => <option key={minutes} value={minutes}>{minutes} minutes</option>)}</select></label>
-                    {compatibleDays.length > 0 && <label>Move {item.label} to
-                      <select value="" onChange={event => event.target.value &&
-                        commitEdit({ type: "move", itemId: item.id, targetDay: Number(event.target.value) })}>
-                        <option value="">Choose a {activityCity} day</option>
-                        {compatibleDays.map(candidate => <option key={candidate.day} value={candidate.day}>Day {candidate.day}</option>)}
-                      </select>
-                    </label>}
-                  </div>}</div>
-              </li>;
-            })}
-          </ol>
-          {editing && <div className="wr-v2-detail__item-editor"><h3>Add to day {day.day}</h3><label>Search places in {activityCity}<input value={search} onChange={event => setSearch(event.target.value)} type="search" /></label><label>Add an activity<select value="" onChange={event => event.target.value && commitEdit({ type: "add", day: day.day, placeId: event.target.value })}><option value="">{additions.length ? "Choose a place" : "No matching places"}</option>{additions.map(place => <option key={place.databaseId} value={place.databaseId}>{place.name}</option>)}</select></label><button type="button" onClick={() => commitEdit({ type: "free-time", day: day.day })}>Add free time</button>{detail.unscheduledActivities?.filter(item => item.city === activityCity).map(item => <button type="button" key={item.id} onClick={() => commitEdit({ type: "restore", day: day.day, itemId: item.id })}>Restore {item.label}</button>)}</div>}
-          <p className="wr-sr-only" role="status">{announcement}</p>
-          {day.overnightCity && <div className="wr-v2-detail__stay"><h3>Your stay</h3><p>{day.accommodation}</p><small>{detail.customization?.stays[day.city]?.status === "TRAVELLER_BOOKED" ? "You report this is booked; not independently verified." : detail.customization?.stays[day.city]?.status === "NEEDS_BOOKING" ? "Needs booking; availability and rates must be confirmed." : detail.customization?.stays[day.city]?.status === "CHANGED_CANCELLED" ? "You recorded this arrangement as changed/cancelled. Choose or confirm another stay." : "Proposed; availability and room price need confirmation."}</small>{detail.customization?.stays[day.city]?.rooms && <small>{detail.customization.stays[day.city].rooms} rooms requested; occupancy needs checking.</small>}</div>}
-          <div className="wr-v2-detail__day-cost"><span>Day cost</span><strong>{amountLabel(ledger.summary.byDay[day.day], ledger.currency)}</strong></div>
-          {day.warnings && day.warnings.length > 0 && <details className="wr-v2-detail__day-warnings"><summary>Checks for this day</summary><ul>{day.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
-        </article>
-        <aside className="wr-v2-detail__aside">
-          <PlanningItineraryMap detail={detail} brief={brief} activeDay={day.day} selectedItemId={selectedItemId} onDay={setActiveDay} onItem={id => { setSelectedItemId(id); setMobilePane("itinerary"); }} />
-          <section><h2>Route and season</h2><ol>{concept.routeConcept.stops.map(stop => <li key={stop.id}>{stop.destinationName} · {stop.nights} {stop.nights === 1 ? "night" : "nights"}</li>)}</ol>
-            <p>{concept.routeConcept.seasonalAssessment?.status === "SUITABLE" ? "No mapped seasonal warning." :
-              concept.routeConcept.seasonalAssessment?.reasons.join(" · ") || "Seasonal conditions need confirmation."}</p></section>
-          <section><details><summary>What needs checking</summary>{visibleIssues.length ? <ul>{visibleIssues.map((issue, index) => <li key={`${issue.code}-${index}`}>
-            <AlertTriangle size={15} /><span>{readableIssue(issue.code)}{issue.day ? ` · day ${issue.day}` : ""}</span></li>)}</ul> : <p>No validation issues found.</p>}</details></section>
-          <section><h2>Supported cost categories</h2><dl>{Object.entries(ledger.summary.byCategory).filter(([, summary]) => summary.minimum > 0 || summary.unknownCount > 0).map(([category, summary]) =>
-            <div key={category}><dt>{category.toLowerCase().replace(/_/g, " ")}</dt><dd>{amountLabel(summary, ledger.currency)}</dd></div>)}</dl></section>
-        </aside>
-      </div>
-      <PlanningShortlist detail={detail} onEdit={commitEdit} />
-      </div>
-      <div hidden={studio && panel !== "budget"}>
-      <div className="wr-v2-detail__summary" aria-label="Trip costs and status">
-        <div><WalletCards size={19} /><span>Whole trip</span><strong>{amountLabel(ledger.summary.trip, ledger.currency)}</strong></div>
-        <div><WalletCards size={19} /><span>Per traveller</span><strong>{amountLabel(ledger.summary.perPerson, ledger.currency)}</strong></div>
-        <div><MapPin size={19} /><span>Your budget target</span><strong>{brief.budget.currency} {brief.budget.amount.toLocaleString()}</strong></div>
-      </div>
-      <PlanningBudgetPanel detail={detail} brief={brief} onAllowance={(group, allowance) => commitEdit({ type: "allowance", group, allowance })} />
-      </div>
-      <PlanningQuotePanel detail={detail} brief={brief} concept={concept} openSignal={quoteSignal} />
-      <PlanningReviewPanel detail={detail} brief={brief} concept={concept} busy={busy} approvedRevision={session.preferredRevision} onFinalize={onFinalize} onRequestQuote={() => setQuoteSignal(value => value + 1)} />
-      <p className="wr-v2-detail__footer"><Clock3 size={16} /> Activity durations are estimates. Train, bus and other unverified transfers have no invented timetable.</p>
     </div>
+    {!mapOpen && <button type="button" className="wr-board__map-open" onClick={() => setMapOpen(true)}><MapIcon size={18} aria-hidden="true" /> Map</button>}
   </section>;
 }

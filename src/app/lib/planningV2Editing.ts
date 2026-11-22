@@ -5,16 +5,21 @@ import type { PlanningV2Session } from "./planningV2Session.ts";
 
 export type PlanningV2Edit =
   | { type: "allowance"; group: import("./planningBudget").BudgetGroup; allowance?: import("./planningBudget").PlanningAllowance }
-  | { type: "add"; day: number; placeId: string }
+  | { type: "add"; day: number; placeId: string; index?: number }
   | { type: "free-time"; day: number }
-  | { type: "restore"; day: number; itemId: string }
+  | { type: "restore"; day: number; itemId: string; index?: number }
   | { type: "timing"; itemId: string; durationMinutes: number; preferredStart?: string }
   | { type: "remove"; itemId: string }
   | { type: "replace"; itemId: string; placeId: string }
   | { type: "reorder"; itemId: string; direction: -1 | 1 }
-  | { type: "move"; itemId: string; targetDay: number };
+  | { type: "move"; itemId: string; targetDay: number }
+  /** Drag and drop: puts an activity at a position in its own day or in another day in the same town. */
+  | { type: "place"; itemId: string; day: number; index: number };
 
 const HISTORY_LIMIT = 20;
+/** A drop position within a list, clamped; no position means the end. */
+const at = (index: number | undefined, length: number) =>
+  index === undefined || !Number.isFinite(index) ? length : Math.max(0, Math.min(length, Math.trunc(index)));
 
 function selectionsFrom(detail: DetailedPlanningResult): DaySelection[] {
   return detail.itinerary.days.map(day => {
@@ -50,7 +55,7 @@ export function applyPlanningV2Edit(session: PlanningV2Session, edit: PlanningV2
         const entry = shortlist.find(item => item.id === edit.itemId);
         if (!entry || entry.city.toLowerCase() !== city.toLowerCase()) throw new Error("Restore this activity to a day in its destination.");
         if (target.some(item => item.placeId && item.placeId === entry.placeId)) throw new Error("This day already includes that place.");
-        target.push(entry);
+        target.splice(at(edit.index, target.length), 0, entry);
         shortlist.splice(shortlist.indexOf(entry), 1);
       } else if (edit.type === "free-time") {
         target.push({ id: `activity:${crypto.randomUUID()}`, placeId: "", isFreeTime: true,
@@ -58,7 +63,7 @@ export function applyPlanningV2Edit(session: PlanningV2Session, edit: PlanningV2
       } else {
         if (!eligibleActivityPlaces(detailed.places, city).some(place => place.databaseId === edit.placeId) ||
           target.some(item => item.placeId === edit.placeId)) throw new Error("Choose a different trusted place in this destination.");
-        target.push({ id: `activity:${crypto.randomUUID()}`, placeId: edit.placeId });
+        target.splice(at(edit.index, target.length), 0, { id: `activity:${crypto.randomUUID()}`, placeId: edit.placeId });
       }
     } else {
       const sourceDayIndex = selections.findIndex(day => day.activities?.some(item => item.id === edit.itemId));
@@ -83,6 +88,18 @@ export function applyPlanningV2Edit(session: PlanningV2Session, edit: PlanningV2
       }
       if (current.placeId === edit.placeId) return session;
       source[index] = { id: current.id, placeId: edit.placeId };
+    } else if (edit.type === "place") {
+      const targetIndex = edit.day - 1;
+      const target = selections[targetIndex]?.activities;
+      const targetCity = detailed.itinerary.days[targetIndex]?.visitCity ?? detailed.itinerary.days[targetIndex]?.city;
+      if (!target || !targetCity || targetCity.toLowerCase() !== sourceCity.toLowerCase()) {
+        throw new Error("Places can move only between days in the same town.");
+      }
+      if (target !== source && (target.length >= 6 || current.placeId && target.some(item => item.placeId === current.placeId))) {
+        throw new Error("That day is full or already includes this place.");
+      }
+      source.splice(index, 1);
+      target.splice(at(edit.index, target.length), 0, current);
     } else if (edit.type === "reorder") {
       const target = index + edit.direction;
       if (target < 0 || target >= source.length) throw new Error("This activity is already at the edge of the day.");

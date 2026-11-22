@@ -13,7 +13,7 @@ import type { CandidatePlace, PlanningItineraryV2, TripBriefV1 } from "./plannin
 import type { PlanningRouteConcept, PlanningV2Result, ConceptReadiness } from "./planningV2";
 import { loadPlanningV2Places, eligibleActivityPlaces, withPinnedPlaces } from "./planningV2Places.ts";
 import { activitiesPerDay, assignPinsToDays, resolveRequestedPlaces } from "./requestedPlaces.ts";
-import { requestAiActivityPlan, validateAiActivityPlan, type AiActivityPlan } from "./planningV2ItineraryService.ts";
+import { daysWithoutSightseeing, requestAiActivityPlan, validateAiActivityPlan, type AiActivityPlan } from "./planningV2ItineraryService.ts";
 import { routeDayCities, schedulePlanningDays, type DaySelection, type ActivitySelection } from "./planningV2Scheduling.ts";
 import type { TransportLeg, TransportPlan } from "./transportTypes";
 
@@ -115,11 +115,15 @@ function restDays(brief: TripBriefV1, dayCount: number): Set<number> {
   return days;
 }
 
-/** Chosen places first on their day, then the AI's picks; the AI never repeats a chosen place. */
-function withFixedPlaces(days: DaySelection[], fixed: string[][]): DaySelection[] {
+/**
+ * Chosen places first on their day, then the AI's picks; the AI never repeats a chosen place and adds
+ * nothing to a day without sightseeing time (for example the morning of an early flight).
+ */
+function withFixedPlaces(days: DaySelection[], fixed: string[][], noTime: Set<number>): DaySelection[] {
   const all = new Set(fixed.flat());
   return days.map((day, index) => ({ ...day,
-    placeIds: [...(fixed[index] ?? []), ...day.placeIds.filter(id => !all.has(id))] }));
+    placeIds: [...(fixed[index] ?? []), ...(noTime.has(index) ? [] : day.placeIds.filter(id => !all.has(id)))],
+    ...(day.descriptions ? { descriptions: day.descriptions.filter(item => !noTime.has(index) || (fixed[index] ?? []).includes(item.placeId)) } : {}) }));
 }
 
 function limitedSelections(brief: TripBriefV1, route: PlanningRouteConcept["candidate"],
@@ -231,7 +235,7 @@ export async function generatePlanningV2Itinerary(result: PlanningV2Result, sele
       const raw = await (services.getAiPlan ?? requestAiActivityPlan)(brief, route, places, services.signal, fixed);
       services.signal?.throwIfAborted();
       const plan = validateAiActivityPlan(raw, route, brief, places, fixed);
-      selections = withFixedPlaces(plan.days, fixed);
+      selections = withFixedPlaces(plan.days, fixed, daysWithoutSightseeing(brief, cities.length));
     } catch {
       services.signal?.throwIfAborted();
       generationMode = "LIMITED_DRAFT";
