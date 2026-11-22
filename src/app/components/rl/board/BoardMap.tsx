@@ -117,7 +117,7 @@ export function BoardMap({ detail, brief, focusDay, highlightId, onFocusDay, onI
       })}
     </MapContainer>
     <p className="wr-board-map__note" role="status">{focus ? `Day ${focus.day}: ${focus.visitCity ? `${focus.visitCity} from ${focus.city}` : focus.city}. ` : "All days. "}
-      Numbers match the places in each day.{unmapped ? ` ${unmapped} places have no map position yet.` : ""} Dotted lines are a driving overview, not timetables.</p>
+      Numbers match the places in each day.{unmapped ? ` ${unmapped} ${unmapped === 1 ? "place has" : "places have"} no map position yet.` : ""} Dotted lines are a driving overview, not timetables.</p>
     {tileError && <p className="wr-board-map__note" role="status">Some map tiles could not load. Your itinerary is still complete.</p>}
   </section>;
 }
