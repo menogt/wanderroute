@@ -66,6 +66,10 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
   const [focusDay, setFocusDay] = useState<number | undefined>();
   const [highlightId, setHighlightId] = useState<string>();
   const [mapOpen, setMapOpen] = useState(false);
+  // Phones start with only day 1 open; showing a day (map chip, pin, Today's plan) opens it.
+  const [phone] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.("(max-width: 767px)").matches);
+  const [reveal, setReveal] = useState<{ day: number; count: number }>();
+  const revealDay = (day: number) => setReveal(previous => ({ day, count: (previous?.count ?? 0) + 1 }));
   const mapCloseRef = useRef<HTMLButtonElement>(null);
   const mapOpenRef = useRef<HTMLButtonElement>(null);
   const mapWasOpen = useRef(false);
@@ -118,11 +122,13 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
   const scrollToId = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   const showDay = (day?: number) => {
     setFocusDay(day);
-    if (day) scrollToId(`wr-day-${day}`);
+    if (day) { revealDay(day); scrollToId(`wr-day-${day}`); }
   };
   const showItem = (itemId: string) => {
     setMapOpen(false);
     setHighlightId(itemId);
+    const owner = itinerary.days.find(day => day.items.some(item => item.id === itemId));
+    if (owner) revealDay(owner.day);
     window.setTimeout(() => document.getElementById(`wr-card-${itemId}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
   };
 
@@ -138,6 +144,7 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
   const days = <div className="wr-board-days">
     {itinerary.days.map(day => <BoardDay key={day.day} day={day} detail={detail} legs={legs} highlightId={highlightId}
       focused={focusDay === day.day} onEdit={commitEdit} onHighlight={setHighlightId}
+      defaultOpen={!phone || day.day === 1} reveal={reveal?.day === day.day ? reveal.count : 0}
       sectionRef={element => { if (element) dayElements.current.set(day.day, element); else dayElements.current.delete(day.day); }} />)}
   </div>;
 

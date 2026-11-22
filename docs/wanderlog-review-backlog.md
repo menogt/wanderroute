@@ -32,11 +32,11 @@ Effort: S is under a day, M is a few days, L is a week or more. Every item is fr
 
 ### First: cheap and helps every traveller
 
-1. **Open a day in Google Maps.** S.
+1. **Open a day in Google Maps.** S. Done 22 Nov 2026.
    - Add a button per day that opens Google Maps directions through that day's places in order.
    - It uses the public `https://www.google.com/maps/dir/?api=1&origin=…&destination=…&waypoints=…` link: no key and no cost.
    - Wanderlog keeps this behind Pro.
-2. **Travel time between places in a day.** M.
+2. **Travel time between places in a day.** M. Done 22 Nov 2026 (`lib/dayTravel.ts`).
    - Show "about 25 min by car" between cards.
    - Uses the OSRM matrix we already call, corrected with `roadTimeCorrection.ts`, so hill-country times stay realistic.
    - Cache the results, because the OSRM server is a free demo.

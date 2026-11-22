@@ -53,3 +53,5 @@
 /* Homepage quick form: its own fieldset so the form's chip button styles don't reach the picker. */
 .wr-quick__places { margin-top: 1.3rem; min-width: 0; }
 .wr-quick__places > legend { color: #556064; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.07em; margin-bottom: 0.42rem; text-transform: uppercase; }
+/* The search box draws the border; the input inside it has none (form-wide input styles would add a second one). */
+.wr-picker .wr-picker__search-box input { border: 0; box-shadow: none; min-height: 0; padding-inline: 0; background: transparent; }

@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { BedDouble, CarFront, ChevronDown, ChevronUp, MoreHorizontal, Plus, Search, Trash2, UtensilsCrossed } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BedDouble, CarFront, ChevronDown, ChevronUp, ExternalLink, Footprints, MoreHorizontal, Plus, Search, Trash2, UtensilsCrossed } from "lucide-react";
+import { estimateLeg, fetchDayLegs, formatLeg, googleMapsDayUrl, type Point, type TravelLeg } from "../../../lib/dayTravel";
 import type { DetailedPlanningResult } from "../../../lib/planningV2Itinerary";
 import type { PlanningV2Edit } from "../../../lib/planningV2Editing";
 import { eligibleActivityPlaces } from "../../../lib/planningV2Places";
@@ -22,7 +23,35 @@ type DayProps = {
   onEdit: (edit: PlanningV2Edit) => void;
   onHighlight: (itemId?: string) => void;
   sectionRef: (element: HTMLElement | null) => void;
+  /** Open when the section first renders (phones start with only day 1 open). */
+  defaultOpen?: boolean;
+  /** Increases whenever something asks to show this day (map chip, a pin, Today's plan); the day opens. */
+  reveal?: number;
 };
+
+const pointOf = (item: PlanningItemV2): Point | undefined => item.coordinates
+  ? { latitude: item.coordinates.latitude, longitude: item.coordinates.longitude } : undefined;
+
+/** Travel to each mapped place from the one before it: an instant estimate, then road times when OSRM answers. */
+function useDayLegs(items: PlanningItemV2[], city: string, enabled: boolean, stagger: number) {
+  const mapped = items.filter(item => item.coordinates);
+  const points = mapped.map(item => pointOf(item)!);
+  const signature = mapped.map(item => `${item.id}@${item.coordinates!.latitude},${item.coordinates!.longitude}`).join("|");
+  const [road, setRoad] = useState<{ signature: string; legs: TravelLeg[] }>();
+  useEffect(() => {
+    if (!enabled || points.length < 2) return;
+    let live = true;
+    // Staggered so a long trip doesn't send every day's request to the free OSRM server at once.
+    const timer = window.setTimeout(() => fetchDayLegs(points, city).then(legs => { if (live && legs) setRoad({ signature, legs }); }), 300 + stagger);
+    return () => { live = false; window.clearTimeout(timer); };
+  }, [signature, city, enabled]);
+  const legs = new Map<string, TravelLeg>();
+  mapped.forEach((item, index) => {
+    if (index === 0) return;
+    legs.set(item.id, road?.signature === signature ? road.legs[index - 1] : estimateLeg(points[index - 1], points[index], city));
+  });
+  return { legs, points };
+}
 
 function legText(leg: TransportLeg | undefined): string {
   if (!leg) return "Journey time to confirm";
@@ -32,17 +61,24 @@ function legText(leg: TransportLeg | undefined): string {
 }
 
 /** One day of the trip as a section: travel rows, numbered place cards, add a place, stay and cost. */
-export function BoardDay({ day, detail, legs, highlightId, focused, onEdit, onHighlight, sectionRef }: DayProps) {
-  const [open, setOpen] = useState(true);
-  const { itinerary, ledger } = detail;
+export function BoardDay({ day, detail, legs, highlightId, focused, onEdit, onHighlight, sectionRef, defaultOpen = true, reveal = 0 }: DayProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => { if (reveal) setOpen(true); }, [reveal]);
+  const { ledger } = detail;
   const city = day.visitCity ?? day.city;
   const activities = day.items.filter(item => item.category === "activity");
   const colour = dayColour(day.day);
   const date = shortDate(day.date);
+  const travel = useDayLegs(activities, city, open, (day.day - 1) * 250);
+  const mapsUrl = googleMapsDayUrl(travel.points);
+  const names = activities.map(item => item.label);
 
   return <section ref={sectionRef} id={`wr-day-${day.day}`} data-day={day.day} className={`wr-board-day${focused ? " is-focused" : ""}`}
     aria-labelledby={`wr-day-${day.day}-title`} style={{ ["--day-colour" as string]: colour }}>
-    <header className="wr-board-day__header">
+    <header className="wr-board-day__header" onClick={event => {
+      // Tapping anywhere on the header opens or closes the day; its own controls keep their behaviour.
+      if (!(event.target as HTMLElement).closest("button, a, summary, input, select, label")) setOpen(value => !value);
+    }}>
       <button type="button" className="wr-board-day__toggle" aria-expanded={open} aria-controls={`wr-day-${day.day}-body`}
         onClick={() => setOpen(value => !value)}>{open ? <ChevronUp size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}
         <span className="wr-sr-only">{open ? "Collapse" : "Expand"} day {day.day}</span></button>
@@ -52,6 +88,8 @@ export function BoardDay({ day, detail, legs, highlightId, focused, onEdit, onHi
         <p className="wr-board-day__place">{day.visitCity ? `${day.visitCity} · day visit from ${day.city}` : day.city}
           {day.overnightCity ? ` · night in ${day.overnightCity}` : " · departure day"}</p>
         {day.localTip && <p className="wr-board-day__theme">{day.localTip}</p>}
+        {!open && (names.length > 0 || day.overnightCity) && <p className="wr-board-day__summary">{names.length
+          ? `${names.length} ${names.length === 1 ? "place" : "places"}: ${names.join(" · ")}` : "No places yet"}</p>}
       </div>
       <p className="wr-board-day__cost"><span>Day cost</span><strong>{amountLabel(ledger.summary.byDay[day.day], ledger.currency)}</strong></p>
     </header>
@@ -60,9 +98,19 @@ export function BoardDay({ day, detail, legs, highlightId, focused, onEdit, onHi
         <CarFront size={17} aria-hidden="true" /><div><strong>{item.label}</strong><span>{legText(item.transportLegId ? legs.get(item.transportLegId) : undefined)}</span></div>
       </div>)}
       {activities.length === 0 && <p className="wr-board-day__empty">{day.overnightCity ? "Nothing planned yet. Add a place below, or keep it as a free day." : "Departure day: leave time for packing and the airport transfer."}</p>}
-      <SortableDayList day={day} items={activities} renderCard={(item, index, drag) => <PlaceCard key={item.id} item={item} number={index + 1}
-        day={day} detail={detail} colour={colour} highlighted={highlightId === item.id} onEdit={onEdit} onHighlight={onHighlight}
-        first={index === 0} last={index === activities.length - 1} drag={drag} />} />
+      <SortableDayList day={day} items={activities} renderCard={(item, index, drag) => {
+        const leg = travel.legs.get(item.id);
+        return <>
+          {leg && <li className="wr-board-leg" title={leg.source === "road" ? "Road route; traffic and stops can add time." : "Distance estimate; traffic and stops can add time."}>
+            {leg.walk ? <Footprints size={14} aria-hidden="true" /> : <CarFront size={14} aria-hidden="true" />}<span>{formatLeg(leg)}</span></li>}
+          <PlaceCard item={item} number={index + 1}
+            day={day} detail={detail} colour={colour} highlighted={highlightId === item.id} onEdit={onEdit} onHighlight={onHighlight}
+            first={index === 0} last={index === activities.length - 1} drag={drag} />
+        </>;
+      }} />
+      {mapsUrl && <a className="wr-board-day__gmaps" href={mapsUrl} target="_blank" rel="noopener noreferrer">
+        <ExternalLink size={16} aria-hidden="true" /> Open in Google Maps
+        <span className="wr-sr-only">: {travel.points.length > 1 ? `day ${day.day} route` : `day ${day.day} place`} (opens in a new tab)</span></a>}
       {day.overnightCity && <AddPlaceBox day={day} detail={detail} city={city} full={activities.length >= MAX_PER_DAY} onEdit={onEdit} />}
       {day.items.filter(item => item.category === "meal").map(item => <div key={item.id} className="wr-board-row">
         <UtensilsCrossed size={16} aria-hidden="true" /><div><strong>{item.label}</strong><span>{item.detail}</span></div></div>)}

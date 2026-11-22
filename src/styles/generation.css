@@ -12,38 +12,42 @@
   background: repeating-radial-gradient(ellipse at 30% 45%, transparent 0 35px, #dce8ee30 36px 37px, transparent 38px 60px);
   transform: rotate(-9deg);
 }
-.wr-generation-inner { position: relative; width: min(1040px, 100%); margin: auto; display: grid; grid-template-columns: 1fr 1.4fr; gap: clamp(32px, 6vw, 88px); align-items: center; }
-.wr-generation-art { text-align: center; }
-.wr-generation .wr-loading-mark { width: clamp(155px, 24vw, 280px); margin-top: 24px; }
-.wr-generation h1 { color: var(--wr-ivory); font: 600 clamp(2.6rem, 4.8vw, 4.6rem)/1.08 var(--wr-serif); letter-spacing: -.035em; margin: 0 0 24px; }
+.wr-gen { position: relative; width: min(480px, 100%); margin: auto; display: grid; justify-items: center; gap: 14px; text-align: center; }
+.wr-gen__mark { position: relative; display: grid; place-items: center; width: 112px; height: 112px; margin-bottom: 6px; }
+.wr-gen__island { width: 62px; height: 82px; overflow: visible; }
+.wr-gen__ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid rgba(220, 232, 238, 0.16); border-top-color: var(--wr-gold); animation: wr-gen-spin 1.1s linear infinite; }
+@keyframes wr-gen-spin { to { transform: rotate(360deg); } }
+.wr-generation h1 { color: var(--wr-ivory); font: 600 clamp(1.9rem, 5vw, 2.6rem)/1.15 var(--wr-serif); letter-spacing: -.02em; margin: 0; }
 .wr-generation h1:focus { outline: none; }
-.wr-generation-summary { color: var(--wr-gold); font-size: .95rem; line-height: 1.7; }
-.wr-generation-choices { font-size: 1.1rem; line-height: 1.6; margin: 12px 0; }
-.wr-generation-interests { display: flex; flex-wrap: wrap; gap: 8px; }
-.wr-generation-interests span { padding: 5px 10px; border: 1px solid #dce8ee40; border-radius: 20px; font-size: .75rem; text-transform: capitalize; }
-.wr-generation-status { margin-top: 32px; padding: 4px 0 4px 18px; border-left: 2px solid var(--wr-gold); min-height: 90px; }
-.wr-generation-status h2 { color: var(--wr-ivory); font: 600 1.2rem/1.4 var(--wr-sans); margin: 0 0 8px; }
-.wr-generation-status p { color: #dce8ee; font-size: .9rem; line-height: 1.6; margin: 0; }
-.wr-generation-note { color: #bdcbd3; font-size: .8rem; line-height: 1.7; margin: 24px 0; max-width: 54ch; }
-.wr-generation-back { display: inline-flex; gap: 10px; align-items: center; min-height: 46px; border: 1px solid #dce8ee80; border-radius: 5px; padding: 10px 16px; color: var(--wr-ivory); background: #ffffff08; cursor: pointer; }
-.wr-generation-back:hover { background: #ffffff18; border-color: var(--wr-gold); }
-.wr-generation-back:focus-visible { outline: 2px solid var(--wr-gold); outline-offset: 4px; }
-.wr-generation-hint { color: #bdcbd3; font-size: .75rem; margin-top: 10px; }
+.wr-gen__trip { margin: 0; color: #dce8ee; font-size: 1rem; line-height: 1.5; }
+.wr-gen__progress { display: flex; align-items: center; gap: 12px; width: 100%; margin-top: 10px; }
+.wr-gen__bar { flex: 1; height: 8px; overflow: hidden; border-radius: 999px; background: rgba(220, 232, 238, 0.16); }
+.wr-gen__bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #c8973e, var(--wr-gold)); transition: width .5s ease-out; }
+.wr-gen__time { min-width: 3ch; color: #dce8ee; font-size: .9rem; font-variant-numeric: tabular-nums; text-align: right; }
+.wr-gen__now { margin: 0; color: var(--wr-ivory); font-size: 1.05rem; font-weight: 600; min-height: 1.6em; }
+.wr-gen__steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; width: 100%; margin: 4px 0 0; padding: 0; list-style: none; }
+.wr-gen__steps li { display: grid; justify-items: center; gap: 6px; color: #9fb2bd; font-size: .85rem; }
+.wr-gen__steps li.is-active { color: var(--wr-ivory); font-weight: 700; }
+.wr-gen__steps li.is-done { color: #dce8ee; }
+.wr-gen__dot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(220, 232, 238, 0.35); color: var(--wr-midnight); }
+.wr-gen__steps li.is-active .wr-gen__dot { border-color: var(--wr-gold); box-shadow: 0 0 0 4px rgba(212, 166, 74, 0.25); }
+.wr-gen__steps li.is-done .wr-gen__dot { border-color: var(--wr-gold); background: var(--wr-gold); }
+.wr-gen__hint { margin: 8px 0 0; max-width: 42ch; color: #bdcbd3; font-size: .92rem; line-height: 1.6; }
+.wr-gen__cancel { display: inline-flex; gap: 8px; align-items: center; min-height: 44px; margin-top: 4px; padding: 0 18px; border: 1px solid #dce8ee66; border-radius: 6px;
+  color: var(--wr-ivory); background: #ffffff0a; font-weight: 600; cursor: pointer; touch-action: manipulation; }
+.wr-gen__cancel:hover { background: #ffffff18; border-color: var(--wr-gold); }
+.wr-gen__cancel:focus-visible { outline: 2px solid var(--wr-gold); outline-offset: 4px; }
 .wr-generation-notice { display: flex; align-items: center; gap: 14px; padding: 18px max(20px, calc((100% - 1200px)/2)); background: #f6ead3; border-bottom: 1px solid #c29a49; color: var(--wr-midnight); }
 .wr-generation-notice p { flex: 1; margin: 0; font-size: .88rem; }
 .wr-generation-notice button { min-height: 44px; padding: 8px 12px; border: 1px solid currentColor; border-radius: 4px; cursor: pointer; }
 @media (max-width: 767px) {
-  .wr-generation { min-height: calc(100dvh - 74px); padding: 28px 22px 36px; }
-  .wr-generation-inner { grid-template-columns: 1fr; gap: 24px; }
-  .wr-generation-art { display: flex; flex-direction: row-reverse; align-items: center; justify-content: space-between; }
-  .wr-generation .wr-loading-mark { width: 76px; margin: 0; }
-  .wr-generation-art .wr-loading-kicker { margin: 0; max-width: 140px; line-height: 1.8; text-align: right; }
-  .wr-generation-copy > .wr-loading-kicker { display: none; }
-  .wr-generation h1 { font-size: 2.7rem; margin-bottom: 18px; }
-  .wr-generation-status { margin-top: 24px; }
+  .wr-generation { min-height: 100dvh; margin-bottom: calc(-74px - env(safe-area-inset-bottom, 0px)); padding: 32px 20px calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .wr-gen__steps li { font-size: .8rem; }
   .wr-generation-notice { flex-wrap: wrap; }
 }
 @media (prefers-reduced-motion: reduce) {
   .wr-screen-content:not([hidden]) { animation: none; }
-  .wr-generation .wr-loading-route, .wr-generation .wr-loading-pin { animation: none; stroke-dashoffset: 0; opacity: 1; transform: none; }
+  .wr-generation .wr-loading-route { animation: none; stroke-dashoffset: 0; }
+  .wr-gen__ring { animation: none; border-color: var(--wr-gold); }
+  .wr-gen__bar span { transition: none; }
 }

@@ -129,6 +129,22 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
         <div className="wr-v2__brief-grid">
           <div className="wr-v2__brief-main">
             <fieldset className="wr-v2__section">
+              <legend><MapPin size={19} /> Places you want to see <small>optional</small></legend>
+              <PlacePicker places={requestedPlaces} onPlaces={setRequestedPlaces} towns={requestedTowns} onTowns={setRequestedTowns} />
+              <div className="wr-v2__custom-city">
+                <label htmlFor="wr-v2-custom-city">A town that isn't listed</label>
+                <input id="wr-v2-custom-city" value={customCity} maxLength={80} placeholder="Enter a town or city"
+                  onChange={event => setCustomCity(event.target.value)} />
+                <button type="button" onClick={addCity} disabled={!customCity.trim() || requestedCities.length >= 8}>Add</button>
+              </div>
+              {requestedTowns.some(town => !requestedPlaces.some(place => place.city === town)) &&
+                <p className="wr-v2__selected-cities">Towns: {requestedTowns.join(" · ")}</p>}
+              <p className="wr-v2__hint">Up to 12 places across up to eight towns. Towns we have no place records for stay marked as unknown.</p>
+              <DestinationHint cities={requestedCities} days={dateMode === "exact" ? exactDays : durationDays}
+                start={arrivalLocation} end={departureLocation} />
+            </fieldset>
+
+            <fieldset className="wr-v2__section">
               <legend><CalendarDays size={19} /> Trip essentials</legend>
               <label>Travel dates <select value={dateMode} onChange={event => setDateMode(event.target.value)}>
                 <option value="approximate">I’m planning roughly</option><option value="exact">I know my dates</option>
@@ -175,21 +191,6 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
               <p className="wr-v2__hint">Choose at least one to shape the route and its day-by-day draft.</p>
             </fieldset>
 
-            <fieldset className="wr-v2__section">
-              <legend><MapPin size={19} /> Places you want to see <small>optional</small></legend>
-              <PlacePicker places={requestedPlaces} onPlaces={setRequestedPlaces} towns={requestedTowns} onTowns={setRequestedTowns} />
-              <div className="wr-v2__custom-city">
-                <label htmlFor="wr-v2-custom-city">A town that isn't listed</label>
-                <input id="wr-v2-custom-city" value={customCity} maxLength={80} placeholder="Enter a town or city"
-                  onChange={event => setCustomCity(event.target.value)} />
-                <button type="button" onClick={addCity} disabled={!customCity.trim() || requestedCities.length >= 8}>Add</button>
-              </div>
-              {requestedTowns.some(town => !requestedPlaces.some(place => place.city === town)) &&
-                <p className="wr-v2__selected-cities">Towns: {requestedTowns.join(" · ")}</p>}
-              <p className="wr-v2__hint">Up to 12 places across up to eight towns. Towns we have no place records for stay marked as unknown.</p>
-              <DestinationHint cities={requestedCities} days={dateMode === "exact" ? exactDays : durationDays}
-                start={arrivalLocation} end={departureLocation} />
-            </fieldset>
           </div>
 
           <div className="wr-v2__brief-side">

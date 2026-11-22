@@ -232,3 +232,7 @@
 }
 
 .wr-v2__masthead .wr-v2__text-link { color: var(--wr-ivory); }
+/* Narrow phones: paired fields (days and month, arrival and departure, amount and currency) stack so nothing is cut off. */
+@media (max-width: 420px) {
+  .wr-v2__fields--budget { grid-template-columns: 1fr; }
+}
