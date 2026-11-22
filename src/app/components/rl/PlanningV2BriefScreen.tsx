@@ -29,8 +29,10 @@ const TRANSPORT: { value: TransportPreference; label: string }[] = [
 ];
 const ENDPOINTS = [CMB_AIRPORT, ...knownPlanningDestinations()];
 
-export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPlan, onExit, onClassic }: {
+export function PlanningV2BriefScreen({ initialBrief, initialPlaces, busy, externalIssues, onPlan, onExit, onClassic }: {
   initialBrief?: TripBriefV1;
+  /** Places chosen on the homepage; when present they replace the previous brief's places and towns. */
+  initialPlaces?: RequestedPlace[];
   busy: boolean;
   externalIssues: PlanningV2Issue[];
   onPlan: (brief: TripBriefV1) => void;
@@ -47,9 +49,9 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
   const [budget, setBudget] = useState(initialBrief?.budget.amount ?? 1000);
   const [currency, setCurrency] = useState<Currency>(initialBrief?.budget.currency ?? "USD");
   const [interests, setInterests] = useState<Interest[]>(initialBrief?.interests ?? []);
-  const [requestedPlaces, setRequestedPlaces] = useState<RequestedPlace[]>(initialBrief?.requestedPlaces ?? []);
+  const [requestedPlaces, setRequestedPlaces] = useState<RequestedPlace[]>(initialPlaces?.length ? initialPlaces : initialBrief?.requestedPlaces ?? []);
   // Towns chosen directly; the towns of chosen places are added when the brief is built.
-  const [requestedTowns, setRequestedTowns] = useState<string[]>((initialBrief?.requestedCities ?? [])
+  const [requestedTowns, setRequestedTowns] = useState<string[]>(initialPlaces?.length ? [] : (initialBrief?.requestedCities ?? [])
     .filter(city => !(initialBrief?.requestedPlaces ?? []).some(place => place.city === city)));
   const requestedCities = citiesFromPlaces(requestedPlaces, requestedTowns);
   const [customCity, setCustomCity] = useState("");

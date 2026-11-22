@@ -35,6 +35,7 @@ import { canRestoreScreen, CLASSIC_PLANNER_SCREEN, PRIMARY_PLANNER_SCREEN,
   resolvePlannerScreen, restoreScreen } from "./lib/plannerNavigation";
 import type { TripBriefV1 } from "./lib/planningTypes";
 import type { Screen, TripInputs, GeneratedItinerary } from "./components/rl/types";
+import type { RequestedPlace } from "./lib/requestedPlaces";
 import { GenerationScreen, type GenerationView } from "./components/rl/GenerationScreen";
 import { createGenerationGate, type GenerationPhase } from "./lib/generationRequest";
 import "../styles/atlas-app.css";
@@ -50,8 +51,8 @@ export default function App({ openStudio = false, recoveredTrip }: { openStudio?
   const [isLoading, setIsLoading] = useState(false);
   const [generation, setGeneration] = useState<GenerationView | null>(null);
   const generationGate = useRef(createGenerationGate());
-  const [quickInputs, setQuickInputs] = useState<TripInputs>();
-  const [quickMonth, setQuickMonth] = useState<number | null>(null);
+  // Places added on the homepage ("Add Kandy to my trip"); they open in the new planner's place picker.
+  const [plannerSeed, setPlannerSeed] = useState<RequestedPlace[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lastInputs, setLastInputs] = useState<TripInputs | null>(null);
   const [lastMonth, setLastMonth] = useState<number | null>(null);
@@ -176,6 +177,7 @@ export default function App({ openStudio = false, recoveredTrip }: { openStudio?
     if (!ticket) return;
     const requestId = ++v2DetailRequest.current;
     setV2Session(previous => ({ ...previous, view: "brief", brief }));
+    setPlannerSeed([]);
     setV2DetailBusy(false);
     setV2DetailError(undefined);
     setV2Busy(true);
@@ -262,22 +264,18 @@ export default function App({ openStudio = false, recoveredTrip }: { openStudio?
     setV2Session(previous => returnToPlanningConcepts(previous));
   };
 
-  const handleQuickV2Plan = (inputs: TripInputs, travelMonth?: number | null) => {
+  /** Homepage "Plan my trip": always the new planner's form, with any places added on the homepage. */
+  const startPlannerFromHome = (places: RequestedPlace[]) => {
     if (generationGate.current.isActive()) return;
-    setQuickInputs(inputs); setQuickMonth(travelMonth ?? null);
-    const brief: TripBriefV1 = { schemaVersion: 1, durationDays: inputs.days,
-      travellerCount: inputs.people, budget: { amount: inputs.budget, currency: inputs.currency },
-      arrival: { location: "CMB_AIRPORT" }, departure: { location: "CMB_AIRPORT" },
-      interests: inputs.interests, requestedCities: inputs.cities, comfortTier: inputs.travelStyle,
-      ...(inputs.places?.length ? { requestedPlaces: inputs.places } : {}),
-      ...(travelMonth ? { travelMonth } : {}) };
+    setPlannerSeed(places);
+    setV2Issues([]);
+    setV2Session(previous => previous.view === "brief" ? previous : { ...previous, view: "brief" });
     navigate(PRIMARY_PLANNER_SCREEN);
-    handleV2Plan(brief);
   };
 
   const screenContent = (
     <>
-      {screen === "home" && <HomeScreen navigate={navigate} onQuickPlan={handleQuickV2Plan} initialInputs={quickInputs} initialMonth={quickMonth} />}
+      {screen === "home" && <HomeScreen navigate={navigate} onStartPlanner={startPlannerFromHome} initialPlaces={plannerSeed} />}
       {screen === CLASSIC_PLANNER_SCREEN && (
         <PlannerScreen onGenerate={handleGenerate} navigate={navigate} initialCity={cityToAdd} initialInputs={lastInputs} initialMonth={lastMonth} generating={isLoading} />
       )}
@@ -293,7 +291,7 @@ export default function App({ openStudio = false, recoveredTrip }: { openStudio?
         <MapScreen navigate={navigate} onCitySelect={(city) => setCityToAdd(city)} />
       )}
       {screen === "planning-v2" && (v2Session.view === "brief" || !v2Session.result) &&
-        <PlanningV2BriefScreen initialBrief={v2Session.brief} busy={v2Busy} externalIssues={v2Issues}
+        <PlanningV2BriefScreen initialBrief={v2Session.brief} initialPlaces={plannerSeed} busy={v2Busy} externalIssues={v2Issues}
           onPlan={handleV2Plan} onExit={() => navigate("home")}
           onClassic={() => navigate(CLASSIC_PLANNER_SCREEN)} />}
       {screen === "planning-v2" && v2Session.result &&
@@ -318,7 +316,7 @@ export default function App({ openStudio = false, recoveredTrip }: { openStudio?
           onUndo={() => { if (!v2DetailBusy) setV2Session(undoPlanningV2Edit); }}
           onRedo={() => { if (!v2DetailBusy) setV2Session(redoPlanningV2Edit); }} />}
       {(screen === "itinerary" || screen === "costs" || screen === "share") && !itinerary && (
-        <HomeScreen navigate={navigate} onQuickPlan={handleQuickV2Plan} initialInputs={quickInputs} initialMonth={quickMonth} />
+        <HomeScreen navigate={navigate} onStartPlanner={startPlannerFromHome} initialPlaces={plannerSeed} />
       )}
     </>
   );

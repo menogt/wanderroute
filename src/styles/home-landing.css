@@ -134,9 +134,26 @@
 .wr-seasons article p { max-width: 44ch; margin: 0; color: #dbe6df; font-size: 1.05rem; line-height: 1.7; }
 .wr-landing .wr-seasons__note { margin: clamp(32px, 4vw, 48px) 0 0; color: var(--land-gold-soft); font-size: 1rem; font-weight: 600; }
 
-/* Planner section on ivory */
-.wr-landing .wr-quick { margin: 0 auto; max-width: none; border: 0; border-radius: 0; padding: clamp(64px, 8vw, 120px) max(clamp(20px, 5vw, 72px), calc((100vw - 1320px) / 2)); }
-.wr-landing .wr-quick__intro h2 { font-size: clamp(2rem, 3.6vw, 3rem); line-height: 1.05; letter-spacing: -0.02em; }
+/* Plan section on ivory: what you added, and the button into the planner */
+.wr-landing-plan { padding: clamp(64px, 8vw, 120px) clamp(20px, 5vw, 72px); background: var(--land-ivory); color: var(--wr-midnight-local); }
+.wr-landing-plan__inner { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 460px); gap: clamp(32px, 6vw, 96px); align-items: start; max-width: 1180px; margin: 0 auto; }
+.wr-landing-plan h2 { margin: 0 0 16px; color: var(--wr-midnight-local); font-family: var(--wr-serif-local, "Fraunces", Georgia, serif); font-weight: 600;
+  font-size: clamp(2rem, 3.8vw, 3.2rem); line-height: 1.04; letter-spacing: -0.02em; }
+.wr-landing-plan__intro > p { max-width: 48ch; margin: 0; color: #4a5a66; font-size: 1.08rem; line-height: 1.65; }
+.wr-landing-plan__card { display: grid; gap: 16px; padding: clamp(20px, 3vw, 30px); border: 1px solid rgba(7, 26, 45, 0.12); border-radius: 12px; background: #fff;
+  box-shadow: 0 24px 50px rgba(7, 26, 45, 0.08); }
+.wr-landing-plan__card h3 { margin: 0; color: var(--wr-midnight-local); font-size: 1.15rem; font-weight: 700; }
+.wr-landing-plan__places { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.wr-landing-plan__places li { display: grid; grid-template-columns: 18px minmax(0, 1fr) 40px; gap: 10px; align-items: center; padding: 6px 6px 6px 12px; border-radius: 8px; background: #f6efe2; }
+.wr-landing-plan__places svg { color: #8c651b; }
+.wr-landing-plan__places span { display: grid; min-width: 0; font-weight: 600; line-height: 1.3; overflow-wrap: break-word; }
+.wr-landing-plan__places small { color: #5b6a75; font-weight: 500; }
+.wr-landing-plan__places button { display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: transparent; color: var(--wr-midnight-local); cursor: pointer; }
+.wr-landing-plan__places button:hover { background: rgba(7, 26, 45, 0.08); }
+.wr-landing .wr-landing-plan__empty { margin: 0; color: #5b6a75; line-height: 1.6; }
+.wr-landing .wr-landing-plan__go { width: 100%; min-height: 54px; font-size: 1rem; }
+.wr-landing-plan__card > small { color: #5b6a75; text-align: center; }
+@media (max-width: 860px) { .wr-landing-plan__inner { grid-template-columns: 1fr; } }
 .wr-landing-steps { counter-reset: step; display: grid; gap: 14px; margin: 26px 0 0; padding: 0; list-style: none; }
 .wr-landing-steps li { counter-increment: step; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: center;
   color: var(--wr-midnight-local); font-weight: 600; line-height: 1.4; }
@@ -193,7 +210,7 @@
   .wr-stop__facts { grid-template-columns: 1fr; gap: 12px; }
   .wr-stop__add { width: 100%; justify-content: center; }
   .wr-seasons__grid { grid-template-columns: 1fr; }
-  .wr-landing .wr-quick { padding: 56px 16px 64px; }
+  .wr-landing-plan { padding: 56px 16px 64px; }
   .wr-landing-final { min-height: 86svh; }
   .wr-landing-final__content { padding-bottom: 28px; }
   .wr-landing-credits { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
