@@ -29,6 +29,8 @@ export type TripInputs = {
   days: number;
   people: number;
   cities: string[];
+  /** Places chosen by name in the V2 planner; their towns are already in `cities`. */
+  places?: import("../../lib/requestedPlaces").RequestedPlace[];
   interests: Interest[];
   travelStyle: TravelStyle;
 };

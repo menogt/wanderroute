@@ -1,4 +1,5 @@
 import { planningCalendarProblems } from "./planningCalendar.ts";
+import { MAX_REQUESTED_PLACES, validRequestedPlace } from "./requestedPlaces.ts";
 import type { Currency, Interest } from "../components/rl/types";
 import { buildCandidateDestinations, generateRouteCandidates, knownPlanningDestinations } from "./routeCandidates.ts";
 import { fillAroundRequested, splitLongLegs } from "./routeFill.ts";
@@ -72,6 +73,10 @@ export function validatePlanningBrief(brief: TripBriefV1): PlanningV2Issue[] {
   if (!Array.isArray(brief.requestedCities) || brief.requestedCities.length > 8 ||
       brief.requestedCities.some(city => typeof city !== "string" || !city.trim() || city.length > 80)) {
     error("DESTINATIONS", "Choose up to eight valid destinations, or leave them open.");
+  }
+  if (brief.requestedPlaces !== undefined && (!Array.isArray(brief.requestedPlaces) ||
+      brief.requestedPlaces.length > MAX_REQUESTED_PLACES || brief.requestedPlaces.some(place => !validRequestedPlace(place)))) {
+    error("PLACES", `Choose up to ${MAX_REQUESTED_PLACES} places from the list.`);
   }
   if (brief.travelMonth !== undefined && (!Number.isInteger(brief.travelMonth) || brief.travelMonth < 1 || brief.travelMonth > 12)) {
     error("TRAVEL_MONTH", "Choose a valid travel month.");

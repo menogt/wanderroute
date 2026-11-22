@@ -25,9 +25,10 @@ import {
 import type { LucideIcon } from "lucide-react";
 import hillCountryImage from "../../../assets/wanderroute-hill-country.jpg";
 import { CURRENCY_SYMBOLS, POPULAR_ROUTES, generateItinerary } from "./data";
-import { SELECTABLE_CITIES } from "../../lib/cityPlan";
+import { citiesFromPlaces, type RequestedPlace } from "../../lib/requestedPlaces";
 import { quickTripEstimate } from "../../lib/indicativePrices";
 import { DestinationHint } from "./DestinationHint";
+import { PlacePicker } from "./PlacePicker";
 import { MONTH_NAMES } from "../../lib/seasonData";
 import type { Interest, Screen, TravelStyle, TripInputs } from "./types";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
@@ -77,7 +78,11 @@ export function HomeScreen({
   const [budget, setBudget] = useState(initialInputs?.budget ?? 800);
   const [days, setDays] = useState(initialInputs?.days ?? 7);
   const [people, setPeople] = useState(initialInputs?.people ?? 2);
-  const [cities, setCities] = useState<string[]>(initialInputs?.cities ?? []);
+  const [places, setPlaces] = useState<RequestedPlace[]>(initialInputs?.places ?? []);
+  // Towns picked directly; the towns of chosen places are added below.
+  const [towns, setTowns] = useState<string[]>((initialInputs?.cities ?? [])
+    .filter(city => !(initialInputs?.places ?? []).some(place => place.city === city)));
+  const cities = citiesFromPlaces(places, towns);
   const [interests, setInterests] = useState<Interest[]>(initialInputs?.interests ?? ["beaches", "culture"]);
   const [travelStyle, setTravelStyle] = useState<TravelStyle>(initialInputs?.travelStyle ?? "comfort");
   // Optional, 1-12. Kept out of TripInputs so it never reaches generation.
@@ -89,19 +94,15 @@ export function HomeScreen({
     days,
     people,
     cities,
+    ...(places.length ? { places } : {}),
     interests,
     travelStyle,
   };
 
   const preview = useMemo(
     () => generateItinerary(quickInputs),
-    [budget, days, people, cities, interests, travelStyle]
+    [budget, days, people, cities.join("|"), interests, travelStyle]
   );
-
-  const toggleCity = (city: string) =>
-    setCities((current) =>
-      current.includes(city) ? current.filter((item) => item !== city) : [...current, city]
-    );
 
   const previewDay = preview.days[0];
   const currencySymbol = CURRENCY_SYMBOLS[preview.currency];
@@ -303,30 +304,9 @@ export function HomeScreen({
             </fieldset>
           </div>
 
-          <fieldset className="wr-quick__options">
-            <legend>Where do you want to go?</legend>
-            <div>
-              {SELECTABLE_CITIES.map((city) => {
-                const selected = cities.includes(city);
-                return (
-                  <button
-                    type="button"
-                    key={city}
-                    className={selected ? "is-selected" : ""}
-                    onClick={() => toggleCity(city)}
-                    aria-pressed={selected}
-                  >
-                    <MapPinned size={15} strokeWidth={1.8} aria-hidden="true" />
-                    {city}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="wr-quick__route-note">
-              {cities.length === 0
-                ? "We'll pick a route for you"
-                : `Selected: ${cities.join(" · ")}`}
-            </p>
+          <fieldset className="wr-quick__places">
+            <legend>What do you want to see?</legend>
+            <PlacePicker places={places} onPlaces={setPlaces} towns={towns} onTowns={setTowns} />
             <DestinationHint cities={cities} days={days} />
           </fieldset>
 

@@ -292,7 +292,7 @@ test("V2 endpoint falls back to OpenRouter only when Groq fails and a fallback k
     assert.equal(JSON.parse(groqOnly.body).code, "GROQ_API_ERROR");
     // Groq limits are per model, so the free backup models are tried before giving up.
     assert.deepEqual(calls.map(call => call.body.model), ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]);
-    assert.match(calls[0].body.messages[1].content, /Select zero to 2 IDs per day/);
+    assert.match(calls[0].body.messages[1].content, /"chooseUpTo":2/);
     // Each model gets reasoning settings it accepts.
     assert.equal(calls[1].body.reasoning_effort, "low");
     assert.equal(calls[1].body.reasoning_format, undefined);

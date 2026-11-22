@@ -1,4 +1,5 @@
 import { cityInterestAffinity } from "./planningActivityChoices.ts";
+import { activitiesPerDay, requestedPlaceCounts } from "./requestedPlaces.ts";
 import { CANONICAL_CITY_ORDER, autoSelectCities } from "./cityPlan.ts";
 import { CITY_COORDS } from "../components/rl/mapConfig.ts";
 import type { TripBriefV1 } from "./planningTypes";
@@ -112,14 +113,22 @@ function allocateNights(
   const fixedLast = finalNights !== undefined && stops.length > 1 &&
     totalNights - (stops.length - 1) * minimum >= finalNights;
   if (fixedLast) nights[stops.length - 1] = finalNights;
-  const spare = totalNights - nights.reduce((sum, value) => sum + value, 0);
+  let spare = totalNights - nights.reduce((sum, value) => sum + value, 0);
+  // Chosen places need days in their town: each such town first gets the nights its places need, within its usual maximum.
+  const pins = requestedPlaceCounts(brief.requestedPlaces);
+  const perDay = activitiesPerDay(brief.pace);
+  stops.forEach((stop, index) => {
+    if (fixedLast && index === stops.length - 1) return;
+    const needed = Math.min(typicalMaxNights(stop.name, brief), Math.ceil((pins.get(stop.name.toLowerCase()) ?? 0) / perDay));
+    while (nights[index] < needed && spare > 0) { nights[index] += 1; spare -= 1; }
+  });
   // First/last absorb constrained arrival/departure days. Longer inbound drives
   // then earn recovery time; stable index resolves ties.
   const priorities = stops.map((stop, index) => ({
     index,
     weight: (index === 0 && arrivalDayUsableMinutes(brief) === 0 ? 200 : 0) +
       (index === stops.length - 1 && departureDayUsableMinutes(brief) === 0 ? 200 : 0) +
-      cityInterestAffinity(stop.name, brief) * 35 + (legs[index - 1]?.durationMinutes ?? 0) + (index === 0 || index === stops.length - 1 ? 30 : 0),
+      cityInterestAffinity(stop.name, brief) * 35 + (pins.get(stop.name.toLowerCase()) ?? 0) * 40 + (legs[index - 1]?.durationMinutes ?? 0) + (index === 0 || index === stops.length - 1 ? 30 : 0),
   })).sort((a, b) => b.weight - a.weight || a.index - b.index);
   return spreadNights(nights, spare, priorities.map(item => item.index).filter(index => !fixedLast || index !== stops.length - 1),
     stops.map(stop => typicalMaxNights(stop.name, brief)));

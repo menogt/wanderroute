@@ -11,7 +11,8 @@ import { planningSeasonMonth } from "./routeSeason.ts";
 import { validatePlanningItinerary, type ValidationResult } from "./itineraryValidation.ts";
 import type { CandidatePlace, PlanningItineraryV2, TripBriefV1 } from "./planningTypes";
 import type { PlanningRouteConcept, PlanningV2Result, ConceptReadiness } from "./planningV2";
-import { loadPlanningV2Places, eligibleActivityPlaces } from "./planningV2Places.ts";
+import { loadPlanningV2Places, eligibleActivityPlaces, withPinnedPlaces } from "./planningV2Places.ts";
+import { activitiesPerDay, assignPinsToDays, resolveRequestedPlaces } from "./requestedPlaces.ts";
 import { requestAiActivityPlan, validateAiActivityPlan, type AiActivityPlan } from "./planningV2ItineraryService.ts";
 import { routeDayCities, schedulePlanningDays, type DaySelection, type ActivitySelection } from "./planningV2Scheduling.ts";
 import type { TransportLeg, TransportPlan } from "./transportTypes";
@@ -33,7 +34,9 @@ export type DetailedPlanningResult = {
 export type DetailedPlanningServices = GenerationOptions & {
   getPlaces?: (route: PlanningRouteConcept["candidate"]) => Promise<CandidatePlace[]>;
   getAiPlan?: (brief: TripBriefV1, route: PlanningRouteConcept["candidate"],
-    places: CandidatePlace[], signal?: AbortSignal) => Promise<AiActivityPlan>;
+    places: CandidatePlace[], signal?: AbortSignal, fixed?: string[][]) => Promise<AiActivityPlan>;
+  /** Loads chosen database places missing from the per-town lists. */
+  getPlacesById?: (ids: string[]) => Promise<CandidatePlace[]>;
   exchangeRates?: ExchangeRate[];
 };
 
@@ -104,17 +107,34 @@ function buildCostLines(brief: TripBriefV1, days: PlanningItineraryV2["days"],
   return lines;
 }
 
+/** Day indexes with no room for sightseeing: a late arrival day, and departure day. */
+function restDays(brief: TripBriefV1, dayCount: number): Set<number> {
+  const days = new Set<number>();
+  if ((arrivalReadyMinute(brief) ?? 0) >= 18 * 60) days.add(0);
+  if (brief.departure) days.add(dayCount - 1);
+  return days;
+}
+
+/** Chosen places first on their day, then the AI's picks; the AI never repeats a chosen place. */
+function withFixedPlaces(days: DaySelection[], fixed: string[][]): DaySelection[] {
+  const all = new Set(fixed.flat());
+  return days.map((day, index) => ({ ...day,
+    placeIds: [...(fixed[index] ?? []), ...day.placeIds.filter(id => !all.has(id))] }));
+}
+
 function limitedSelections(brief: TripBriefV1, route: PlanningRouteConcept["candidate"],
-  places: CandidatePlace[]): DaySelection[] {
+  places: CandidatePlace[], fixed: string[][] = []): DaySelection[] {
   const cities = routeDayCities(route, brief.durationDays);
-  const used = new Set<string>();
-  const capacity = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[brief.pace ?? "BALANCED"];
+  const used = new Set<string>(fixed.flat());
+  const capacity = activitiesPerDay(brief.pace);
+  const rest = restDays(brief, cities.length);
   return cities.map((city, index) => {
-    const arrivalRest = index === 0 && (arrivalReadyMinute(brief) ?? 0) >= 18 * 60;
-    const departure = index === cities.length - 1 && !!brief.departure;
-    const chosen = arrivalRest || departure ? [] : suggestedActivities(places, city, brief, used, capacity);
+    const arrivalRest = index === 0 && rest.has(0);
+    const departure = index === cities.length - 1 && rest.has(index);
+    const pinned = fixed[index] ?? [];
+    const chosen = arrivalRest || departure ? [] : suggestedActivities(places, city, brief, used, Math.max(0, capacity - pinned.length));
     chosen.forEach(place => used.add(place.databaseId!));
-    return { placeIds: chosen.map(place => place.databaseId!), note: arrivalRest ? "Arrival, check-in and rest." : departure ? "Leave time for packing and your departure transfer." : "Explore at your own pace. Local journeys and opening hours need checking." };
+    return { placeIds: [...pinned, ...chosen.map(place => place.databaseId!)], note: arrivalRest ? "Arrival, check-in and rest." : departure ? "Leave time for packing and your departure transfer." : "Explore at your own pace. Local journeys and opening hours need checking." };
   });
 }
 
@@ -147,6 +167,15 @@ export function buildDetailedPlanningResult(result: PlanningV2Result, selectedId
   };
   const validation = validatePlanningItinerary({ itinerary, brief, route, matrix,
     transportPlan: transport, ledger, trustedPlaces: places });
+  const scheduled = new Set(days.flatMap(day => day.items.map(item => item.placeId).filter((id): id is string => !!id)));
+  for (const { request, place } of resolveRequestedPlaces(brief.requestedPlaces, places)) {
+    if (place?.databaseId && scheduled.has(place.databaseId)) continue;
+    const issue = { code: "REQUESTED_PLACE_UNSCHEDULED", severity: "WARNING" as const,
+      details: { place: request.name, city: request.city, ...(place ? {} : { unavailable: true }) } };
+    validation.issues.push(issue);
+    validation.warnings.push(issue);
+    if (validation.status === "READY") validation.status = "READY_WITH_WARNINGS";
+  }
   for (const request of customization?.wishlist ?? []) {
     if (request.requirement === "EXCLUDED" || route.destinations.some(stop => stop.name === request.city) || transport.excursions?.some(visit => visit.city === request.city)) continue;
     const issue = { code: request.requirement === "MUST" ? "MUST_VISIT_UNSCHEDULED" : "REQUESTED_VISIT_UNSCHEDULED", severity: request.requirement === "MUST" ? "ERROR" as const : "UNKNOWN" as const, details: { city: request.city } };
@@ -184,31 +213,37 @@ export async function generatePlanningV2Itinerary(result: PlanningV2Result, sele
   const route = selected.candidate;
   const cities = routeDayCities(route, brief.durationDays);
   services.onProgress?.("places");
-  const places = await (services.getPlaces ?? loadPlanningV2Places)(route);
+  const places = await withPinnedPlaces(await (services.getPlaces ?? loadPlanningV2Places)(route),
+    brief.requestedPlaces, services.getPlacesById);
   services.signal?.throwIfAborted();
+  const pins = resolveRequestedPlaces(brief.requestedPlaces, places).flatMap(entry => entry.place ? [entry.place] : []);
+  const { fixed, overflow } = assignPinsToDays(pins, cities, activitiesPerDay(brief.pace), restDays(brief, cities.length));
   let selections: DaySelection[];
   let generationMode: DetailedPlanningResult["generationMode"] = "AI";
   let generationIssue: string | undefined;
   if (!cities.some(city => eligibleActivityPlaces(places, city).length > 0)) {
     generationMode = "LIMITED_DRAFT";
     generationIssue = "No trusted activity records are available for this route. Add place coverage before relying on daily suggestions.";
-    selections = limitedSelections(brief, route, places);
+    selections = limitedSelections(brief, route, places, fixed);
   } else {
     try {
       services.onProgress?.("suggestions");
-      const raw = await (services.getAiPlan ?? requestAiActivityPlan)(brief, route, places, services.signal);
+      const raw = await (services.getAiPlan ?? requestAiActivityPlan)(brief, route, places, services.signal, fixed);
       services.signal?.throwIfAborted();
-      const plan = validateAiActivityPlan(raw, route, brief, places);
-      selections = plan.days;
+      const plan = validateAiActivityPlan(raw, route, brief, places, fixed);
+      selections = withFixedPlaces(plan.days, fixed);
     } catch {
       services.signal?.throwIfAborted();
       generationMode = "LIMITED_DRAFT";
       generationIssue = "Activity suggestions could not be verified. This limited draft uses place records only; retry to request suggestions.";
-      selections = limitedSelections(brief, route, places);
+      selections = limitedSelections(brief, route, places, fixed);
     }
   }
   services.signal?.throwIfAborted();
   services.onProgress?.("assembling");
-  return buildDetailedPlanningResult(result, selectedId, places, selections, generationMode,
+  const detailed = buildDetailedPlanningResult(result, selectedId, places, selections, generationMode,
     generationIssue, services.exchangeRates ?? []);
+  // Chosen places with no room yet wait in "Places to visit" and can be added to a day in their town.
+  return overflow.length ? { ...detailed, unscheduledActivities: overflow.map(place => ({
+    id: `activity:requested:${place.databaseId}`, placeId: place.databaseId!, city: place.city, label: place.name })) } : detailed;
 }

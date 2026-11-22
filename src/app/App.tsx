@@ -269,6 +269,7 @@ export default function App({ openStudio = false, recoveredTrip }: { openStudio?
       travellerCount: inputs.people, budget: { amount: inputs.budget, currency: inputs.currency },
       arrival: { location: "CMB_AIRPORT" }, departure: { location: "CMB_AIRPORT" },
       interests: inputs.interests, requestedCities: inputs.cities, comfortTier: inputs.travelStyle,
+      ...(inputs.places?.length ? { requestedPlaces: inputs.places } : {}),
       ...(travelMonth ? { travelMonth } : {}) };
     navigate(PRIMARY_PLANNER_SCREEN);
     handleV2Plan(brief);

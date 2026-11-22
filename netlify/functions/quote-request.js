@@ -29,6 +29,8 @@ function plannerLines(snapshot) {
     `Flight in:  ${flight(snapshot.arrival)}`,
     `Flight out: ${flight(snapshot.departure)}`,
     `Stops:      ${stops || "—"}`,
+    ...(Array.isArray(snapshot.mustSee) && snapshot.mustSee.length
+      ? [`Must-see:   ${snapshot.mustSee.slice(0, 12).map(place => text(place, 80)).join(" · ")}`] : []),
     `Comfort:    ${text(snapshot.comfort, 20) || "not chosen"} · Pace: ${text(snapshot.pace, 20) || "balanced"}`,
     `Estimate:   ${estimate}`,
     `Plan ref:   ${text(snapshot.reference, 12)}`,

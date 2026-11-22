@@ -94,6 +94,9 @@
 .wr-v2__fields--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .wr-v2__fields--budget { grid-template-columns: minmax(0, 2fr) minmax(120px, 1fr); }
 .wr-v2__fields label + label { margin-top: 0; }
+/* Date inputs have a wide built-in minimum; let them shrink to their column on phones. */
+.wr-v2__fields > label { min-width: 0; }
+.wr-v2__fields input { min-width: 0; max-width: 100%; }
 .wr-v2__hint { margin: 15px 0 0; color: var(--wr-ink-soft); font-size: 0.83rem; line-height: 1.55; }
 .wr-v2__choices { display: flex; flex-wrap: wrap; gap: 9px; }
 .wr-v2__choices button {

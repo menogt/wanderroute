@@ -2,6 +2,7 @@ import type {
   Currency, DayItem, DayPlan, GeneratedItinerary, Interest, TravelStyle,
 } from "../components/rl/types";
 import type { TransportPreference } from "./transportTypes";
+import type { RequestedPlace } from "./requestedPlaces";
 
 export type Coordinates = { latitude: number; longitude: number };
 export type TravelPace = "RELAXED" | "BALANCED" | "PACKED" | "SLOW_TRAVEL";
@@ -20,6 +21,8 @@ export type TripBriefV1 = {
   budget: { amount: number; currency: Currency };
   interests: Interest[];
   requestedCities: string[];
+  /** Places the traveller chose by name; their towns are included in requestedCities. */
+  requestedPlaces?: RequestedPlace[];
   /** V1 supplies this; the V2 brief may leave it unspecified. */
   comfortTier?: TravelStyle;
   /** Not collected by the V1 form; absence means no transport choice was made. */

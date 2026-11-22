@@ -16,6 +16,10 @@ function json(statusCode, payload) {
 
 const object = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const shortText = (value, max = 160) => typeof value === "string" && value.length > 0 && value.length <= max;
+const PER_DAY = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 };
+// Places the traveller chose are already on the day; the model fills only the slots left.
+const pinnedIds = day => Array.isArray(day.fixed) ? day.fixed : [];
+const openSlots = (request, index) => Math.max(0, PER_DAY[request.pace ?? "BALANCED"] - pinnedIds(request.days[index]).length);
 
 function validateRequest(body) {
   if (!object(body) || body.schemaVersion !== 2 || !shortText(body.routeConceptId, 160) ||
@@ -27,22 +31,25 @@ function validateRequest(body) {
     Array.isArray(day.places) && day.places.length <= MAX_PLACES &&
     day.places.every(place => object(place) && shortText(place.id, 160) && shortText(place.name, 160) &&
       ["attraction", "beach", "temple"].includes(place.category)) &&
-    new Set(day.places.map(place => place.id)).size === day.places.length);
+    new Set(day.places.map(place => place.id)).size === day.places.length &&
+    (day.fixed === undefined || Array.isArray(day.fixed) && day.fixed.length <= 6 &&
+      new Set(day.fixed).size === day.fixed.length && day.fixed.every(id => day.places.some(place => place.id === id))));
 }
 
 function validateModel(value, request) {
   if (!object(value) || value.schemaVersion !== 2 || value.routeConceptId !== request.routeConceptId ||
       !Array.isArray(value.days) || value.days.length !== request.days.length) return false;
-  const paceLimit = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[request.pace ?? "BALANCED"];
-  const used = new Set();
+  const used = new Set(request.days.flatMap(pinnedIds));
   return value.days.every((day, index) => {
     const allowed = new Set(request.days[index].places.map(place => place.id));
-    const valid = object(day) && day.day === index + 1 && Array.isArray(day.placeIds) && day.placeIds.length <= paceLimit &&
+    const pinned = pinnedIds(request.days[index]);
+    const valid = object(day) && day.day === index + 1 && Array.isArray(day.placeIds) && day.placeIds.length <= openSlots(request, index) &&
       day.placeIds.every(id => typeof id === "string" && allowed.has(id) && !used.has(id)) &&
       new Set(day.placeIds).size === day.placeIds.length &&
       (day.note === undefined || typeof day.note === "string" && day.note.length <= 240) &&
-      (day.descriptions === undefined || Array.isArray(day.descriptions) && day.descriptions.length <= 3 &&
-        day.descriptions.every(description => object(description) && day.placeIds.includes(description.placeId) &&
+      (day.descriptions === undefined || Array.isArray(day.descriptions) && day.descriptions.length <= 6 &&
+        day.descriptions.every(description => object(description) &&
+          (day.placeIds.includes(description.placeId) || pinned.includes(description.placeId)) &&
           typeof description.text === "string" && description.text.length <= 240));
     if (valid) day.placeIds.forEach(id => used.add(id));
     return valid;
@@ -58,18 +65,18 @@ const clip = (text, max = 240) => text.length <= max ? text : `${text.slice(0, m
  */
 function repairModel(value, request) {
   if (!object(value) || !Array.isArray(value.days)) return null;
-  const perDay = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[request.pace ?? "BALANCED"];
   const sameLength = value.days.length === request.days.length;
-  const used = new Set();
+  const used = new Set(request.days.flatMap(pinnedIds));
   let repairs = 0, missing = 0, kept = 0;
   const days = request.days.map((requested, index) => {
     const found = value.days.find(day => object(day) && day.day === index + 1) ?? (sameLength && object(value.days[index]) ? value.days[index] : undefined);
     if (!found) { missing++; repairs++; return { day: index + 1, placeIds: [] }; }
     const allowed = new Set(requested.places.map(place => place.id));
+    const pinned = pinnedIds(requested);
     const raw = Array.isArray(found.placeIds) ? found.placeIds : [];
     const placeIds = [];
     for (const id of raw) {
-      if (typeof id === "string" && allowed.has(id) && !used.has(id) && placeIds.length < perDay) { placeIds.push(id); used.add(id); }
+      if (typeof id === "string" && allowed.has(id) && !used.has(id) && placeIds.length < openSlots(request, index)) { placeIds.push(id); used.add(id); }
     }
     repairs += raw.length - placeIds.length; kept += placeIds.length;
     const day = { day: index + 1, placeIds };
@@ -77,23 +84,25 @@ function repairModel(value, request) {
     if (Array.isArray(found.descriptions)) {
       const described = new Set();
       day.descriptions = found.descriptions.filter(item => object(item) && typeof item.text === "string" && item.text.trim() &&
-        placeIds.includes(item.placeId) && !described.has(item.placeId) && described.add(item.placeId))
-        .slice(0, 3).map(item => ({ placeId: item.placeId, text: clip(item.text.trim()) }));
+        (placeIds.includes(item.placeId) || pinned.includes(item.placeId)) && !described.has(item.placeId) && described.add(item.placeId))
+        .slice(0, 6).map(item => ({ placeId: item.placeId, text: clip(item.text.trim()) }));
       repairs += found.descriptions.length - day.descriptions.length;
     }
     return day;
   });
-  const offered = request.days.some(day => day.places.length);
+  // A reply with no picks is only useful when every day was already filled with the traveller's places.
+  const offered = request.days.some((day, index) => openSlots(request, index) > 0 && day.places.length > pinnedIds(day).length);
   if (missing * 2 > request.days.length || (offered && kept === 0)) return null;
   return { plan: { schemaVersion: 2, routeConceptId: request.routeConceptId, days }, repairs };
 }
 
 function prompt(request) {
-  // Must match the per-day limit enforced by validateModel and the client.
-  const perDay = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[request.pace ?? "BALANCED"];
+  // chooseUpTo must match the per-day limit enforced by validateModel and the client.
+  const days = request.days.map((day, index) => ({ day: day.day, city: day.city, places: day.places,
+    ...(pinnedIds(day).length ? { alreadyIncluded: pinnedIds(day) } : {}), chooseUpTo: openSlots(request, index) }));
   return `Select activities for a Sri Lanka trip. You must use only place IDs listed for each day. The fixed route and days must not change. Do not invent opening hours, transport times, prices, bookings or availability. Do not schedule times. Keep notes and descriptions concise. Interests: ${request.interests.join(", ")}. Pace: ${request.pace ?? "BALANCED"}.\n` +
-    JSON.stringify({ routeConceptId: request.routeConceptId, days: request.days }) +
-    `\nReturn JSON only: {"schemaVersion":2,"routeConceptId":"same ID","days":[{"day":1,"placeIds":["allowed ID"],"note":"short note","descriptions":[{"placeId":"allowed ID","text":"why it fits"}]}]}. Include every day exactly once. Never repeat a place on another day; leave open time when unique options run out. Select zero to ${perDay} IDs per day, never more.`;
+    JSON.stringify({ routeConceptId: request.routeConceptId, days }) +
+    `\nReturn JSON only: {"schemaVersion":2,"routeConceptId":"same ID","days":[{"day":1,"placeIds":["allowed ID"],"note":"short note","descriptions":[{"placeId":"allowed ID","text":"why it fits"}]}]}. Include every day exactly once. Never repeat a place on another day; leave open time when unique options run out. For each day select zero to chooseUpTo IDs, never more. alreadyIncluded IDs are places the traveller chose for that day: never put them in placeIds, but do write a description for each of them.`;
 }
 
 /** Model-specific options: gpt-oss takes low/medium/high; Qwen takes "none" and needs hidden reasoning for JSON mode. */

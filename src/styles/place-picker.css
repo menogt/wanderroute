@@ -1,0 +1,55 @@
+/* Place picker: places first, towns as a fallback. Used by the homepage quick form and the planner brief. */
+.wr-picker { display: grid; gap: 14px; min-width: 0; }
+.wr-picker__search label, .wr-picker__label { display: block; margin: 0 0 6px; color: var(--wr-ink-soft); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.wr-picker__search-box { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 0 12px; border: 1px solid rgba(7, 26, 45, 0.23); border-radius: 6px; background: #fff; color: var(--wr-ink-soft); }
+.wr-picker__search-box:focus-within { border-color: var(--wr-midnight); box-shadow: 0 0 0 3px rgba(212, 166, 74, 0.35); }
+.wr-picker__search-box input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--wr-midnight); font: inherit; font-size: 1rem; padding: 10px 0; }
+.wr-picker__status { margin: 6px 0 0; min-height: 1.2em; color: var(--wr-ink-soft); font-size: 0.84rem; }
+.wr-picker__results { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; max-height: 280px; overflow-y: auto; }
+.wr-picker__results button { display: flex; width: 100%; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border: 1px solid rgba(7, 26, 45, 0.12); border-radius: 6px; background: #fff; color: var(--wr-midnight); text-align: left; cursor: pointer; }
+.wr-picker__results button:hover { border-color: var(--wr-gold); }
+.wr-picker__results button[aria-pressed="true"] { border-color: var(--wr-midnight); background: var(--wr-cream); }
+.wr-picker__results span { display: grid; min-width: 0; }
+.wr-picker__results strong { font-weight: 600; overflow-wrap: anywhere; }
+.wr-picker__results small { color: var(--wr-ink-soft); }
+
+.wr-picker__chosen { display: flex; flex-wrap: wrap; gap: 8px; }
+.wr-picker__chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 6px 5px 10px; border-radius: 999px; background: var(--wr-midnight); color: var(--wr-ivory); font-size: 0.9rem; font-weight: 600; }
+.wr-picker__chip small { color: rgba(255, 249, 239, 0.72); font-weight: 400; }
+.wr-picker__chip button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 50%; background: rgba(255, 249, 239, 0.16); color: inherit; cursor: pointer; }
+.wr-picker__chip button:hover, .wr-picker__chip button:focus-visible { background: var(--wr-gold); color: var(--wr-midnight); }
+
+.wr-picker__grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.wr-picker__grid li { display: grid; grid-template-rows: 1fr auto; gap: 3px; min-width: 0; }
+.wr-picker__grid li > .wr-picker__card { height: 100%; align-content: start; }
+.wr-picker__card { display: grid; gap: 4px; width: 100%; padding: 0 0 8px; border: 1px solid rgba(7, 26, 45, 0.14); border-radius: 8px; background: #fff; color: var(--wr-midnight); text-align: left; cursor: pointer; overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s; }
+.wr-picker__card:hover { border-color: var(--wr-gold); box-shadow: 0 6px 18px rgba(7, 26, 45, 0.1); }
+.wr-picker__card:focus-visible { outline: 3px solid var(--wr-gold); outline-offset: 2px; }
+.wr-picker__card.is-selected { border-color: var(--wr-midnight); box-shadow: 0 0 0 2px var(--wr-midnight); }
+.wr-picker__card:disabled { opacity: 0.5; cursor: not-allowed; }
+.wr-picker__photo { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 3; background: var(--wr-sand); color: var(--wr-tea); overflow: hidden; }
+.wr-picker__photo img { width: 100%; height: 100%; object-fit: cover; }
+.wr-picker__tick { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(255, 249, 239, 0.92); color: var(--wr-midnight); box-shadow: 0 2px 6px rgba(7, 26, 45, 0.25); }
+.wr-picker__card.is-selected .wr-picker__tick { background: var(--wr-gold); }
+.wr-picker__name { padding: 0 10px; font-weight: 600; font-size: 0.95rem; line-height: 1.25; overflow-wrap: anywhere; }
+.wr-picker__town { padding: 0 10px; color: var(--wr-ink-soft); font-size: 0.82rem; }
+.wr-picker__credit { color: var(--wr-ink-soft); font-size: 0.68rem; line-height: 1.3; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-picker__credit:hover, .wr-picker__credit:focus-visible { text-decoration: underline; }
+.wr-picker__more { justify-self: start; min-height: 40px; padding: 8px 14px; border: 1px solid rgba(7, 26, 45, 0.23); border-radius: 6px; background: transparent; color: var(--wr-midnight); font-weight: 600; cursor: pointer; }
+.wr-picker__more:hover { border-color: var(--wr-gold); }
+
+.wr-picker__towns summary { cursor: pointer; color: var(--wr-midnight); font-weight: 600; min-height: 32px; }
+.wr-picker__town-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.wr-picker__town-list button { min-height: 40px; padding: 7px 13px; border: 1px solid rgba(7, 26, 45, 0.2); border-radius: 5px; background: transparent; color: var(--wr-midnight); cursor: pointer; }
+.wr-picker__town-list button.is-selected { border-color: var(--wr-midnight); background: var(--wr-midnight); color: var(--wr-ivory); }
+.wr-picker__route { margin: 0; color: var(--wr-ink-soft); font-size: 0.9rem; line-height: 1.45; }
+.wr-picker__route strong { color: var(--wr-midnight); }
+
+@media (max-width: 520px) {
+  .wr-picker__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .wr-picker__card { transition: none; } }
+
+/* Homepage quick form: its own fieldset so the form's chip button styles don't reach the picker. */
+.wr-quick__places { margin-top: 1.3rem; min-width: 0; }
+.wr-quick__places > legend { color: #556064; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.07em; margin-bottom: 0.42rem; text-transform: uppercase; }

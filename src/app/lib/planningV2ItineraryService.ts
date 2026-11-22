@@ -2,28 +2,31 @@ import type { CandidatePlace, TripBriefV1 } from "./planningTypes";
 import type { CandidateRoute } from "./routeTypes";
 import { eligibleActivityPlaces } from "./planningV2Places.ts";
 import { routeDayCities, type DaySelection } from "./planningV2Scheduling.ts";
+import { activitiesPerDay } from "./requestedPlaces.ts";
 
 export type AiDaySelection = Pick<DaySelection, "placeIds" | "descriptions" | "note"> & { day: number };
 export type AiActivityPlan = { schemaVersion: 2; routeConceptId: string; days: AiDaySelection[] };
 
+/** `fixed` holds the places the traveller chose for each day; the AI fills only the remaining slots. */
 export function validateAiActivityPlan(value: unknown, route: CandidateRoute,
-  brief: TripBriefV1, places: CandidatePlace[]): AiActivityPlan {
+  brief: TripBriefV1, places: CandidatePlace[], fixed: string[][] = []): AiActivityPlan {
   const dayCities = routeDayCities(route, brief.durationDays);
   const plan = value as Partial<AiActivityPlan> | null;
   if (!plan || plan.schemaVersion !== 2 || plan.routeConceptId !== route.id ||
       !Array.isArray(plan.days) || plan.days.length !== dayCities.length) {
     throw new Error("The activity service returned an invalid route or day count.");
   }
-  const used = new Set<string>();
+  const used = new Set<string>(fixed.flat());
   for (const [index, day] of plan.days.entries()) {
     const allowed = new Set(eligibleActivityPlaces(places, dayCities[index]).map(place => place.databaseId));
-    const paceLimit = { SLOW_TRAVEL: 1, RELAXED: 2, BALANCED: 2, PACKED: 3 }[brief.pace ?? "BALANCED"];
+    const pinned = fixed[index] ?? [];
+    const paceLimit = Math.max(0, activitiesPerDay(brief.pace) - pinned.length);
     if (!day || day.day !== index + 1 || !Array.isArray(day.placeIds) || day.placeIds.length > paceLimit ||
         day.placeIds.some(id => typeof id !== "string" || !allowed.has(id)) ||
         new Set(day.placeIds).size !== day.placeIds.length || day.placeIds.some(id => used.has(id)) ||
         day.note !== undefined && (typeof day.note !== "string" || day.note.length > 240) ||
-        day.descriptions !== undefined && (!Array.isArray(day.descriptions) || day.descriptions.length > 3 ||
-          day.descriptions.some(item => !item || !day.placeIds.includes(item.placeId) ||
+        day.descriptions !== undefined && (!Array.isArray(day.descriptions) || day.descriptions.length > 6 ||
+          day.descriptions.some(item => !item || !(day.placeIds.includes(item.placeId) || pinned.includes(item.placeId)) ||
             typeof item.text !== "string" || item.text.length > 240))) {
       throw new Error(`The activity service returned an untrusted place for day ${index + 1}.`);
     }
@@ -41,7 +44,7 @@ export function validateAiActivityPlan(value: unknown, route: CandidateRoute,
 
 /** V2 asks the server only to select trusted IDs and write short descriptions. */
 export async function requestAiActivityPlan(brief: TripBriefV1, route: CandidateRoute,
-  places: CandidatePlace[], signal?: AbortSignal): Promise<AiActivityPlan> {
+  places: CandidatePlace[], signal?: AbortSignal, fixed: string[][] = []): Promise<AiActivityPlan> {
   signal?.throwIfAborted();
   const cities = routeDayCities(route, brief.durationDays);
   const controller = new AbortController();
@@ -53,17 +56,22 @@ export async function requestAiActivityPlan(brief: TripBriefV1, route: Candidate
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ schemaVersion: 2, routeConceptId: route.id,
         interests: brief.interests, pace: brief.pace,
-        days: cities.map((city, index) => ({ day: index + 1, city,
-          places: eligibleActivityPlaces(places, city).slice(0, 15).map(place => ({
-            id: place.databaseId!, name: place.name, category: place.category,
-          })) })) }) });
+        days: cities.map((city, index) => {
+          const pinned = fixed[index] ?? [];
+          const eligible = eligibleActivityPlaces(places, city);
+          // Chosen places lead the list so they are always among the places the AI can describe.
+          const ordered = [...pinned.map(id => eligible.find(place => place.databaseId === id))
+            .filter((place): place is CandidatePlace => !!place), ...eligible.filter(place => !pinned.includes(place.databaseId!))];
+          return { day: index + 1, city, ...(pinned.length ? { fixed: pinned } : {}),
+            places: ordered.slice(0, 15).map(place => ({ id: place.databaseId!, name: place.name, category: place.category })) };
+        }) }) });
     let payload: any;
     try { payload = await response.json(); }
     catch { throw new Error("The activity service returned an unreadable response."); }
     if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error :
       "Activity suggestions are unavailable.");
     signal?.throwIfAborted();
-    return validateAiActivityPlan(payload?.plan, route, brief, places);
+    return validateAiActivityPlan(payload?.plan, route, brief, places, fixed);
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);

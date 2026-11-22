@@ -52,6 +52,7 @@ export function planningQuoteTrip(plan: PlanningPresentation, brief: TripBriefV1
       arrival: brief.arrival ?? null,
       departure: brief.departure ?? null,
       stops: plan.route.map(stop => ({ name: stop.name, nights: stop.nights })),
+      mustSee: (brief.requestedPlaces ?? []).map(place => `${place.name} (${place.city})`),
       days: plan.days.map(day => ({ day: day.day, date: day.date ?? null, city: day.city, visitCity: day.visitCity ?? null,
         activities: day.items.filter(item => item.category === "activity" && !item.isFreeTime).map(item => item.label) })),
       transfers: plan.transfers.map(leg => ({ from: leg.from, to: leg.to, mode: leg.mode, timing: leg.timing })),

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, CalendarDays, MapPin, Route, WalletCards } from "lucide-react";
-import { SELECTABLE_CITIES } from "../../lib/cityPlan";
+import { citiesFromPlaces, type RequestedPlace } from "../../lib/requestedPlaces";
 import { MONTH_NAMES } from "../../lib/seasonData";
 import { calendarDuration } from "../../lib/planningCalendar";
 import { CMB_AIRPORT } from "../../lib/planningV2Locations";
@@ -10,6 +10,7 @@ import type { TripBriefV1, TravelPace } from "../../lib/planningTypes";
 import type { TransportPreference } from "../../lib/transportTypes";
 import type { Currency, Interest, TravelStyle } from "./types";
 import { DestinationHint } from "./DestinationHint";
+import { PlacePicker } from "./PlacePicker";
 import "../../../styles/planning-v2.css";
 
 const INTERESTS: { value: Interest; label: string }[] = [
@@ -46,7 +47,11 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
   const [budget, setBudget] = useState(initialBrief?.budget.amount ?? 1000);
   const [currency, setCurrency] = useState<Currency>(initialBrief?.budget.currency ?? "USD");
   const [interests, setInterests] = useState<Interest[]>(initialBrief?.interests ?? []);
-  const [requestedCities, setRequestedCities] = useState<string[]>(initialBrief?.requestedCities ?? []);
+  const [requestedPlaces, setRequestedPlaces] = useState<RequestedPlace[]>(initialBrief?.requestedPlaces ?? []);
+  // Towns chosen directly; the towns of chosen places are added when the brief is built.
+  const [requestedTowns, setRequestedTowns] = useState<string[]>((initialBrief?.requestedCities ?? [])
+    .filter(city => !(initialBrief?.requestedPlaces ?? []).some(place => place.city === city)));
+  const requestedCities = citiesFromPlaces(requestedPlaces, requestedTowns);
   const [customCity, setCustomCity] = useState("");
   const [travelMonth, setTravelMonth] = useState(initialBrief?.travelMonth?.toString() ?? "");
   const [comfortTier, setComfortTier] = useState<TravelStyle | "">(initialBrief?.comfortTier ?? "");
@@ -64,12 +69,10 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
 
   const toggleInterest = (value: Interest) => setInterests(previous => previous.includes(value)
     ? previous.filter(item => item !== value) : [...previous, value]);
-  const toggleCity = (city: string) => setRequestedCities(previous => previous.includes(city)
-    ? previous.filter(item => item !== city) : previous.length < 8 ? [...previous, city] : previous);
   const addCity = () => {
     const value = customCity.trim();
     if (value && requestedCities.length < 8 && !requestedCities.some(city => city.toLowerCase() === value.toLowerCase())) {
-      setRequestedCities(previous => [...previous, value]);
+      setRequestedTowns(previous => [...previous, value]);
       setCustomCity("");
     }
   };
@@ -86,6 +89,7 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
       schemaVersion: 1, durationDays: exact ? exactDays! : durationDays, travellerCount,
       budget: { amount: budget, currency },
       interests, requestedCities,
+      ...(requestedPlaces.length ? { requestedPlaces } : {}),
       ...(exact ? { travelDates: { start, end } } : travelMonth ? { travelMonth: Number(travelMonth) } : {}),
       ...(comfortTier ? { comfortTier } : {}),
       ...(pace ? { pace } : {}),
@@ -172,20 +176,17 @@ export function PlanningV2BriefScreen({ initialBrief, busy, externalIssues, onPl
             </fieldset>
 
             <fieldset className="wr-v2__section">
-              <legend><MapPin size={19} /> Destinations <small>optional</small></legend>
-              <div className="wr-v2__choices">
-                {SELECTABLE_CITIES.map(city => <button type="button" key={city}
-                  className={requestedCities.includes(city) ? "is-selected" : ""} aria-pressed={requestedCities.includes(city)}
-                  onClick={() => toggleCity(city)}>{city}</button>)}
-              </div>
+              <legend><MapPin size={19} /> Places you want to see <small>optional</small></legend>
+              <PlacePicker places={requestedPlaces} onPlaces={setRequestedPlaces} towns={requestedTowns} onTowns={setRequestedTowns} />
               <div className="wr-v2__custom-city">
-                <label htmlFor="wr-v2-custom-city">Another destination</label>
+                <label htmlFor="wr-v2-custom-city">A town that isn't listed</label>
                 <input id="wr-v2-custom-city" value={customCity} maxLength={80} placeholder="Enter a town or city"
                   onChange={event => setCustomCity(event.target.value)} />
                 <button type="button" onClick={addCity} disabled={!customCity.trim() || requestedCities.length >= 8}>Add</button>
               </div>
-              {requestedCities.length > 0 && <p className="wr-v2__selected-cities">Selected: {requestedCities.join(" · ")}</p>}
-              <p className="wr-v2__hint">Choose up to eight, or leave this open for a suggested route. Unknown places stay marked as unknown.</p>
+              {requestedTowns.some(town => !requestedPlaces.some(place => place.city === town)) &&
+                <p className="wr-v2__selected-cities">Towns: {requestedTowns.join(" · ")}</p>}
+              <p className="wr-v2__hint">Up to 12 places across up to eight towns. Towns we have no place records for stay marked as unknown.</p>
               <DestinationHint cities={requestedCities} days={dateMode === "exact" ? exactDays : durationDays}
                 start={arrivalLocation} end={departureLocation} />
             </fieldset>

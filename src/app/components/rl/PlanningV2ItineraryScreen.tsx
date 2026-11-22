@@ -53,6 +53,7 @@ function readableIssue(code: string): string {
     HARD_DRIVING_LIMIT_EXCEEDED: "Daily driving exceeds the hard limit",
     ITEMS_OVERLAP: "Scheduled items overlap",
     MUST_VISIT_UNSCHEDULED: "A must-visit destination still needs a day and transfer",
+    REQUESTED_PLACE_UNSCHEDULED: "A place you chose isn't on any day yet",
     DAY_VISIT_TIME_INSUFFICIENT: "A return visit needs more time than the day allows",
     DAY_VISIT_SERVICE_UNCONFIRMED: "Outward and return visit services need confirmation",
     DAY_VISIT_TRANSFER_MISSING: "A day visit is missing an outward or return transfer",

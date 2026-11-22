@@ -1,6 +1,7 @@
 import { candidateFromDbPlace } from "./candidatePlaces.ts";
 import type { CandidatePlace } from "./planningTypes";
 import type { CandidateRoute } from "./routeTypes";
+import type { RequestedPlace } from "./requestedPlaces";
 import type { DbPlace } from "./supabase";
 import { MUST_SEE } from "./curatedPlaces.ts";
 
@@ -89,10 +90,39 @@ export async function loadPlanningV2Places(route: CandidateRoute,
   });
 }
 
-export function eligibleActivityPlaces(places: CandidatePlace[], city: string): CandidatePlace[] {
-  return places.filter(place => place.city.toLowerCase() === city.toLowerCase() &&
-    !!place.databaseId && ["attraction", "beach", "temple"].includes(place.category) &&
+/** A sight a traveller can visit: not a restaurant, shop, hotel or mis-tagged business. */
+export function isActivityPlace(place: CandidatePlace): boolean {
+  return !!place.databaseId && ["attraction", "beach", "temple"].includes(place.category) &&
     !NON_ACTIVITY_NAME.test(place.name) && !GENERIC_OR_RETAIL.test(place.name) &&
     (place.category !== "temple" || place.sourceProvider?.toLowerCase() !== "foursquare" ||
-      RELIGIOUS_PLACE_NAME.test(place.name))).sort((a, b) => Number(!!landmarkIdentity(b.name, city)) - Number(!!landmarkIdentity(a.name, city)));
+      RELIGIOUS_PLACE_NAME.test(place.name));
+}
+
+export function eligibleActivityPlaces(places: CandidatePlace[], city: string): CandidatePlace[] {
+  return places.filter(place => place.city.toLowerCase() === city.toLowerCase() && isActivityPlace(place))
+    .sort((a, b) => Number(!!landmarkIdentity(b.name, city)) - Number(!!landmarkIdentity(a.name, city)));
+}
+
+async function fetchPlacesByIds(ids: string[]): Promise<CandidatePlace[]> {
+  const { supabase } = await import("./supabase");
+  if (!supabase || !ids.length) return [];
+  const { data, error } = await supabase.from("places")
+    .select("id,name,city,category,lat,lng,price_usd,source,importance_score,rating").in("id", ids)
+    .abortSignal(AbortSignal.timeout(QUERY_TIMEOUT_MS));
+  if (error) throw new Error("Chosen places are unavailable.");
+  return ((data ?? []) as DbPlace[]).filter(place => !!place.id).map(place => candidateFromDbPlace(place));
+}
+
+/** Adds chosen database places that the per-town lists didn't include. A failed lookup leaves them unresolved. */
+export async function withPinnedPlaces(places: CandidatePlace[], requested: RequestedPlace[] = [],
+  fetchByIds: (ids: string[]) => Promise<CandidatePlace[]> = fetchPlacesByIds): Promise<CandidatePlace[]> {
+  const missing = [...new Set(requested.map(place => place.databaseId)
+    .filter((id): id is string => !!id && !places.some(place => place.databaseId === id)))];
+  if (!missing.length) return places;
+  try {
+    const found = (await fetchByIds(missing)).filter(place => place.databaseId && missing.includes(place.databaseId));
+    return [...places, ...found];
+  } catch {
+    return places;
+  }
 }
