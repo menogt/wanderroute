@@ -1,30 +1,8 @@
-import { useMemo, useState } from "react";
-import {
-  ArrowRight,
-  BedDouble,
-  CalendarDays,
-  Camera,
-  Check,
-  Compass,
-  FileText,
-  Landmark,
-  MapPinned,
-  Minus,
-  Mountain,
-  Navigation,
-  Pencil,
-  Plus,
-  Route,
-  ShieldCheck,
-  Sparkles,
-  Users,
-  UtensilsCrossed,
-  WalletCards,
-  Waves,
-} from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { ArrowRight, Camera, CirclePlay, Compass, Landmark, Minus, Mountain, Navigation, Plus, UtensilsCrossed, Waves, X } from "lucide-react";
+import { PLACE_PHOTOS } from "../../lib/placePhotoCatalog";
 import type { LucideIcon } from "lucide-react";
-import hillCountryImage from "../../../assets/wanderroute-hill-country.jpg";
-import { CURRENCY_SYMBOLS, POPULAR_ROUTES, generateItinerary } from "./data";
+import { CURRENCY_SYMBOLS, generateItinerary } from "./data";
 import { citiesFromPlaces, type RequestedPlace } from "../../lib/requestedPlaces";
 import { quickTripEstimate } from "../../lib/indicativePrices";
 import { DestinationHint } from "./DestinationHint";
@@ -33,6 +11,7 @@ import { MONTH_NAMES } from "../../lib/seasonData";
 import type { Interest, Screen, TravelStyle, TripInputs } from "./types";
 import { useBreakpoint } from "../../hooks/useBreakpoint";
 import "../../../styles/core-ui.css";
+import "../../../styles/home-journey.css";
 
 const ADMIN_TAP_THRESHOLD = 5;
 const ADMIN_TAP_WINDOW_MS = 2500;
@@ -55,12 +34,17 @@ const QUICK_STYLES: Array<{ key: TravelStyle; label: string }> = [
   { key: "luxury", label: "Luxury" },
 ];
 
-const STORY_STEPS = [
-  { number: "01", label: "Set a real budget", icon: WalletCards },
-  { number: "02", label: "Build a connected route", icon: Route },
-  { number: "03", label: "Follow each day", icon: CalendarDays },
-  { number: "04", label: "Refine each day", icon: Pencil },
+const stops = [
+  { city: "Sigiriya", place: "Sigiriya Rock Fortress", photo: "sigiriya", title: "Walk the water gardens", detail: "Sleep in Sigiriya and leave the next morning for the climb above the gardens." },
+  { city: "Ella", place: "Nine Arches Bridge", photo: "ella", title: "Stay another night in Ella", detail: "Move a night here in Trip Studio to visit Nine Arches Bridge the morning after you arrive." },
+  { city: "Mirissa", place: "Mirissa Beach", photo: "mirissa", title: "Take the coast slowly", detail: "Leave a day for the beach. Check the drive back to the airport against your flight time." },
 ];
+
+function PhotoCredit({ index }: { index: number }) {
+  const stop = stops[index];
+  const photo = PLACE_PHOTOS[stop.city + "|" + stop.place];
+  return <a href={photo.page} target="_blank" rel="noreferrer">{photo.credit} · {photo.licence}</a>;
+}
 
 export function HomeScreen({
   navigate,
@@ -73,6 +57,8 @@ export function HomeScreen({
   initialMonth?: number | null;
 }) {
   const bp = useBreakpoint();
+  const filmDialog = useRef<HTMLDialogElement>(null);
+  const [filmOpen, setFilmOpen] = useState(false);
   const [tapCount, setTapCount] = useState(0);
   const [tapTimer, setTapTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [budget, setBudget] = useState(initialInputs?.budget ?? 800);
@@ -104,7 +90,6 @@ export function HomeScreen({
     [budget, days, people, cities.join("|"), interests, travelStyle]
   );
 
-  const previewDay = preview.days[0];
   const currencySymbol = CURRENCY_SYMBOLS[preview.currency];
   // Same published price tables as the planner, so the homepage and the plan never disagree in kind.
   const estimate = useMemo(() => quickTripEstimate({ days, people, tier: travelStyle,
@@ -152,15 +137,9 @@ export function HomeScreen({
   };
 
   return (
-    <main className="wr-home">
-      <header className="wr-home-hero">
-        <img
-          className="wr-home-hero__image"
-          src={hillCountryImage}
-          alt="A train crossing Sri Lanka's green central highlands"
-        />
-        <div className="wr-home-hero__wash" aria-hidden="true" />
-
+    <main className="wr-home journey-home">
+      <header className="journey-hero">
+        <img className="journey-hero-photo" src="/journey/ella.webp" fetchPriority="high" alt="Nine Arches Bridge curving through forest near Ella" />
         <div className="wr-home-mobilebar">
           <button
             type="button"
@@ -174,76 +153,37 @@ export function HomeScreen({
           <button type="button" onClick={() => navigate("routes")}>Routes</button>
         </div>
 
-        <div className="wr-home-hero__content">
-          <div className="wr-home-hero__copy">
-            <p className="wr-kicker">The living Sri Lanka atlas</p>
-            <h1>Plan Sri Lanka around your real budget.</h1>
-            <p className="wr-home-hero__lead">
-              Build a personalised day-by-day route with places to stay, transport checks and clear cost unknowns.
-            </p>
-            <div className="wr-home-hero__actions">
-              <button
-                type="button"
-                className="wr-button wr-button--gold"
-                onClick={() => navigate("planner")}
-              >
-                Plan Your Trip
-                <ArrowRight size={17} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="wr-button wr-button--glass"
-                onClick={() => navigate("routes")}
-              >
-                Explore a Sample Route
-              </button>
-              <a className="wr-button wr-button--glass" href="/trip-studio">Open Trip Studio</a>
-              <button
-                type="button"
-                className="wr-button wr-button--glass"
-                onClick={() => navigate("classic-planner")}
-              >
-                Classic Planner
-              </button>
-            </div>
-            <p className="wr-home-hero__assurance">
-              <Check size={14} aria-hidden="true" />
-              Free to use · No account required
-            </p>
+        <div className="journey-hero-copy">
+          <h1>Take the long way<br /><em>through Sri Lanka.</em></h1>
+          <p>Pick the places you dream of seeing. Build a day-by-day trip around your time and budget.</p>
+          <div className="journey-actions">
+            <button className="wr-button wr-button--gold" onClick={() => navigate("planner")}>Plan Your Trip <ArrowRight size={18} /></button>
+            <button className="journey-play" onClick={() => { setFilmOpen(true); filmDialog.current?.showModal(); }}><CirclePlay size={22} /> Watch the island <small>0:09</small></button>
           </div>
-
-          <div className="wr-home-hero__preview" aria-label="Sample route preview">
-            <div className="wr-home-hero__preview-head">
-              <span><Sparkles size={14} aria-hidden="true" /> Route preview</span>
-              <small>{preview.totalDays} days</small>
-            </div>
-            <h2>{preview.routeName}</h2>
-            <div className="wr-home-hero__route">
-              {preview.cities.map((city, index) => (
-                <span key={city}>
-                  <i className={index === 0 ? "is-start" : index === preview.cities.length - 1 ? "is-end" : ""} />
-                  <b>{city}</b>
-                </span>
-              ))}
-            </div>
-            <div className="wr-home-hero__preview-meta">
-              <span><Users size={15} aria-hidden="true" /> {preview.totalPeople}</span>
-              <span><WalletCards size={15} aria-hidden="true" /> {estimateText}</span>
-              <span><Navigation size={15} aria-hidden="true" /> {preview.travelStyle}</span>
-            </div>
-          </div>
+          <small>Free to plan · No account needed</small>
         </div>
-
-        <span className="wr-coordinates wr-home-hero__coordinates" aria-hidden="true">
-          Central Highlands · 06.8667° N · 81.0466° E
-        </span>
+        <div className="journey-caption">Nine Arches Bridge, Ella <PhotoCredit index={1} /></div>
       </header>
-
+      <dialog ref={filmDialog} className="journey-dialog" aria-label="Nine seconds in Sri Lanka" onClose={() => setFilmOpen(false)}>
+        <button aria-label="Close film" onClick={() => filmDialog.current?.close()} autoFocus><X size={22} /></button>
+        {filmOpen && <video controls autoPlay muted playsInline aria-label="A silent photographic journey from Sigiriya to Ella and Mirissa" src="/journey/island.mp4" />}
+        <p>Sigiriya · Ella · Mirissa</p><small>Photo film · cropped and animated · <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a><br />{stops.map((stop, index) => <span key={stop.city}><PhotoCredit index={index} /> </span>)}</small>
+      </dialog>
+      <section className="journey-story" aria-labelledby="journey-title">
+        <div className="journey-story-head"><div><h2 id="journey-title">From rock fortress<br />to rolling surf.</h2><p>Three stops you could build a trip around.</p></div>
+        <button className="journey-link" onClick={() => navigate("routes")}>Browse sample routes <ArrowRight size={16} /></button></div>
+        <div className="journey-stops">{stops.map((stop, index) => <article key={stop.city}>
+          <figure><img src={`/journey/${stop.photo}.webp`} alt={stop.place} loading="lazy" /><figcaption>{stop.city}</figcaption></figure>
+          <small className="journey-credit"><PhotoCredit index={index} /></small>
+          <h3>{stop.title}</h3><p>{stop.detail}</p>
+        </article>)}</div>
+        <a className="journey-link" href="#quick-planner">Build a quick route <ArrowRight size={16} /></a>
+      </section>
       <section className="wr-quick" id="quick-planner" aria-labelledby="quick-planner-title">
         <div className="wr-quick__intro">
-          <p className="wr-kicker">Quick planner</p>
-          <h2 id="quick-planner-title">Start with the choices that change the route.</h2>
-          <p>Use the short form here, or open the full planner for more guidance at every step.</p>
+
+          <h2 id="quick-planner-title">Make the route yours.</h2>
+          <p>Choose your days and budget. Add the places you already have in mind, or let us suggest a route.</p>
         </div>
 
         <form className="wr-quick__form" onSubmit={handleQuickGenerate}>
@@ -304,11 +244,11 @@ export function HomeScreen({
             </fieldset>
           </div>
 
-          <fieldset className="wr-quick__places">
+          <details className="journey-picker"><summary>Choose places {places.length + towns.length > 0 ? `(${places.length + towns.length} selected)` : "(optional)"}</summary><fieldset className="wr-quick__places">
             <legend>What do you want to see?</legend>
             <PlacePicker places={places} onPlaces={setPlaces} towns={towns} onTowns={setTowns} />
             <DestinationHint cities={cities} days={days} />
-          </fieldset>
+          </fieldset></details>
 
           <fieldset className="wr-quick__options">
             <legend>What should shape the trip?</legend>
@@ -362,81 +302,13 @@ export function HomeScreen({
         </form>
       </section>
 
-      <section className="wr-home-story" aria-labelledby="story-title">
-        <div className="wr-home-story__heading">
-          <p className="wr-kicker">From question to field guide</p>
-          <h2 id="story-title">A route you can understand before you travel.</h2>
-        </div>
-        <ol className="wr-home-story__line">
-          {STORY_STEPS.map(({ number, label, icon: Icon }) => (
-            <li key={number}>
-              <span className="wr-home-story__number">{number}</span>
-              <Icon size={22} strokeWidth={1.5} aria-hidden="true" />
-              <strong>{label}</strong>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="wr-home-itinerary" aria-labelledby="itinerary-preview-title">
-        <div className="wr-home-itinerary__route-panel">
-          <p className="wr-kicker">A connected journey</p>
-          <h2 id="itinerary-preview-title">{preview.routeName}</h2>
-          <p>{preview.routeSlogan}</p>
-          <div className="wr-atlas-route" aria-label={`Route through ${preview.cities.join(", ")}`}>
-            {preview.cities.map((city, index) => (
-              <div key={city}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                <strong>{city}</strong>
-                {index < preview.cities.length - 1 && <i aria-hidden="true" />}
-              </div>
-            ))}
-          </div>
-          <button type="button" className="wr-text-link" onClick={() => navigate("routes")}>
-            Browse established routes <ArrowRight size={15} aria-hidden="true" />
-          </button>
-        </div>
-
-        {previewDay && (
-          <article className="wr-day-spread">
-            <header>
-              <span>Day {String(previewDay.day).padStart(2, "0")}</span>
-              <div>
-                <h3>{previewDay.city}</h3>
-                <p>{currencySymbol}{previewDay.dailyCostPerPerson.toLocaleString()} per person</p>
-              </div>
-            </header>
-            <ol>
-              {previewDay.items.slice(0, 4).map((item, index) => (
-                <li key={`${item.time}-${item.label}-${index}`}>
-                  <time>{item.time}</time>
-                  <span aria-hidden="true" />
-                  <div>
-                    <strong>{item.label}</strong>
-                    <p>{item.detail}</p>
-                  </div>
-                  <b>{item.cost === 0 ? "Free" : `${currencySymbol}${item.cost}`}</b>
-                </li>
-              ))}
-            </ol>
-            <footer>
-              <BedDouble size={17} strokeWidth={1.7} aria-hidden="true" />
-              <span>
-                <small>Tonight</small>
-                <strong>{previewDay.accommodation}</strong>
-              </span>
-            </footer>
-          </article>
-        )}
-      </section>
-
       <section className="wr-home-budget" aria-labelledby="budget-preview-title">
         <div className="wr-home-budget__copy">
-          <p className="wr-kicker">Cost intelligence</p>
-          <h2 id="budget-preview-title">See where the money goes — before it goes.</h2>
+
+          <h2 id="budget-preview-title">What might this trip cost?</h2>
           <p>
             A rough guide from published Sri Lanka price ranges for your days, travellers, travel style and month.
-            Your plan then prices each stay, transfer and ticket, with sources.
+            These estimates cover the categories shown for your group. Flights are excluded. Confirm prices before booking.
           </p>
           <dl>
             <div>
@@ -467,103 +339,11 @@ export function HomeScreen({
         </div>
       </section>
 
-      <section className="wr-home-map" aria-labelledby="map-preview-title">
-        <div className="wr-home-map__visual" aria-hidden="true">
-          <span className="wr-map-ring wr-map-ring--one" />
-          <span className="wr-map-ring wr-map-ring--two" />
-          <div className="wr-home-map__path">
-            {preview.cities.slice(0, 4).map((city, index) => (
-              <span key={city} className={`is-${index + 1}`}>
-                <i>{index + 1}</i>
-                <b>{city}</b>
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="wr-home-map__copy">
-          <p className="wr-kicker">Roads you can follow</p>
-          <h2 id="map-preview-title">See the journey as a route, not a list.</h2>
-          <p>
-            Open the interactive atlas to explore destination markers, nearby stays and places along the way. Generated itineraries add road geometry when routing is available.
-          </p>
-          <button type="button" className="wr-button wr-button--outline-light" onClick={() => navigate("map")}>
-            <MapPinned size={17} aria-hidden="true" />
-            Open Interactive Map
-          </button>
-        </div>
-      </section>
-
-      <section className="wr-home-routes" aria-labelledby="route-library-title">
-        <div className="wr-home-routes__heading">
-          <div>
-            <p className="wr-kicker">Route library</p>
-            <h2 id="route-library-title">Start with a proven shape, then make it yours.</h2>
-          </div>
-          <button type="button" className="wr-text-link" onClick={() => navigate("routes")}>
-            View all routes <ArrowRight size={15} aria-hidden="true" />
-          </button>
-        </div>
-        <div className="wr-home-routes__list">
-          {POPULAR_ROUTES.slice(0, 3).map((routeItem, index) => (
-            <article key={routeItem.key}>
-              <span className="wr-home-routes__index">{String(index + 1).padStart(2, "0")}</span>
-              <div>
-                <small>{routeItem.type} · {routeItem.duration}</small>
-                <h3>{routeItem.name}</h3>
-                <p>{routeItem.cities.join(" — ")}</p>
-              </div>
-              <button type="button" onClick={() => navigate("planner")} aria-label={`Plan the ${routeItem.name} route`}>
-                <ArrowRight size={17} aria-hidden="true" />
-              </button>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="wr-home-pdf" aria-labelledby="pdf-preview-title">
-        <div className="wr-home-pdf__document" aria-hidden="true">
-          <div className="wr-home-pdf__document-head">
-            <Compass size={16} />
-            <span>WanderRoute</span>
-            <small>Travel plan</small>
-          </div>
-          <h3>{preview.routeName}</h3>
-          <p>{preview.cities.join(" · ")}</p>
-          <div className="wr-home-pdf__document-rule" />
-          <div className="wr-home-pdf__document-grid">
-            <span><small>Days</small><strong>{preview.totalDays}</strong></span>
-            <span><small>People</small><strong>{preview.totalPeople}</strong></span>
-            <span><small>Estimate</small><strong>{estimateText}</strong></span>
-          </div>
-          <div className="wr-home-pdf__document-lines"><i /><i /><i /><i /></div>
-        </div>
-        <div className="wr-home-pdf__copy">
-          <p className="wr-kicker">A plan that travels with you</p>
-          <h2 id="pdf-preview-title">Turn the itinerary into a practical travel document.</h2>
-          <p>
-            Classic Planner itineraries can be downloaded as a PDF for offline reference. The new route drafts stay in your planning session.
-          </p>
-          <ul>
-            <li><FileText size={16} aria-hidden="true" /> Day-by-day schedule</li>
-            <li><WalletCards size={16} aria-hidden="true" /> Cost breakdown</li>
-            <li><ShieldCheck size={16} aria-hidden="true" /> Warnings and local tips</li>
-          </ul>
-        </div>
-      </section>
-
-      <section className="wr-home-final" aria-labelledby="final-cta-title">
-        <span className="wr-coordinates" aria-hidden="true">Your next pin · Sri Lanka</span>
-        <h2 id="final-cta-title">Start with the budget. Leave with the route.</h2>
-        <p>Build a Sri Lanka route, inspect each day and see what still needs confirmation.</p>
-        <div>
-          <button type="button" className="wr-button wr-button--gold" onClick={() => navigate("planner")}>
-            Plan Your Trip <ArrowRight size={17} aria-hidden="true" />
-          </button>
-          <button type="button" className="wr-button wr-button--glass" onClick={() => navigate("routes")}>
-            Explore a Sample Route
-          </button>
-        </div>
-      </section>
+      <nav className="journey-more" aria-label="More ways to plan">
+        <button onClick={() => navigate("map")}>Explore the island <ArrowRight size={16} /></button>
+        <a href="/trip-studio">Open Trip Studio <ArrowRight size={16} /></a>
+        <button onClick={() => navigate("classic-planner")}>Classic Planner <ArrowRight size={16} /></button>
+      </nav>
     </main>
   );
 }
