@@ -1,0 +1,15 @@
+/* Currency converter in the planner's Budget section. */
+.wr-fx { margin-top: 18px; padding: 16px; border: 1px solid var(--wr-line-dark); border-radius: 10px; background: var(--wr-cream); color: var(--wr-midnight); }
+.wr-fx h3 { margin: 0 0 10px; font-size: 1.05rem; }
+.wr-fx__row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: end; }
+.wr-fx__row label { display: grid; gap: 4px; font-size: 0.85rem; font-weight: 600; }
+.wr-fx__row input, .wr-fx__row select { min-height: 42px; width: 100%; min-width: 0; font: inherit; }
+.wr-fx__swap { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid rgba(7, 26, 45, 0.2); border-radius: 8px; background: #fff; color: var(--wr-midnight); cursor: pointer; }
+.wr-fx__result { margin: 12px 0 4px; min-height: 1.6em; font-size: 1.05rem; }
+.wr-fx__result strong { font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.wr-fx__note { margin: 0; font-size: 0.82rem; color: var(--wr-ink-soft); }
+.wr-fx__note a { color: inherit; }
+@media (max-width: 560px) {
+  .wr-fx__row { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+  .wr-fx__row label:first-child { grid-column: 1 / -1; }
+}

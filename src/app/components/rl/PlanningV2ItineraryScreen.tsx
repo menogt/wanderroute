@@ -20,6 +20,7 @@ import { BoardDndProvider } from "./board/BoardDnd";
 import { BoardMap } from "./board/BoardMap";
 import { PlacesToVisit } from "./board/PlacesToVisit";
 import { RouteEditor } from "./board/RouteEditor";
+import { CurrencyConverter } from "./board/CurrencyConverter";
 import "../../../styles/planning-v2.css";
 import "../../../styles/planning-v2-itinerary.css";
 import "../../../styles/studio-help.css";
@@ -227,6 +228,7 @@ export function PlanningV2ItineraryScreen({ initialStudio = false, detail, conce
             <div><WalletCards size={19} /><span>Your budget target</span><strong>{brief.budget.currency} {brief.budget.amount.toLocaleString()}</strong></div>
           </div>
           <PlanningBudgetPanel detail={detail} brief={brief} onAllowance={(group, allowance) => commitEdit({ type: "allowance", group, allowance })} />
+          <CurrencyConverter amount={brief.budget.amount} currency={brief.budget.currency} />
         </section>
         <PlanningQuotePanel detail={detail} brief={brief} concept={concept} openSignal={quoteSignal} />
         <PlanningReviewPanel detail={detail} brief={brief} concept={concept} busy={busy} approvedRevision={session.preferredRevision} onFinalize={onFinalize} onRequestQuote={() => setQuoteSignal(value => value + 1)} />
