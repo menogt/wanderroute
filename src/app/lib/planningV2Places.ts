@@ -49,6 +49,7 @@ async function curatedHotels(city: string): Promise<CandidatePlace[]> {
   return (HOTELS_BY_CITY[city] ?? []).map(hotel => ({
     databaseId: `curated-hotel:${stableSlug(city)}:${stableSlug(hotel.name)}`,
     name: hotel.name, city, category: "hotel", sourceProvider: "WanderRoute curated guide",
+    stayTier: hotel.type, recordedPrice: { amount: hotel.priceUSD, currency: "USD" as const },
     ...(hotel.location ? { coordinates: { latitude: hotel.location[0], longitude: hotel.location[1] } } : {}),
   }));
 }

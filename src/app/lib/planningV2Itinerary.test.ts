@@ -463,3 +463,17 @@ test("an already cancelled request does not contact the AI endpoint", async cont
   await assert.rejects(requestAiActivityPlan(result.brief, chosen(result).candidate, places, controller.signal), { name: "AbortError" });
   assert.equal(fetchMock.mock.callCount(), 0);
 });
+
+test("nights without a chosen hotel show a curated suggestion that is not an assignment", async () => {
+  const input = { ...brief, durationDays: 4, requestedCities: ["Kandy"], comfortTier: "budget" as const };
+  const result = await route(input);
+  const candidates: CandidatePlace[] = [...places,
+    { databaseId: "curated-hotel:kandy:topaz", name: "Hotel Topaz Kandy", city: "Kandy", category: "hotel", stayTier: "comfort", recordedPrice: { amount: 30, currency: "USD" } },
+    { databaseId: "curated-hotel:kandy:mcleod", name: "McLeod Inn", city: "Kandy", category: "hotel", stayTier: "budget", recordedPrice: { amount: 14, currency: "USD" } }];
+  const detail = await generatePlanningV2Itinerary(result, result.concepts[0].routeConcept.id, {
+    getPlaces: async () => candidates, getAiPlan: async () => { throw new Error("unavailable"); } });
+  const nights = detail.itinerary.days.filter(day => day.overnightCity === "Kandy");
+  assert.ok(nights.length > 0);
+  assert.ok(nights.every(day => day.accommodation === "McLeod Inn (suggested)"));
+  assert.ok(detail.itinerary.days.every(day => !day.accommodationPlaceId));
+});

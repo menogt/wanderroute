@@ -1,0 +1,11 @@
+/* Hotel choice under each town in "Your route". */
+.wr-route-editor__stay { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 2px 4px 0; color: var(--wr-midnight); font-size: 0.92rem; }
+.wr-route-editor__stay > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.wr-route-editor__stay select { flex: 1 1 220px; min-width: 0; max-width: 420px; min-height: 38px; }
+.wr-route-editor__stay small { flex-basis: 100%; color: var(--wr-ink-soft); }
+@media (max-width: 560px) {
+  /* Loads before itinerary-board.css, so it needs the extra class to add the stay row on phones. */
+  .wr-route-editor .wr-route-editor__stops li { grid-template-areas: "name name" "nights order" "stay stay"; }
+  .wr-route-editor .wr-route-editor__stay { grid-area: stay; }
+  .wr-route-editor__stay select { flex-basis: 100%; max-width: none; min-height: 42px; }
+}

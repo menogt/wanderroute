@@ -7,6 +7,7 @@ import type { CandidateRoute } from "./routeTypes";
 import type { TransportLeg, TransportPlan } from "./transportTypes";
 import { formatDriveTime } from "./transportPlanning.ts";
 import { eligibleActivityPlaces } from "./planningV2Places.ts";
+import { suggestedStay, suggestedStayLabel } from "./suggestedStay.ts";
 
 
 export function routeDayCities(route: CandidateRoute, duration: number): string[] {
@@ -195,11 +196,13 @@ export function schedulePlanningDays(brief: TripBriefV1, route: CandidateRoute,
     }
     items.push({ id: `day-${dayNumber}:meal`, city: activityCity, time: "Venue to choose", icon: "◌",
       label: "Meal in town", detail: "Choose a venue; price and opening hours are not confirmed.", category: "meal" });
+    // Shown only while the traveller has chosen nothing; it never sets accommodationPlaceId or a price.
+    const suggestion = overnight && !hotel && !stay?.name?.trim() && !stay?.area ? suggestedStay(places, city, brief.comfortTier) : undefined;
     if (overnight) warnings.push(`Accommodation in ${city} needs confirmation.`);
     if (!activities.length) warnings.push(`No activity place was selected for ${city} on this day.`);
     return { day: dayNumber, city, ...(planningDate(brief, index) ? { date: planningDate(brief, index) } : {}),
       ...(overnight ? { overnightCity: city } : {}), ...(excursion ? { visitCity: excursion.city } : {}), flag: "📍", heroGradient: "", localTip: selection.note ?? "Check opening hours and reservations before travel.",
-      accommodation: overnight ? hotel?.name || stay?.name?.trim() || (stay?.area ? `Stay in ${stay.area}, ${city}` : `Stay to confirm in ${city}`) : "",
+      accommodation: overnight ? hotel?.name || stay?.name?.trim() || (stay?.area ? `Stay in ${stay.area}, ${city}` : suggestion ? suggestedStayLabel(suggestion) : `Stay to confirm in ${city}`) : "",
       ...(overnight && hotel?.databaseId ? { accommodationPlaceId: hotel.databaseId } : {}),
       items, warnings };
   });

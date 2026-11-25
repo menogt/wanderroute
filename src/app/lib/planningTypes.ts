@@ -63,6 +63,8 @@ export type CandidatePlace = {
   priceEvidence?: PriceEvidence;
   /** Only a sourced basis can turn a place price into a ledger charge. */
   priceBasis?: "PER_PERSON" | "PER_ROOM_NIGHT" | "PER_GROUP";
+  /** Comfort level of a curated hotel; only curated hotels are suggested to travellers. */
+  stayTier?: TravelStyle;
   sourceUpdatedAt?: string;
 };
 
