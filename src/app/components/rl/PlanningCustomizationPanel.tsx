@@ -91,9 +91,9 @@ export function PlanningCustomizationPanel({ session, busy, onApply, onClose }: 
         </>}
         {!exact && <label>Travel month<select value={draft.brief.travelMonth ?? ""} onChange={event => brief({ travelMonth: event.target.value ? Number(event.target.value) : undefined })}><option value="">Not sure yet</option>{["January","February","March","April","May","June","July","August","September","October","November","December"].map((month, index) => <option key={month} value={index + 1}>{month}</option>)}</select></label>}
         <label>Preferred daily driving minutes<input type="number" min="30" max="720" value={draft.brief.maxPreferredDailyDrivingMinutes ?? ""} onChange={event => brief({ maxPreferredDailyDrivingMinutes: event.target.value ? Number(event.target.value) : undefined })} /></label>
-        {!exact && <label>Travel days<input type="number" min="2" max="21" value={draft.brief.durationDays} onChange={event => brief({ durationDays: Number(event.target.value) })} /></label>}
-        <label>Travellers<input type="number" min="1" max="12" value={draft.brief.travellerCount} onChange={event => brief({ travellerCount: Number(event.target.value) })} /></label>
-        <label>Total budget<input type="number" min="1" value={draft.brief.budget.amount} onChange={event => brief({ budget: { ...draft.brief.budget, amount: Number(event.target.value) } })} /></label>
+        {!exact && <label>Travel days<input type="number" min="2" max="21" value={draft.brief.durationDays || ""} onChange={event => brief({ durationDays: Number(event.target.value) })} /></label>}
+        <label>Travellers<input type="number" min="1" max="12" value={draft.brief.travellerCount || ""} onChange={event => brief({ travellerCount: Number(event.target.value) })} /></label>
+        <label>Total budget<input type="number" min="1" value={draft.brief.budget.amount || ""} onChange={event => brief({ budget: { ...draft.brief.budget, amount: Number(event.target.value) } })} /></label>
         <label>Budget currency<select value={draft.brief.budget.currency} onChange={event => brief({ budget: { ...draft.brief.budget, currency: event.target.value as typeof draft.brief.budget.currency } })}>{["USD", "EUR", "GBP", "AUD", "LKR"].map(currency => <option key={currency}>{currency}</option>)}</select></label>
         <label>Overall transport preference<select value={draft.brief.transportPreference ?? "RECOMMEND"} onChange={event => brief({ transportPreference: event.target.value as typeof draft.brief.transportPreference })}><option value="RECOMMEND">Choose later</option><option value="PRIVATE_DRIVER">Private driver</option><option value="PUBLIC_TRANSPORT">Public transport</option><option value="MIXED">Mixed, choose per leg</option><option value="TUK_TUK_SELF_DRIVE">Self-drive tuk-tuk</option></select></label>
         <label>Travel pace<select value={draft.brief.pace ?? "BALANCED"} onChange={event => brief({ pace: event.target.value as typeof draft.brief.pace })}><option value="SLOW_TRAVEL">Slow travel</option><option value="RELAXED">Relaxed</option><option value="BALANCED">Balanced</option><option value="PACKED">Packed</option></select></label>
@@ -117,7 +117,7 @@ export function PlanningCustomizationPanel({ session, busy, onApply, onClose }: 
             <button type="button" disabled={index === 0 || stop.locked} onClick={() => moveBase(index, -1)}>Move {stop.city} earlier</button>
             <button type="button" disabled={index === draft.stops.length - 1 || stop.locked} onClick={() => moveBase(index, 1)}>Move {stop.city} later</button>
           </div>
-          <label>Nights in {stop.city}<input type="number" min="1" max="20" value={stop.nights} onChange={event => updateStop(index, { nights: Number(event.target.value) })} /></label>
+          <label>Nights in {stop.city}<input type="number" min="1" max="20" value={stop.nights || ""} onChange={event => updateStop(index, { nights: Number(event.target.value) })} /></label>
           {stop.nights > 1 && !stop.locked && draft.stays[stop.city]?.status !== "TRAVELLER_BOOKED" && <label>Give one night from {stop.city} to
             <select value="" onChange={event => {
               const recipient = event.target.value;

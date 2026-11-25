@@ -152,7 +152,7 @@ export function PlanningV2BriefScreen({ initialBrief, initialPlaces, busy, exter
                 <option value="approximate">I’m planning roughly</option><option value="exact">I know my dates</option>
               </select></label>
               {dateMode === "approximate" ? <div className="wr-v2__fields wr-v2__fields--budget">
-                <label>Calendar days <input type="number" min="2" max="21" required value={durationDays}
+                <label>Calendar days <input type="number" min="2" max="21" required value={durationDays || ""}
                   onChange={event => setDurationDays(Number(event.target.value))} /></label>
                 <label>Approximate month <select value={travelMonth} onChange={event => setTravelMonth(event.target.value)}>
                   <option value="">Not sure yet</option>
@@ -172,13 +172,13 @@ export function PlanningV2BriefScreen({ initialBrief, initialPlaces, busy, exter
             <fieldset className="wr-v2__section">
               <legend><WalletCards size={19} /> Total budget</legend>
               <div className="wr-v2__fields wr-v2__fields--budget">
-                <label>Amount <input type="number" min="1" max="10000000" step="0.01" required value={budget}
+                <label>Amount <input type="number" min="1" max="10000000" step="0.01" required value={budget || ""}
                   onChange={event => setBudget(Number(event.target.value))} /></label>
                 <label>Currency <select value={currency} onChange={event => setCurrency(event.target.value as Currency)}>
                   {CURRENCIES.map(value => <option key={value} value={value}>{value}</option>)}
                 </select></label>
               </div>
-              <label>Travellers <input type="number" min="1" max="12" required value={travellerCount}
+              <label>Travellers <input type="number" min="1" max="12" required value={travellerCount || ""}
                 onChange={event => setTravellerCount(Number(event.target.value))} /></label>
               <p className="wr-v2__hint">Enter a total land-trip budget for the whole group, excluding international flights.</p>
             </fieldset>
